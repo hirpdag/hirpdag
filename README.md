@@ -1,5 +1,7 @@
-# Hirpdag &emsp; [![Latest Version]][crates.io]
+# Hirpdag &emsp; [![Build Status]][actions] [![Latest Version]][crates.io]
 
+[Build Status]: https://img.shields.io/github/workflow/status/hirpdag/hirpdag/CI/main
+[actions]: https://github.com/hirpdag/hirpdag/actions?query=branch%3Amain
 [Latest Version]: https://img.shields.io/crates/v/hirpdag.svg
 [crates.io]: https://crates.io/crates/hirpdag
 
