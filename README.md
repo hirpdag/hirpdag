@@ -1,4 +1,7 @@
-# Hirpdag
+# Hirpdag &emsp; [![Latest Version]][crates.io]
+
+[Latest Version]: https://img.shields.io/crates/v/hirpdag.svg
+[crates.io]: https://crates.io/crates/hirpdag
 
 Hirpdag is a library and procedural macro for creating data structures which are:
 
