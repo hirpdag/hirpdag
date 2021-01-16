@@ -9,6 +9,6 @@ keywords = ["hashconsing", "persistent", "dag", "rewriting"]
 categories = ["caching", "memory-management", "data-structures"]
 
 [dependencies]
-hirpdag_hashconsing = {path = '../hirpdag_hashconsing'}
-hirpdag_derive = {path = "../hirpdag_derive"}
+hirpdag_hashconsing = { version = "0.1.0", path = '../hirpdag_hashconsing' }
+hirpdag_derive = { version = "0.1.0", path = "../hirpdag_derive" }
 lazy_static = "1.4.0"
