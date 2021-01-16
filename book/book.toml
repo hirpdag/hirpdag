@@ -1,0 +1,7 @@
+# https://github.com/rust-lang/mdBook
+[book]
+authors = ["Andrew Browne"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Hirpdag"

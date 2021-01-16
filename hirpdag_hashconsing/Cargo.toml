@@ -1,0 +1,12 @@
+[package]
+name = "hirpdag_hashconsing"
+version = "0.1.0"
+authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+weak-table = "0.3.0"
+array-init = "1.0.0"

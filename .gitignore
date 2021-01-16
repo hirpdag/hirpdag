@@ -1,0 +1,11 @@
+# Build files
+/book/book/
+/hirpdag/target/
+/hirpdag_derive/target/
+/hirpdag_hashconsing/target/
+/target/
+/test_suite/target/
+
+Cargo.lock
+flamegraph.svg
+perf.data

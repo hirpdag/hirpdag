@@ -1,0 +1,30 @@
+[package]
+name = "hirpdag_test_suite"
+version = "0.0.0"
+authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
+edition = "2018"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+hirpdag = {path = '../hirpdag'}
+
+[dev-dependencies]
+hirpdag_derive = {path = '../hirpdag_derive'}
+criterion = "0.3"
+
+[[bench]]
+name = "primes_arc_hash_linear"
+harness = false
+
+[[bench]]
+name = "primes_arc_hash_sorted"
+harness = false
+
+[[bench]]
+name = "primes_leak_hash_linear"
+harness = false
+
+[[bench]]
+name = "primes_arc_tov_weak_table"
+harness = false

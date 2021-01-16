@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "hirpdag_hashconsing",
+    "hirpdag",
+    "hirpdag_derive",
+    "test_suite",
+]

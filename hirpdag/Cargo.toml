@@ -1,0 +1,11 @@
+[package]
+name = "hirpdag"
+version = "0.1.0"
+authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+hirpdag_hashconsing = {path = '../hirpdag_hashconsing'}
+hirpdag_derive = {path = "../hirpdag_derive"}
+lazy_static = "1.4.0"
