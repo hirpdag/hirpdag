@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/hirpdag/hirpdag"
+keywords = ["hashconsing", "persistent", "dag", "rewriting"]
+categories = ["caching", "memory-management", "data-structures"]
 
 [dependencies]
 hirpdag_hashconsing = {path = '../hirpdag_hashconsing'}
