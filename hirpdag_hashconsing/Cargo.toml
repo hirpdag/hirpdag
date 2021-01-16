@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/hirpdag/hirpdag"
+keywords = ["hashconsing"]
+categories = ["memory-management"]
+description = "Various hashconsing implementations with a common interface."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
