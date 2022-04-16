@@ -203,7 +203,7 @@ mod leak_hash_linear {
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 fn bench_primes(c: &mut Criterion) {
-    for limit in [1000, 8000].iter() {
+    for limit in [8000].iter() {
         for same in [false, true].iter() {
             let name = format!("Primes{}{}", *limit, if *same { "Same" } else { "" });
             let mut group = c.benchmark_group(name);
