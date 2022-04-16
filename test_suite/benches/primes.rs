@@ -1,3 +1,17 @@
+
+#[derive(Copy, Clone)]
+pub struct BenchPrimesParams {
+    limit: usize,
+    threads: usize,
+    threads_same: bool,
+}
+
+impl core::fmt::Display for BenchPrimesParams {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "(Nums={} Parallel={} Same={})", self.limit, self.threads, self.threads_same)
+    }
+}
+
 macro_rules! implementation {
     () => (
     impl Number {
@@ -68,16 +82,18 @@ macro_rules! implementation {
         criterion::black_box(nums2);
     }
 
-    pub fn populate_numbers(limit: usize, threads: usize) {
-        match threads {
+    pub fn populate_numbers(params: &crate::BenchPrimesParams) {
+        match params.threads {
             1 => {
-                populate_numbers_single(limit, 0);
+                populate_numbers_single(params.limit, 0);
             }
             _ => {
                 let mut children = vec![];
-                for i in 1..=threads {
+                for i in 1..=params.threads {
+                    let v = if params.threads_same { 0 } else { i };
+                    let l = params.limit;
                     children.push(std::thread::spawn(move || {
-                        populate_numbers_single(limit, i);
+                        populate_numbers_single(l, v);
                     }));
                 }
                 for c in children {
@@ -184,43 +200,30 @@ mod leak_hash_linear {
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 
-fn custom_criterion() -> Criterion {
-    Criterion::default().sample_size(25)
-}
-
-#[derive(Copy, Clone)]
-struct BenchPrimesParams {
-    max: usize,
-    threads: usize,
-}
-
-impl core::fmt::Display for BenchPrimesParams {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "(Nums={} Parallel={})", self.max, self.threads)
-    }
-}
-
 fn bench_primes(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Primes");
-    for t in [1, 2, 4, 8].iter() {
-        for i in [1000usize, 8000usize].iter() {
-            let params = BenchPrimesParams { max: *i, threads: *t };
-            group.bench_with_input(BenchmarkId::new("ArcHashLinear", params), &params,
-                |b, params| b.iter(|| arc_hash_linear::populate_numbers(black_box(params.max), black_box(params.threads))));
-            group.bench_with_input(BenchmarkId::new("ArcHashSorted", params), &params,
-                |b, params| b.iter(|| arc_hash_sorted::populate_numbers(black_box(params.max), black_box(params.threads))));
-            group.bench_with_input(BenchmarkId::new("ArcTovWeakTable", params), &params,
-                |b, params| b.iter(|| arc_tovweaktable::populate_numbers(black_box(params.max), black_box(params.threads))));
-            group.bench_with_input(BenchmarkId::new("LeakHashLinear", params), &params,
-                |b, params| b.iter(|| leak_hash_linear::populate_numbers(black_box(params.max), black_box(params.threads))));
+    for limit in [1000, 8000].iter() {
+        for same in [false, true].iter() {
+            let name = format!("Primes{}{}", *limit, if *same {"Same"} else {""});
+            let mut group = c.benchmark_group(name);
+            for threads in [1, 2, 4, 8].iter() {
+                let params = BenchPrimesParams { limit: *limit, threads: *threads, threads_same: *same };
+                group.bench_with_input(BenchmarkId::new("ArcHashLinear", params), &params,
+                    |b, params| b.iter(|| arc_hash_linear::populate_numbers(black_box(params))));
+                group.bench_with_input(BenchmarkId::new("ArcHashSorted", params), &params,
+                    |b, params| b.iter(|| arc_hash_sorted::populate_numbers(black_box(params))));
+                group.bench_with_input(BenchmarkId::new("ArcTovWeakTable", params), &params,
+                    |b, params| b.iter(|| arc_tovweaktable::populate_numbers(black_box(params))));
+                group.bench_with_input(BenchmarkId::new("LeakHashLinear", params), &params,
+                    |b, params| b.iter(|| leak_hash_linear::populate_numbers(black_box(params))));
+            }
+            group.finish();
         }
     }
-    group.finish();
 }
 
 criterion_group! {
     name = benches;
-    config = custom_criterion();
+    config = Criterion::default().sample_size(25).measurement_time(core::time::Duration::from_secs(20));
     targets = bench_primes
 }
 criterion_main!(benches);
