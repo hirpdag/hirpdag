@@ -280,7 +280,7 @@ fn get_default_normalizer(
         let fields_declarations = get_fields_declarations(fields_named);
         let fields_list = get_fields_list(fields_named);
         quote! {
-            fn new(#fields_declarations) -> Self {
+            pub fn new(#fields_declarations) -> Self {
                 Self::spawn(#fields_list)
             }
         }
@@ -609,7 +609,7 @@ pub fn hirpdag_end(
     let attrs = syn::parse_macro_input!(attr as HirpdagArgs);
     let config = HirpdagConfig::from(&attrs);
 
-    let guard = DATA_TYPES.lock().unwrap();
+    let mut guard = DATA_TYPES.lock().unwrap();
 
     let rewrite_methods = guard.iter().map(|name| get_rewrite_datatype(name)).fold(
         proc_macro2::TokenStream::new(),
@@ -642,6 +642,8 @@ pub fn hirpdag_end(
             s
         },
     );
+
+    guard.clear();
 
     let reference_type: proc_macro2::TokenStream = config.reference_type.parse().unwrap();
     let reference_weak_type: proc_macro2::TokenStream = config.reference_weak_type.parse().unwrap();
