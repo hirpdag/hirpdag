@@ -200,13 +200,18 @@ mod leak_hash_linear {
     implementation!();
 }
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{
+    black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
+    PlotConfiguration,
+};
 
 fn bench_primes(c: &mut Criterion) {
     for limit in [8000].iter() {
         for same in [false, true].iter() {
             let name = format!("Primes{}{}", *limit, if *same { "Same" } else { "" });
             let mut group = c.benchmark_group(name);
+            let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+            group.plot_config(plot_config);
             for threads in [1, 2, 4, 8].iter() {
                 let params = BenchPrimesParams {
                     limit: *limit,
