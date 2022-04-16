@@ -14,17 +14,5 @@ hirpdag_derive = {path = '../hirpdag_derive'}
 criterion = "0.3"
 
 [[bench]]
-name = "primes_arc_hash_linear"
-harness = false
-
-[[bench]]
-name = "primes_arc_hash_sorted"
-harness = false
-
-[[bench]]
-name = "primes_leak_hash_linear"
-harness = false
-
-[[bench]]
-name = "primes_arc_tov_weak_table"
+name = "primes"
 harness = false
