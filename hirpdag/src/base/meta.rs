@@ -48,6 +48,15 @@ impl HirpdagMeta {
             flags,
         }
     }
+    pub fn get_count(&self) -> HirpdagMetaCountType {
+        self.count
+    }
+    pub fn get_height(&self) -> HirpdagMetaHeightType {
+        self.height
+    }
+    pub fn get_flags(&self) -> HirpdagMetaFlagType {
+        self.flags
+    }
 }
 
 impl std::iter::Sum for HirpdagMeta {
