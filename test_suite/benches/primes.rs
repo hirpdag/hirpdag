@@ -1,3 +1,7 @@
+// This benchmark Number nodes, from 1 up to benchmark size N.
+// Each node has a vector of references to its prime factors (empty if prime),
+// and if it is prime it has a reference to the previous prime number.
+
 #[derive(Copy, Clone)]
 pub struct BenchPrimesParams {
     limit: usize,
@@ -17,13 +21,8 @@ impl core::fmt::Display for BenchPrimesParams {
 
 macro_rules! implementation {
     () => {
-        impl Number {
-            fn is_prime(&self) -> bool {
-                self.factors.is_empty()
-            }
-        }
-
-        fn factors(n: usize, nums: &Vec<Number>) -> Vec<Number> {
+        // Returns empty vector if n is prime.
+        fn prime_factorize(n: usize) -> Vec<usize> {
             if n <= 3 {
                 return vec![];
             }
@@ -34,7 +33,7 @@ macro_rules! implementation {
                 let mut found = false;
                 for i in 2..=sqrt_m {
                     if (i * (m / i)) == m {
-                        result.push(nums[i].clone());
+                        result.push(i);
                         m = m / i;
                         found = true;
                         break;
@@ -43,6 +42,10 @@ macro_rules! implementation {
                 if !found {
                     break;
                 }
+            }
+            if m != n {
+                // The remainder is also a prime factor.
+                result.push(m);
             }
             result
         }
@@ -61,7 +64,7 @@ macro_rules! implementation {
             fn rewrite_Number(&self, x: &Number) -> Number {
                 Number::new(
                     x.n,
-                    self.rewrite(&x.factors),
+                    self.rewrite(&x.prime_factors),
                     self.rewrite(&x.last_prime),
                     x.v + self.inc,
                 )
@@ -71,15 +74,24 @@ macro_rules! implementation {
         fn populate_numbers_single(limit: usize, v: usize) {
             let mut nums: Vec<Number> = vec![];
             let mut last_prime: Option<Number> = None;
-            for n in 0..limit {
-                let a: Number = Number::new(n, factors(n, &nums), last_prime.take(), v);
-                if a.is_prime() && n > 0 {
+            for n in 1..=limit {
+                let f: Vec<Number> = prime_factorize(n)
+                    .iter()
+                    .map(|&n| {
+                        let nn = &nums[n - 1];
+                        assert_eq!(n, nn.n);
+                        nn.clone()
+                    })
+                    .collect();
+                let prime = f.is_empty() && n >= 2; // 2 is the first prime
+                let a: Number = Number::new(n, f, if prime { last_prime.take() } else { None }, v);
+                if prime {
                     last_prime = Some(a.clone());
                 }
                 nums.push(a);
             }
 
-            // Increment rewrite
+            // Increment v rewrite
             let t_inc = IncrementVBy::new(1);
             let nums2 = t_inc.rewrite(&nums);
             criterion::black_box(nums2);
@@ -114,7 +126,7 @@ mod arc_hash_linear {
     #[hirpdag]
     struct Number {
         n: usize,
-        factors: Vec<Number>,
+        prime_factors: Vec<Number>,
         last_prime: Option<Number>,
         v: usize,
     }
@@ -137,7 +149,7 @@ mod arc_hash_sorted {
     #[hirpdag]
     struct Number {
         n: usize,
-        factors: Vec<Number>,
+        prime_factors: Vec<Number>,
         last_prime: Option<Number>,
         v: usize,
     }
@@ -160,7 +172,7 @@ mod arc_tovweaktable {
     #[hirpdag]
     struct Number {
         n: usize,
-        factors: Vec<Number>,
+        prime_factors: Vec<Number>,
         last_prime: Option<Number>,
         v: usize,
     }
@@ -183,7 +195,7 @@ mod leak_hash_linear {
     #[hirpdag]
     struct Number {
         n: usize,
-        factors: Vec<Number>,
+        prime_factors: Vec<Number>,
         last_prime: Option<Number>,
         v: usize,
     }
