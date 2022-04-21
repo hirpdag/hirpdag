@@ -218,7 +218,7 @@ use criterion::{
 };
 
 fn bench_primes(c: &mut Criterion) {
-    for limit in [8000].iter() {
+    for limit in [2000].iter() {
         for same in [false, true].iter() {
             let name = format!("Primes{}{}", *limit, if *same { "Same" } else { "" });
             let mut group = c.benchmark_group(name);
@@ -258,7 +258,7 @@ fn bench_primes(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(25).measurement_time(core::time::Duration::from_secs(20));
+    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(30));
     targets = bench_primes
 }
 criterion_main!(benches);
