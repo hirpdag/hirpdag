@@ -142,10 +142,10 @@ fn expr_substitute_test() {
 
 ## Benchmark Results
 
-![Primes8000](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes8000_violin.svg)
-![Primes8000Same](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes8000same_violin.svg)
+![Primes2000](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000_violin.svg)
+![Primes2000Same](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000same_violin.svg)
 
-At [commit](https://github.com/hirpdag/hirpdag/commit/e33d26f9cbc5838150a15c4c081785692c3f66a4) on `AMD Ryzen 9 3900X 12-Core Processor`
+At [commit](https://github.com/hirpdag/hirpdag/commit/1a0f57d932a6344d5ad9d09c9fe98e2425363ee5) on `AMD Ryzen 9 3900X 12-Core Processor`
 
 ## Building Documentation
 
