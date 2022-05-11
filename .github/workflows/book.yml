@@ -49,4 +49,4 @@ jobs:
         deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
         external_repository: hirpdag/hirpdag.github.io
         publish_branch: main
-        publish_dir: ./book
+        destination_dir: book
