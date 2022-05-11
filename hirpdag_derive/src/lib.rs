@@ -48,19 +48,17 @@ impl syn::parse::Parse for HirpdagArg {
         let has_value = opeq.is_some() && value_lit.is_some();
         let key = key_ident.to_string();
         match key.as_str() {
-            "normalizer" => {
-                return Ok(HirpdagArg::Normalizer);
-            }
+            "normalizer" => Ok(HirpdagArg::Normalizer),
             "reference_type" => {
                 if has_value {
                     if let syn::Lit::Str(s) = value_lit.unwrap() {
                         return Ok(HirpdagArg::ReferenceType(s.value()));
                     }
                 }
-                return Err(syn::Error::new(
+                Err(syn::Error::new(
                     input.span(),
                     "HirpdagArg key reference_type requires a string argument.",
-                ));
+                ))
             }
             "reference_weak_type" => {
                 if has_value {
@@ -68,10 +66,10 @@ impl syn::parse::Parse for HirpdagArg {
                         return Ok(HirpdagArg::ReferenceWeakType(s.value()));
                     }
                 }
-                return Err(syn::Error::new(
+                Err(syn::Error::new(
                     input.span(),
                     "HirpdagArg key reference_weak_type requires a string argument.",
-                ));
+                ))
             }
             "table_type" => {
                 if has_value {
@@ -79,10 +77,10 @@ impl syn::parse::Parse for HirpdagArg {
                         return Ok(HirpdagArg::TableType(s.value()));
                     }
                 }
-                return Err(syn::Error::new(
+                Err(syn::Error::new(
                     input.span(),
                     "HirpdagArg key table_type requires a string argument.",
-                ));
+                ))
             }
             "tableshared_type" => {
                 if has_value {
@@ -90,10 +88,10 @@ impl syn::parse::Parse for HirpdagArg {
                         return Ok(HirpdagArg::TableSharedType(s.value()));
                     }
                 }
-                return Err(syn::Error::new(
+                Err(syn::Error::new(
                     input.span(),
                     "HirpdagArg key tableshared_type requires a string argument.",
-                ));
+                ))
             }
             "build_tableshared_type" => {
                 if has_value {
@@ -101,14 +99,12 @@ impl syn::parse::Parse for HirpdagArg {
                         return Ok(HirpdagArg::BuildTableSharedType(s.value()));
                     }
                 }
-                return Err(syn::Error::new(
+                Err(syn::Error::new(
                     input.span(),
                     "HirpdagArg key build_tableshared_type requires a string argument.",
-                ));
+                ))
             }
-            _ => {
-                return Err(syn::Error::new(input.span(), "HirpdagArg key unrecognised"));
-            }
+            _ => Err(syn::Error::new(input.span(), "HirpdagArg key unrecognised")),
         }
     }
 }

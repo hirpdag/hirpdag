@@ -25,10 +25,7 @@ where
 {
     fn get(&self, hash: u64, data: &D) -> Option<R> {
         // Linear search
-        for existing in self.v.iter().filter_map(|x| x.get(hash, data)) {
-            return Some(existing);
-        }
-        None
+        self.v.iter().filter_map(|x| x.get(hash, data)).next()
     }
 
     fn get_or_insert<CF>(&mut self, hash: u64, mut data: D, creation_meta: CF) -> R

@@ -25,7 +25,7 @@ impl HirpdagMeta {
         self
     }
     pub fn add_flags(mut self, flag: HirpdagMetaFlagType) -> Self {
-        self.flags = self.flags | flag;
+        self.flags |= flag;
         self
     }
     pub fn fold(self, other: Self) -> Self {

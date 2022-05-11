@@ -24,7 +24,7 @@ where
         Range: Iterator<Item = usize>,
     {
         for x in range {
-            let m = self.v[x].get_existing_near(hash, &data);
+            let m = self.v[x].get_existing_near(hash, data);
             match m {
                 Err(()) => {
                     break;
@@ -71,15 +71,12 @@ where
     fn get(&self, hash: u64, data: &D) -> Option<R> {
         // Binary search
         let result = self.v.binary_search_by(|probe| probe.hash_cmp(&hash));
-        match result {
-            Ok(idx) => {
-                // Linear search up and down
-                if let Some(p) = self.linear_search_around(idx, hash, data) {
-                    return Some(p);
-                }
+        if let Ok(idx) = result {
+            // Linear search up and down
+            if let Some(p) = self.linear_search_around(idx, hash, data) {
+                return Some(p);
             }
-            Err(_) => {}
-        };
+        }
         None
     }
 
@@ -106,6 +103,6 @@ where
         let weak = RW::weak_downgrade(&obj);
         self.v.insert(index, WeakEntry::new(hash, weak));
 
-        return obj;
+        obj
     }
 }

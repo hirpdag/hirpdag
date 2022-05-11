@@ -38,7 +38,7 @@ where
     RW: ReferenceWeak<D, R> + WeakKey<Key = D> + WeakElement<Strong = R>,
 {
     fn get(&self, _hash: u64, data: &D) -> Option<R> {
-        self.m.get(&data)
+        self.m.get(data)
     }
 
     fn get_or_insert<CF>(&mut self, _hash: u64, mut data: D, creation_meta: CF) -> R

@@ -17,10 +17,7 @@ impl<T> HirpdagRewritable<T> for String {
 
 impl<T, D: HirpdagRewritable<T>> HirpdagRewritable<T> for Option<D> {
     fn hirpdag_rewrite(&self, rewriter: &T) -> Option<D> {
-        match self {
-            Some(ii) => Some(ii.hirpdag_rewrite(rewriter)),
-            None => None,
-        }
+        self.as_ref().map(|ii| ii.hirpdag_rewrite(rewriter))
     }
 }
 

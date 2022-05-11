@@ -49,7 +49,7 @@ where
                 }
             }
         }
-        self.fallback.get(hash, &data)
+        self.fallback.get(hash, data)
     }
 
     fn get_or_insert<CF>(&mut self, hash: u64, mut data: D, creation_meta: CF) -> R
