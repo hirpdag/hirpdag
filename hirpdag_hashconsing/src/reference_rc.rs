@@ -23,7 +23,7 @@ where
     }
 
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool {
-        std::rc::Rc::<D>::ptr_eq(&a, &b)
+        std::rc::Rc::<D>::ptr_eq(a, b)
     }
 }
 

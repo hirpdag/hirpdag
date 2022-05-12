@@ -91,8 +91,8 @@ where
 {
     pub fn with_builders(table_builder: TB, hash_builder: HB) -> Self {
         Self {
-            table_builder: table_builder,
-            hash_builder: hash_builder,
+            table_builder,
+            hash_builder,
 
             phantom_d: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,

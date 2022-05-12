@@ -17,8 +17,8 @@ where
 {
     pub fn new(hash: u64, weak: RW) -> Self {
         Self {
-            hash: hash,
-            weak: weak,
+            hash,
+            weak,
 
             phantom_t: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,

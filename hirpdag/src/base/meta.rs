@@ -38,7 +38,7 @@ impl HirpdagMeta {
             flags,
         }
     }
-    pub fn fold_ref<'a>(self, other: &'a Self) -> Self {
+    pub fn fold_ref(self, other: &Self) -> Self {
         let count = self.count.saturating_add(other.count);
         let height = std::cmp::max(self.height, other.height);
         let flags = self.flags | other.flags;

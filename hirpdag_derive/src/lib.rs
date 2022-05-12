@@ -298,7 +298,7 @@ fn expand_hirpdag_struct(
         guard.push(name_str.clone());
     }
 
-    let hirpdag_ref_name_str = format!("{}", name_str);
+    let hirpdag_ref_name_str = name_str.to_string();
     let hirpdag_ref_name = Ident::new(&hirpdag_ref_name_str, Span::call_site());
 
     let hirpdag_struct_name_str = format!("HirpdagStruct{}", name_str);
