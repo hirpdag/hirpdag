@@ -21,22 +21,27 @@ jobs:
         toolchain: stable
         components: rustfmt, clippy
         default: true
-    - uses: actions-rs/cargo@v1
+    - name: UnitTests
+      uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all-features --all-targets
-    - uses: actions-rs/cargo@v1
+        args: --all-features --tests
+    - name: DocTests
+      uses: actions-rs/cargo@v1
       with:
         command: test
         args: --all-features --doc
-    - uses: actions-rs/cargo@v1
+    - name: Check
+      uses: actions-rs/cargo@v1
       with:
         command: check
         args: --no-default-features
-    - uses: actions-rs/cargo@v1
+    - name: Fmt
+      uses: actions-rs/cargo@v1
       with:
         command: fmt
         args: -- --check
-    - uses: actions-rs/cargo@v1
+    - name: Clippy
+      uses: actions-rs/cargo@v1
       with:
         command: clippy
