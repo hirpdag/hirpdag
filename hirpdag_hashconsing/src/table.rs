@@ -42,17 +42,13 @@ where
     T: Default,
 {
     fn default() -> Self {
-        Self {
-            0: std::marker::PhantomData,
-        }
+        Self(std::marker::PhantomData)
     }
 }
 
 impl<T> Clone for BuildTableDefault<T> {
     fn clone(&self) -> Self {
-        Self {
-            0: std::marker::PhantomData,
-        }
+        Self(std::marker::PhantomData)
     }
 }
 
