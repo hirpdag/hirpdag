@@ -42,69 +42,60 @@ enum HirpdagArg {
 
 impl syn::parse::Parse for HirpdagArg {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let key_ident: Ident = input.parse()?;
+        let arg_name_ident: Ident = input.parse()?;
         let opeq: Option<syn::Token![=]> = input.parse()?;
         let value_lit: Option<syn::Lit> = input.parse()?;
-        let has_value = opeq.is_some() && value_lit.is_some();
-        let key = key_ident.to_string();
-        match key.as_str() {
-            "normalizer" => Ok(HirpdagArg::Normalizer),
+        let arg_name = arg_name_ident.to_string();
+        enum Handler {
+            /// Argument name is not recognised
+            NotRecognised,
+            /// Flag is present or not
+            Flag(fn() -> syn::Result<HirpdagArg>),
+            /// String literal
+            String(fn(&syn::LitStr) -> syn::Result<HirpdagArg>),
+        }
+        let arg_handler = match arg_name.as_str() {
+            "normalizer" => Handler::Flag(|| Ok(Self::Normalizer)),
             "reference_type" => {
-                if has_value {
-                    if let syn::Lit::Str(s) = value_lit.unwrap() {
-                        return Ok(HirpdagArg::ReferenceType(s.value()));
-                    }
-                }
-                Err(syn::Error::new(
-                    input.span(),
-                    "HirpdagArg key reference_type requires a string argument.",
-                ))
+                Handler::String(|s: &syn::LitStr| Ok(Self::ReferenceType(s.value())))
             }
             "reference_weak_type" => {
-                if has_value {
-                    if let syn::Lit::Str(s) = value_lit.unwrap() {
-                        return Ok(HirpdagArg::ReferenceWeakType(s.value()));
-                    }
-                }
-                Err(syn::Error::new(
-                    input.span(),
-                    "HirpdagArg key reference_weak_type requires a string argument.",
-                ))
+                Handler::String(|s: &syn::LitStr| Ok(Self::ReferenceWeakType(s.value())))
             }
-            "table_type" => {
-                if has_value {
-                    if let syn::Lit::Str(s) = value_lit.unwrap() {
-                        return Ok(HirpdagArg::TableType(s.value()));
-                    }
-                }
-                Err(syn::Error::new(
-                    input.span(),
-                    "HirpdagArg key table_type requires a string argument.",
-                ))
-            }
+            "table_type" => Handler::String(|s: &syn::LitStr| Ok(Self::TableType(s.value()))),
             "tableshared_type" => {
-                if has_value {
-                    if let syn::Lit::Str(s) = value_lit.unwrap() {
-                        return Ok(HirpdagArg::TableSharedType(s.value()));
-                    }
-                }
-                Err(syn::Error::new(
-                    input.span(),
-                    "HirpdagArg key tableshared_type requires a string argument.",
-                ))
+                Handler::String(|s: &syn::LitStr| Ok(Self::TableSharedType(s.value())))
             }
             "build_tableshared_type" => {
-                if has_value {
-                    if let syn::Lit::Str(s) = value_lit.unwrap() {
-                        return Ok(HirpdagArg::BuildTableSharedType(s.value()));
-                    }
-                }
-                Err(syn::Error::new(
-                    input.span(),
-                    "HirpdagArg key build_tableshared_type requires a string argument.",
-                ))
+                Handler::String(|s: &syn::LitStr| Ok(Self::BuildTableSharedType(s.value())))
             }
-            _ => Err(syn::Error::new(input.span(), "HirpdagArg key unrecognised")),
+            _ => Handler::NotRecognised,
+        };
+        match arg_handler {
+            Handler::NotRecognised => Err(syn::Error::new(
+                input.span(),
+                format!("HirpdagArg {} was not recognised", arg_name.as_str()),
+            )),
+            Handler::String(build_arg) => {
+                if opeq.is_none() {
+                    return Err(syn::Error::new(
+                        input.span(),
+                        "HirpdagArg expected = syntax.",
+                    ));
+                }
+                if let Some(syn::Lit::Str(s)) = value_lit {
+                    build_arg(&s)
+                } else {
+                    Err(syn::Error::new(
+                        input.span(),
+                        format!(
+                            "HirpdagArg {} requires a string argument.",
+                            arg_name.as_str()
+                        ),
+                    ))
+                }
+            }
+            Handler::Flag(build_arg) => build_arg(),
         }
     }
 }
