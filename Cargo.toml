@@ -5,3 +5,5 @@ members = [
     "hirpdag_derive",
     "test_suite",
 ]
+
+resolver = "2"
