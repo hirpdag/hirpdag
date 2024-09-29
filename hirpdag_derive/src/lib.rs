@@ -179,14 +179,11 @@ pub fn hirpdag(
 
 fn expand_hirpdag(attrs: &HirpdagArgs, input: &syn::DeriveInput) -> proc_macro2::TokenStream {
     let config = HirpdagConfig::from(attrs);
-    let tokens = match &input.data {
+    match &input.data {
         syn::Data::Struct(s) => expand_hirpdag_struct(&config, input, s),
         syn::Data::Enum(e) => expand_hirpdag_enum(&config, input, e),
         _ => panic!("`#[Hirpdag]` can only be applied to named structs and enums"),
-    };
-    // For debugging:
-    // eprintln!("TOKENS:\n{}", tokens);
-    tokens
+    }
 }
 
 fn get_fields_named(input_struct: &syn::DataStruct) -> &syn::FieldsNamed {
