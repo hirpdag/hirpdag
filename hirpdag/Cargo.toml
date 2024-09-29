@@ -12,4 +12,4 @@ description = "Library and procedural macros for Hash Consed, Immutable, Referen
 [dependencies]
 hirpdag_hashconsing = { version = "0.1.1", path = '../hirpdag_hashconsing' }
 hirpdag_derive = { version = "0.1.1", path = "../hirpdag_derive" }
-lazy_static = "1.4.0"
+lazy_static = "1.5.0"

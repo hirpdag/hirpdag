@@ -12,5 +12,5 @@ description = "Various hashconsing implementations with a common interface."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-weak-table = "0.3.0"
+weak-table = "0.3.2"
 array-init = "1.0.0"
