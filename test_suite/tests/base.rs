@@ -25,6 +25,43 @@ pub struct MessageC {
 #[hirpdag_end]
 pub struct HirpdagEndMarker;
 
+/// Test that the creation-order Ord is semantically correct:
+/// if A refers to B, then B < A.
+#[test]
+fn test_ord_creation_order() {
+    // Use unique field values to avoid hash-consing returning pre-existing nodes
+    // from other tests (which would have earlier creation IDs).
+    let leaf = MessageA::new(88881, "ord_leaf_unique".to_string(), None, 88881);
+    let parent = MessageA::new(88881, "ord_parent_unique".to_string(), Some(leaf.clone()), 88881);
+
+    // parent refers to leaf, so leaf was interned first → leaf < parent
+    assert!(leaf < parent, "leaf should be less than parent (leaf was created first)");
+    assert!(parent > leaf);
+
+    // A node must compare equal to itself
+    assert_eq!(leaf.cmp(&leaf), std::cmp::Ordering::Equal);
+    assert_eq!(parent.cmp(&parent), std::cmp::Ordering::Equal);
+}
+
+/// Test that hirpdag_cmp_deep performs a structural (deep) comparison.
+#[test]
+fn test_hirpdag_cmp_deep() {
+    let a = MessageA::new(77771, "deep_a_unique".to_string(), None, 77771);
+    let b = MessageA::new(77771, "deep_b_unique".to_string(), None, 77771);
+
+    // Structurally "deep_a_unique" < "deep_b_unique"
+    assert_eq!(
+        a.hirpdag_cmp_deep(&b),
+        std::cmp::Ordering::Less,
+        "deep cmp should compare structurally"
+    );
+    assert_eq!(
+        a.hirpdag_cmp_deep(&a),
+        std::cmp::Ordering::Equal,
+        "deep cmp of same node should be Equal"
+    );
+}
+
 fn print_hash<T: std::hash::Hash>(t: &T) {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::Hasher;
