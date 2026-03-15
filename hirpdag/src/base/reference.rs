@@ -79,6 +79,24 @@ where
     pub fn hirpdag_get_meta(&self) -> &HirpdagMeta {
         &R::strong_deref(&self.0).hirpdag_meta
     }
+
+    /// Returns the creation ID of this node.
+    ///
+    /// Creation IDs are assigned monotonically: if node B is a dependency of node A
+    /// (A was created after B), then B's creation ID is strictly less than A's.
+    pub fn hirpdag_get_creation_id(&self) -> u64 {
+        R::strong_deref(&self.0).hirpdag_creation_id
+    }
+
+    /// Deep structural comparison of the underlying data, independent of creation order.
+    ///
+    /// This is O(n) in the size of the DAG. Prefer `cmp` (creation-ID based) for
+    /// ordering purposes; use this only when structural order is specifically needed.
+    pub fn hirpdag_cmp_deep(&self, other: &Self) -> std::cmp::Ordering {
+        R::strong_deref(&self.0)
+            .hirpdag_data
+            .cmp(&R::strong_deref(&other.0).hirpdag_data)
+    }
 }
 
 impl<D, R> HirpdagComputeMeta for HirpdagRef<D, R>
@@ -103,8 +121,15 @@ where
 
 // ==== Hashcons Storage Base
 
+/// Global monotonically increasing counter used to assign creation IDs to new nodes.
+static HIRPDAG_CREATION_COUNTER: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
 pub struct HirpdagStorage<D: HirpdagStruct> {
     hirpdag_meta: HirpdagMeta,
+    /// Monotonically increasing ID assigned at creation time.
+    /// Nodes created earlier (and thus potentially depended upon by later nodes) have lower IDs.
+    hirpdag_creation_id: u64,
     hirpdag_data: D,
 }
 
@@ -189,11 +214,14 @@ where
     pub fn hirpdag_hashcons(&self, data: D) -> HirpdagRef<D, R> {
         let storage = HirpdagStorage::<D> {
             hirpdag_meta: HirpdagMeta::zero(),
+            hirpdag_creation_id: 0,
             hirpdag_data: data,
         };
         let compute_hirpdag_meta = |s: &mut HirpdagStorage<D>| {
             let meta = s.hirpdag_data.hirpdag_compute_meta();
             s.hirpdag_meta = meta;
+            s.hirpdag_creation_id = HIRPDAG_CREATION_COUNTER
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         };
 
         HirpdagRef(

@@ -218,9 +218,16 @@ fn expand_hirpdag_struct(
             }
         }
         impl std::cmp::Ord for #hirpdag_ref_name {
+            /// Semantically-aware ordering based on creation order.
+            ///
+            /// If node B is a dependency of node A (B must be created before A),
+            /// then B < A. Equal if both references point to the same interned node.
             fn cmp(&self, other: &#hirpdag_ref_name) -> std::cmp::Ordering {
-                // TODO: This should be more efficient, not a deep comparison.
-                ((*(self.0))).cmp(&(*(other.0)))
+                if self == other {
+                    std::cmp::Ordering::Equal
+                } else {
+                    self.0.hirpdag_get_creation_id().cmp(&other.0.hirpdag_get_creation_id())
+                }
             }
         }
 
@@ -234,6 +241,15 @@ fn expand_hirpdag_struct(
             fn spawn(#fields_declarations) -> Self {
                 let data = #hirpdag_struct_name { #fields_list };
                 Self(data.hirpdag_hashcons())
+            }
+
+            /// Deep structural comparison of the underlying data, independent of creation order.
+            ///
+            /// This is the previous default `Ord` behaviour. It is O(n) in the size of the DAG.
+            /// Prefer `cmp` (creation-ID based) for ordering; use this only when structural
+            /// order is specifically needed.
+            pub fn hirpdag_cmp_deep(&self, other: &Self) -> std::cmp::Ordering {
+                self.0.hirpdag_cmp_deep(&other.0)
             }
 
             // If normalizer is not provided, generate one.

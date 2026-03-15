@@ -2,9 +2,13 @@
 
 ### Hashconsing optimization experiments
 
-- [P0] Optimize HirpdagRef implemetation of Ord:
-  - Should not need to do a deep cmp.
-  - Consider creation timestamp.
+- ~~[P0] Optimize HirpdagRef implemetation of Ord:~~
+  - ~~Should not need to do a deep cmp.~~
+  - ~~Consider creation timestamp.~~
+  - DONE: `HirpdagStorage` now carries a `hirpdag_creation_id: u64` (assigned from a global
+    atomic counter at interning time). `HirpdagRef::cmp` uses pointer equality (O(1) fast
+    path) then falls back to comparing creation IDs (O(1)). The previous deep structural
+    comparison is still available as `hirpdag_cmp_deep()`.
 
 - [P0] Optimize rewrite code:
   - If no changes we can copy input reference instead of hashconsing to reproduce it.
