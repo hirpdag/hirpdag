@@ -13,4 +13,4 @@ description = "Various hashconsing implementations with a common interface."
 
 [dependencies]
 weak-table = "0.3.2"
-array-init = "1.0.0"
+array-init = "2.1.0"
