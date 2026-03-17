@@ -13,5 +13,5 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "1.0", features = ["visit"] }
+syn = { version = "2.0", features = ["visit"] }
 lazy_static = "1.5.0"
