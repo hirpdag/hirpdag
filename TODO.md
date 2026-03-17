@@ -7,10 +7,11 @@
   - Consider creation timestamp.
 
 - Make memory allocation for hirpdag objects contiguous.
+  - Can this be done by using https://github.com/rkyv/rkyv ?
+
 
 - Optimize for small objects:
-  - Just pack data into the handle type if less than 128bytes.
-  - Warning if Hirpdag attribute is added to a struct which seems too small to benefit.
+  - Just pack data into the handle type if less than 64bits (or 128bits?).
 
 - Make hirpdag objects use read-only optimized datastructures.
   - e.g. If object contains a hashmap make it use perfect hashing (e.g https://lib.rs/crates/phf)
@@ -26,6 +27,8 @@
   - If no changes we can copy input reference instead of hashconsing to reproduce it.
   - Minimize reference count operations.
 
+- Caching for `ref.hirpdag_compute_meta()`. e.g. `ref.hirpdag_compute_meta(meta_cache)`.
+
 - Experiment with doing deallocation work on another thread when RC==0.
 
 ### Experiment with more refcounting implementations
@@ -35,13 +38,18 @@
     due to ref count updates.
   - https://users.rust-lang.org/t/why-does-arc-use-one-contiguous-allocation-for-data-and-counters/113319
   - https://ddanilov.me/shared-ptr-is-evil/
-  - Try padding ref counts to one (pair, strong and weak) per cacheline.
+  - Store one pointer for two locations (ref counts + data) by allocating relative locations.
+  - Try padding ref counts to one (pair, strong and weak) per cacheline. Look for performance/space trade-off.
 
 - Thread local reference counts, periodically flush back to main counter.
   - Is this even possible? Is it good?
   - Allow thread local counts to go negative (e.g. thread recieves many Rc handles to drop)?
 
 ### More benchmarks
+
+- More benchmark programs.
+
+- Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
 
 ### Code cleanup
 
@@ -68,3 +76,6 @@
 
 - IPC (hirpdag objects in shared memory, used from multiple processes)
   - Maybe special support for producer/consumer pattern? - only one process creates hirpdag objects
+
+- Warning if Hirpdag is used in a probably-wrong way
+  - Adding the hirpdag attribute to struct which only contains 1 field and it is a hirpdag ref.
