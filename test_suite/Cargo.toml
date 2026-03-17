@@ -11,7 +11,7 @@ hirpdag = {path = '../hirpdag'}
 
 [dev-dependencies]
 hirpdag_derive = {path = '../hirpdag_derive'}
-criterion = "0.3"
+criterion = "0.8"
 
 [[bench]]
 name = "primes"
