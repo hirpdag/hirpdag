@@ -213,8 +213,7 @@ mod leak_hash_linear {
 }
 
 use criterion::{
-    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
-    PlotConfiguration,
+    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
 };
 
 fn bench_primes(c: &mut Criterion) {
@@ -233,22 +232,30 @@ fn bench_primes(c: &mut Criterion) {
                 group.bench_with_input(
                     BenchmarkId::new("ArcHashLinear", params),
                     &params,
-                    |b, params| b.iter(|| arc_hash_linear::populate_numbers(std::hint::black_box(params))),
+                    |b, params| {
+                        b.iter(|| arc_hash_linear::populate_numbers(std::hint::black_box(params)))
+                    },
                 );
                 group.bench_with_input(
                     BenchmarkId::new("ArcHashSorted", params),
                     &params,
-                    |b, params| b.iter(|| arc_hash_sorted::populate_numbers(std::hint::black_box(params))),
+                    |b, params| {
+                        b.iter(|| arc_hash_sorted::populate_numbers(std::hint::black_box(params)))
+                    },
                 );
                 group.bench_with_input(
                     BenchmarkId::new("ArcTovWeakTable", params),
                     &params,
-                    |b, params| b.iter(|| arc_tovweaktable::populate_numbers(std::hint::black_box(params))),
+                    |b, params| {
+                        b.iter(|| arc_tovweaktable::populate_numbers(std::hint::black_box(params)))
+                    },
                 );
                 group.bench_with_input(
                     BenchmarkId::new("LeakHashLinear", params),
                     &params,
-                    |b, params| b.iter(|| leak_hash_linear::populate_numbers(std::hint::black_box(params))),
+                    |b, params| {
+                        b.iter(|| leak_hash_linear::populate_numbers(std::hint::black_box(params)))
+                    },
                 );
             }
             group.finish();
