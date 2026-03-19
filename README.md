@@ -142,6 +142,42 @@ fn expr_substitute_test() {
 }
 ```
 
+## Builder API
+
+Each `#[hirpdag]` struct gets a generated builder for ergonomic construction and
+non-destructive modification of nodes.
+
+```rust
+use hirpdag::*;
+
+#[hirpdag]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+#[hirpdag_end]
+pub struct HirpdagEndMarker;
+
+// Construct a new node via the builder.
+let p: Point = Point::builder()
+    .x(1)
+    .y(2)
+    .build();
+
+assert_eq!(p, Point::new(1, 2));
+
+// Derive a modified copy with to_builder() — the original is unchanged.
+let q: Point = p.to_builder().y(99).build();
+
+assert_eq!(q, Point::new(1, 99));
+assert_eq!(p, Point::new(1, 2)); // p is unmodified
+```
+
+Because hirpdag nodes are hash-consed, `build()` will return the existing
+interned node if an identical one already exists, so no duplicate allocation
+occurs.
+
 ## Benchmark Results
 
 ![Primes2000](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000_violin.svg)
