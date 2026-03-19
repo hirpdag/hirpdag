@@ -16,3 +16,15 @@ criterion = "0.8"
 [[bench]]
 name = "primes"
 harness = false
+
+[[bench]]
+name = "fibonacci"
+harness = false
+
+[[bench]]
+name = "rewrite_chain"
+harness = false
+
+[[bench]]
+name = "expr_substitution"
+harness = false
