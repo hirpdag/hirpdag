@@ -30,7 +30,7 @@ where
     }
 
     fn strong_deref(ptr: &Self) -> &D {
-        &***ptr
+        ptr
     }
 
     fn strong_clone(ptr: &Self) -> Self {

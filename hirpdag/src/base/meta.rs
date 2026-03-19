@@ -87,7 +87,7 @@ impl HirpdagComputeMeta for String {
     }
 }
 
-impl<'a> HirpdagComputeMeta for &'a str {
+impl HirpdagComputeMeta for &str {
     fn hirpdag_compute_meta(&self) -> HirpdagMeta {
         HirpdagMeta::zero()
     }

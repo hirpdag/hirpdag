@@ -23,9 +23,8 @@ fn make_hash<K: std::hash::Hash + ?Sized>(
     val: &K,
 ) -> u64 {
     use std::hash::Hasher;
-    let mut state = hash_builder.build_hasher();
-    val.hash(&mut state);
-    state.finish()
+
+    hash_builder.hash_one(&val)
 }
 
 impl<D, R, T, HB> TableShared<D, R, T> for TableSharedMutex<D, R, T, HB>
