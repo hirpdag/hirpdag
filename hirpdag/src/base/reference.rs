@@ -220,8 +220,8 @@ where
         let compute_hirpdag_meta = |s: &mut HirpdagStorage<D>| {
             let meta = s.hirpdag_data.hirpdag_compute_meta();
             s.hirpdag_meta = meta;
-            s.hirpdag_creation_id = HIRPDAG_CREATION_COUNTER
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            s.hirpdag_creation_id =
+                HIRPDAG_CREATION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         };
 
         HirpdagRef(

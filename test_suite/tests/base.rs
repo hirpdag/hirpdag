@@ -32,10 +32,18 @@ fn test_ord_creation_order() {
     // Use unique field values to avoid hash-consing returning pre-existing nodes
     // from other tests (which would have earlier creation IDs).
     let leaf = MessageA::new(88881, "ord_leaf_unique".to_string(), None, 88881);
-    let parent = MessageA::new(88881, "ord_parent_unique".to_string(), Some(leaf.clone()), 88881);
+    let parent = MessageA::new(
+        88881,
+        "ord_parent_unique".to_string(),
+        Some(leaf.clone()),
+        88881,
+    );
 
     // parent refers to leaf, so leaf was interned first → leaf < parent
-    assert!(leaf < parent, "leaf should be less than parent (leaf was created first)");
+    assert!(
+        leaf < parent,
+        "leaf should be less than parent (leaf was created first)"
+    );
     assert!(parent > leaf);
 
     // A node must compare equal to itself
