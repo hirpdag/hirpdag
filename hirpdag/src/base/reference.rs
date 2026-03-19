@@ -165,7 +165,7 @@ where
     D: HirpdagStruct,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.hirpdag_data.cmp(&other.hirpdag_data))
+        Some(self.cmp(other))
     }
 }
 
