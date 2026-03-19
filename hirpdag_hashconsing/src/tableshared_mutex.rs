@@ -22,9 +22,7 @@ fn make_hash<K: std::hash::Hash + ?Sized>(
     hash_builder: &impl std::hash::BuildHasher,
     val: &K,
 ) -> u64 {
-    use std::hash::Hasher;
-
-    hash_builder.hash_one(&val)
+    hash_builder.hash_one(val)
 }
 
 impl<D, R, T, HB> TableShared<D, R, T> for TableSharedMutex<D, R, T, HB>
