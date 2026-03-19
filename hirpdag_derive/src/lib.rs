@@ -110,6 +110,69 @@ fn get_fields_rewrite(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
     quote! { #fields_rewrite }
 }
 
+fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+            let name = field.ident.as_ref().unwrap();
+            let ty = &field.ty;
+            s.extend(quote! { #name: Option<#ty>, });
+            s
+        })
+}
+
+fn get_builder_setters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+            let name = field.ident.as_ref().unwrap();
+            let ty = &field.ty;
+            s.extend(quote! {
+                pub fn #name(mut self, value: #ty) -> Self {
+                    self.#name = Some(value);
+                    self
+                }
+            });
+            s
+        })
+}
+
+fn get_builder_none_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+            let name = field.ident.as_ref().unwrap();
+            s.extend(quote! { #name: None, });
+            s
+        })
+}
+
+fn get_builder_from_node_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+            let name = field.ident.as_ref().unwrap();
+            s.extend(quote! { #name: Some(node.#name.clone()), });
+            s
+        })
+}
+
+fn get_builder_build_args(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+            let name = field.ident.as_ref().unwrap();
+            let msg = format!("Builder field '{}' not set", name);
+            s.extend(quote! { self.#name.expect(#msg), });
+            s
+        })
+}
+
 fn get_default_normalizer(
     config: &HirpdagConfig,
     fields_named: &syn::FieldsNamed,
@@ -155,11 +218,20 @@ fn expand_hirpdag_struct(
     let hirpdag_rewrite_method_name =
         Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
 
+    let hirpdag_builder_name_str = format!("{}Builder", name_str);
+    let hirpdag_builder_name = Ident::new(&hirpdag_builder_name_str, Span::call_site());
+
     let fields_named = get_fields_named(input_struct);
     let fields_declarations = get_fields_declarations(fields_named);
     let fields_list = get_fields_list(fields_named);
     let fields_compute_meta = get_fields_compute_meta(fields_named);
     let fields_rewrite = get_fields_rewrite(fields_named);
+
+    let builder_field_declarations = get_builder_field_declarations(fields_named);
+    let builder_setters = get_builder_setters(fields_named);
+    let builder_none_fields = get_builder_none_fields(fields_named);
+    let builder_from_node_fields = get_builder_from_node_fields(fields_named);
+    let builder_build_args = get_builder_build_args(fields_named);
 
     let default_normalizer = get_default_normalizer(config, fields_named);
 
@@ -260,6 +332,43 @@ fn expand_hirpdag_struct(
                 Self::new(
                     #fields_rewrite
                     )
+            }
+
+            pub fn builder() -> #hirpdag_builder_name {
+                #hirpdag_builder_name::new()
+            }
+
+            pub fn to_builder(&self) -> #hirpdag_builder_name {
+                #hirpdag_builder_name::from(self)
+            }
+        }
+
+        // ==== Builder
+
+        #[derive(Clone, Debug)]
+        pub struct #hirpdag_builder_name {
+            #builder_field_declarations
+        }
+
+        impl #hirpdag_builder_name {
+            pub fn new() -> Self {
+                Self {
+                    #builder_none_fields
+                }
+            }
+
+            #builder_setters
+
+            pub fn build(self) -> #hirpdag_ref_name {
+                #hirpdag_ref_name::new(#builder_build_args)
+            }
+        }
+
+        impl From<&#hirpdag_ref_name> for #hirpdag_builder_name {
+            fn from(node: &#hirpdag_ref_name) -> Self {
+                Self {
+                    #builder_from_node_fields
+                }
             }
         }
 

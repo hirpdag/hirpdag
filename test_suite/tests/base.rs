@@ -103,6 +103,38 @@ fn foobar1() {
     assert_eq!(b, d);
 }
 
+#[test]
+fn builder_new() {
+    let a: MessageA = MessageA::builder()
+        .a(32)
+        .b("sup".to_string())
+        .c(None)
+        .d(1)
+        .build();
+    let a2: MessageA = MessageA::new(32, "sup".to_string(), None, 1);
+    assert_eq!(a, a2);
+}
+
+#[test]
+fn builder_to_builder() {
+    let a: MessageA = MessageA::new(32, "sup".to_string(), None, 1);
+    // Use to_builder to modify a single field
+    let b: MessageA = a.to_builder().b("dog".to_string()).build();
+    let b2: MessageA = MessageA::new(32, "dog".to_string(), None, 1);
+    assert_eq!(b, b2);
+    // Original is unchanged
+    assert_eq!(a, MessageA::new(32, "sup".to_string(), None, 1));
+}
+
+#[test]
+fn builder_from_existing() {
+    let a: MessageA = MessageA::new(10, "hello".to_string(), None, 5);
+    let b: MessageA = MessageA::new(10, "hello".to_string(), Some(a.clone()), 5);
+    // Extend with child using builder
+    let c: MessageA = a.to_builder().c(Some(a.clone())).build();
+    assert_eq!(b, c);
+}
+
 struct MessageAExtendLeaf {
     doot: MessageA,
 }

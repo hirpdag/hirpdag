@@ -135,6 +135,20 @@ fn expr_normalizer_test() {
     assert_eq!(n2n3va, n6va);
 }
 
+#[test]
+fn builder_variables() {
+    let va: Expr = Expr::new(ExprKind::Var("a".to_string()));
+    let vb: Expr = Expr::new(ExprKind::Var("b".to_string()));
+    // Build Variables using the builder API
+    let vars_a: Variables = Variables::builder().x(va.clone()).build();
+    let vars_a2: Variables = Variables::new(va.clone());
+    assert_eq!(vars_a, vars_a2);
+    // Use to_builder to swap the variable
+    let vars_b: Variables = vars_a.to_builder().x(vb.clone()).build();
+    let vars_b2: Variables = Variables::new(vb);
+    assert_eq!(vars_b, vars_b2);
+}
+
 struct Substitute {
     var: String,
     s: Expr,
