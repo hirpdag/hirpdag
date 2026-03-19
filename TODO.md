@@ -58,13 +58,13 @@
 
 ### Code cleanup
 
-- [P0] Builder API?
-  - Supporting modifications on an existing node.
-  - Avoid hashconsing construction until once at the end of the builder.
-  - Try to leverage an existing crate:
-    - https://github.com/rust-unofficial/patterns/blob/master/patterns/builder.md
-    - https://doc.rust-lang.org/1.0.0/style/ownership/builders.html
-    - https://docs.rs/derive\_builder/0.9.0/derive\_builder/
+- ~~[P0] Builder API?~~
+  - ~~Supporting modifications on an existing node.~~
+  - ~~Avoid hashconsing construction until once at the end of the builder.~~
+  - DONE: Each `#[hirpdag]` struct now generates a `FooBuilder` type. Use
+    `Foo::builder()` to construct a new node with setter chaining, or
+    `node.to_builder()` to derive a modified copy of an existing node.
+    Both paths go through a single `build()` call that hashcons at the end.
 
 - [P1] General refactoring and cleanup:
   - Try to reduce use of generic and builders for hashconsing implementations.

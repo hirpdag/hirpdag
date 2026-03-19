@@ -111,6 +111,11 @@ fn get_fields_rewrite(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
 }
 
 fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    //let builder_field_declarations = quote! {
+    //    a: Option<i32>,
+    //    b: Option<String>,
+    //    c: Option<Option<MessageA>>,
+    //};
     fields_named
         .named
         .iter()
@@ -123,6 +128,11 @@ fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro
 }
 
 fn get_builder_setters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    //let builder_setters = quote! {
+    //    pub fn a(mut self, value: i32) -> Self { self.a = Some(value); self }
+    //    pub fn b(mut self, value: String) -> Self { self.b = Some(value); self }
+    //    pub fn c(mut self, value: Option<MessageA>) -> Self { self.c = Some(value); self }
+    //};
     fields_named
         .named
         .iter()
@@ -140,6 +150,11 @@ fn get_builder_setters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStr
 }
 
 fn get_builder_none_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    //let builder_none_fields = quote! {
+    //    a: None,
+    //    b: None,
+    //    c: None,
+    //};
     fields_named
         .named
         .iter()
@@ -151,6 +166,11 @@ fn get_builder_none_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
 }
 
 fn get_builder_from_node_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    //let builder_from_node_fields = quote! {
+    //    a: Some(node.a.clone()),
+    //    b: Some(node.b.clone()),
+    //    c: Some(node.c.clone()),
+    //};
     fields_named
         .named
         .iter()
@@ -162,6 +182,11 @@ fn get_builder_from_node_fields(fields_named: &syn::FieldsNamed) -> proc_macro2:
 }
 
 fn get_builder_build_args(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    //let builder_build_args = quote! {
+    //    self.a.expect("Builder field 'a' not set"),
+    //    self.b.expect("Builder field 'b' not set"),
+    //    self.c.expect("Builder field 'c' not set"),
+    //};
     fields_named
         .named
         .iter()
@@ -523,6 +548,9 @@ fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
 }
 
 fn get_cache_member_new(name: &str) -> proc_macro2::TokenStream {
+    //let cache_member_new = quote! {
+    //    cache_MessageA: std::collections::HashMap::new(),
+    //};
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
