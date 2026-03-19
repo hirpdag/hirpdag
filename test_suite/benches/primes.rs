@@ -94,7 +94,7 @@ macro_rules! implementation {
             // Increment v rewrite
             let t_inc = IncrementVBy::new(1);
             let nums2 = t_inc.rewrite(&nums);
-            criterion::black_box(nums2);
+            std::hint::black_box(nums2);
         }
 
         pub fn populate_numbers(params: &crate::BenchPrimesParams) {
@@ -213,7 +213,7 @@ mod leak_hash_linear {
 }
 
 use criterion::{
-    black_box, criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
+    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion,
     PlotConfiguration,
 };
 
@@ -233,22 +233,22 @@ fn bench_primes(c: &mut Criterion) {
                 group.bench_with_input(
                     BenchmarkId::new("ArcHashLinear", params),
                     &params,
-                    |b, params| b.iter(|| arc_hash_linear::populate_numbers(black_box(params))),
+                    |b, params| b.iter(|| arc_hash_linear::populate_numbers(std::hint::black_box(params))),
                 );
                 group.bench_with_input(
                     BenchmarkId::new("ArcHashSorted", params),
                     &params,
-                    |b, params| b.iter(|| arc_hash_sorted::populate_numbers(black_box(params))),
+                    |b, params| b.iter(|| arc_hash_sorted::populate_numbers(std::hint::black_box(params))),
                 );
                 group.bench_with_input(
                     BenchmarkId::new("ArcTovWeakTable", params),
                     &params,
-                    |b, params| b.iter(|| arc_tovweaktable::populate_numbers(black_box(params))),
+                    |b, params| b.iter(|| arc_tovweaktable::populate_numbers(std::hint::black_box(params))),
                 );
                 group.bench_with_input(
                     BenchmarkId::new("LeakHashLinear", params),
                     &params,
-                    |b, params| b.iter(|| leak_hash_linear::populate_numbers(black_box(params))),
+                    |b, params| b.iter(|| leak_hash_linear::populate_numbers(std::hint::black_box(params))),
                 );
             }
             group.finish();
