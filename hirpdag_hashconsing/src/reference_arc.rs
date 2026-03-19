@@ -25,6 +25,10 @@ where
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool {
         std::sync::Arc::<D>::ptr_eq(a, b)
     }
+
+    fn strong_ptr_id(ptr: &Self) -> usize {
+        std::sync::Arc::as_ptr(ptr) as usize
+    }
 }
 
 pub type RefArcWeak<D> = std::sync::Weak<D>;

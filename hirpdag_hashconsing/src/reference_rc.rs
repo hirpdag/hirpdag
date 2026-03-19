@@ -25,6 +25,10 @@ where
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool {
         std::rc::Rc::<D>::ptr_eq(a, b)
     }
+
+    fn strong_ptr_id(ptr: &Self) -> usize {
+        std::rc::Rc::as_ptr(ptr) as usize
+    }
 }
 
 pub type RefRcWeak<D> = std::rc::Weak<D>;

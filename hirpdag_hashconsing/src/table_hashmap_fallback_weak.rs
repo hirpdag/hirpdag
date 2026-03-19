@@ -1,13 +1,46 @@
 use crate::reference::*;
 use crate::table::Table;
 
+/// A hasher that passes `u64` keys through without re-hashing them.
+///
+/// The keys stored in `TableHashmapFallbackWeak`'s inner `HashMap` are already
+/// 64-bit content hashes, so running them through a second hasher (SipHash by
+/// default) is wasted work.  This identity hasher skips that second pass.
+#[derive(Default)]
+struct U64IdentityHasher(u64);
+
+impl std::hash::Hasher for U64IdentityHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        // Fall back to a basic mixing for non-u64 writes (shouldn't happen in practice).
+        for &b in bytes {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(b as u64);
+        }
+    }
+
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.0 = i;
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type BuildU64IdentityHasher = std::hash::BuildHasherDefault<U64IdentityHasher>;
+
 pub struct TableHashmapFallbackWeak<
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     RW: ReferenceWeak<D, R>,
     T: Table<D, R> + Default,
 > {
-    m: std::collections::HashMap<u64, RW>,
+    m: std::collections::HashMap<u64, RW, BuildU64IdentityHasher>,
     // If the map slot for this hash is taken, use the vector.
     // This is a giant inefficient hack to at least be mostly correct.
     fallback: T,
@@ -42,7 +75,7 @@ where
     T: Table<D, R> + Default,
 {
     fn get(&self, hash: u64, data: &D) -> Option<R> {
-        if let Some((_k, v)) = self.m.get_key_value(&hash) {
+        if let Some(v) = self.m.get(&hash) {
             if let Some(up) = RW::weak_upgrade(v) {
                 if *R::strong_deref(&up) == *data {
                     return Some(up);

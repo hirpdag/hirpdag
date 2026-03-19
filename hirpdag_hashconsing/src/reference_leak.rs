@@ -40,6 +40,10 @@ where
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool {
         get_raw_pointer(a) == get_raw_pointer(b)
     }
+
+    fn strong_ptr_id(ptr: &Self) -> usize {
+        get_raw_pointer(ptr) as usize
+    }
 }
 
 pub type RefLeakWeak<D> = RefLeak<D>;

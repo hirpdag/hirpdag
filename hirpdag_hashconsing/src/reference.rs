@@ -18,6 +18,13 @@ where
 
     /// Check if two reference handles refer to the same data.
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool;
+
+    /// Return the raw pointer address as a usize, for use as a fast O(1) hash.
+    ///
+    /// Since interned references satisfy `strong_ptr_eq(a, b)` iff `a` and `b`
+    /// point to the same allocation, the pointer address is a valid hash key
+    /// consistent with that equality.
+    fn strong_ptr_id(ptr: &Self) -> usize;
 }
 
 /// Weak reference handle type.

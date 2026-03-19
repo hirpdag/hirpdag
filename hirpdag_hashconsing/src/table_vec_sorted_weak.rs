@@ -10,6 +10,9 @@ pub struct TableVecSortedWeak<D, R, RW> {
     // The binary search will not necessarily find the first position with an equivalent hash, so
     // we need to do a linear scan in both directions while the hash is equivalent.
     v: Vec<WeakEntry<D, R, RW>>,
+    // GC runs when v.len() reaches this threshold.
+    // After each GC the threshold doubles to amortize cleanup cost.
+    gc_threshold: usize,
 }
 
 impl<D, R, RW> TableVecSortedWeak<D, R, RW>
@@ -58,7 +61,10 @@ where
     RW: ReferenceWeak<D, R>,
 {
     fn default() -> Self {
-        Self { v: Vec::new() }
+        Self {
+            v: Vec::new(),
+            gc_threshold: 16,
+        }
     }
 }
 
@@ -85,11 +91,11 @@ where
         D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
         CF: FnOnce(&mut D),
     {
-        // Binary search
+        // Binary search for an existing entry or the correct insertion point.
         let result = self.v.binary_search_by(|probe| probe.hash_cmp(&hash));
-        let index = match result {
+        let insert_index = match result {
             Ok(idx) => {
-                // Linear search up and down
+                // Linear search up and down for a live matching entry.
                 if let Some(p) = self.linear_search_around(idx, hash, &data) {
                     return p;
                 }
@@ -98,10 +104,24 @@ where
             Err(idx) => idx,
         };
 
+        // Remove dead entries when the vec reaches the GC threshold.
+        // retain preserves sorted order. After cleanup double the threshold
+        // so that GC is amortized O(1) per insert.
+        let insert_index = if self.v.len() >= self.gc_threshold {
+            self.v.retain(|e| e.is_alive());
+            self.gc_threshold = (self.v.len() * 2).max(16);
+            match self.v.binary_search_by(|probe| probe.hash_cmp(&hash)) {
+                Ok(idx) => idx,
+                Err(idx) => idx,
+            }
+        } else {
+            insert_index
+        };
+
         creation_meta(&mut data);
         let obj = R::new(data);
         let weak = RW::weak_downgrade(&obj);
-        self.v.insert(index, WeakEntry::new(hash, weak));
+        self.v.insert(insert_index, WeakEntry::new(hash, weak));
 
         obj
     }
