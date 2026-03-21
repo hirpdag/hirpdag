@@ -42,7 +42,7 @@ where
     T: Table<D, R> + Default,
 {
     fn get(&self, hash: u64, data: &D) -> Option<R> {
-        if let Some((_k, v)) = self.m.get_key_value(&hash) {
+        if let Some(v) = self.m.get(&hash) {
             if let Some(up) = RW::weak_upgrade(v) {
                 if *R::strong_deref(&up) == *data {
                     return Some(up);

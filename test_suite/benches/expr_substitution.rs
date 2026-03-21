@@ -144,7 +144,7 @@ fn bench_expr(c: &mut Criterion) {
     let mut group = c.benchmark_group("ExprSubstitution");
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(plot_config);
-    for (depth, num_vars) in [(10usize, 4u32), (10, 16), (12, 8)].iter() {
+    for (depth, num_vars) in [(12usize, 4u32), (12, 16)].iter() {
         let params = BenchExprParams {
             depth: *depth,
             num_vars: *num_vars,
@@ -165,7 +165,7 @@ fn bench_expr(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(30));
+    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(15));
     targets = bench_expr
 }
 criterion_main!(benches);

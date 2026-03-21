@@ -113,7 +113,7 @@ fn bench_rewrite_chain(c: &mut Criterion) {
     let mut group = c.benchmark_group("RewriteChain");
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(plot_config);
-    for (length, rewrites) in [(500usize, 5usize), (500, 20), (2000, 5)].iter() {
+    for (length, rewrites) in [(500usize, 20usize), (2000, 5)].iter() {
         let params = BenchRewriteChainParams {
             length: *length,
             rewrites: *rewrites,
@@ -138,7 +138,7 @@ fn bench_rewrite_chain(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(30));
+    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(15));
     targets = bench_rewrite_chain
 }
 criterion_main!(benches);

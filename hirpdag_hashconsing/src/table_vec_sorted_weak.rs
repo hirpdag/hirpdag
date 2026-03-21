@@ -87,7 +87,7 @@ where
     {
         // Binary search
         let result = self.v.binary_search_by(|probe| probe.hash_cmp(&hash));
-        let index = match result {
+        let insert_index = match result {
             Ok(idx) => {
                 // Linear search up and down
                 if let Some(p) = self.linear_search_around(idx, hash, &data) {
@@ -101,7 +101,7 @@ where
         creation_meta(&mut data);
         let obj = R::new(data);
         let weak = RW::weak_downgrade(&obj);
-        self.v.insert(index, WeakEntry::new(hash, weak));
+        self.v.insert(insert_index, WeakEntry::new(hash, weak));
 
         obj
     }

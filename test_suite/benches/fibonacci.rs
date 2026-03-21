@@ -99,7 +99,7 @@ fn bench_fibonacci(c: &mut Criterion) {
     let mut group = c.benchmark_group("Fibonacci");
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(plot_config);
-    for n in [500usize, 2000].iter() {
+    for n in [200usize, 2000].iter() {
         let params = BenchFibParams { n: *n };
         group.bench_with_input(
             BenchmarkId::new("ArcHashLinear", params),
@@ -117,7 +117,7 @@ fn bench_fibonacci(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(30));
+    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(15));
     targets = bench_fibonacci
 }
 criterion_main!(benches);

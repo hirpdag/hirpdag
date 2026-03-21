@@ -265,7 +265,7 @@ fn bench_primes(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(30));
+    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(15));
     targets = bench_primes
 }
 criterion_main!(benches);

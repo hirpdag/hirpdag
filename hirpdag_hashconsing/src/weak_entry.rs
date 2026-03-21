@@ -51,6 +51,11 @@ where
     pub fn hash_cmp(&self, hash: &u64) -> std::cmp::Ordering {
         self.hash.cmp(hash)
     }
+
+    // Returns true if the weak reference is still live (the data hasn't been dropped).
+    pub fn is_alive(&self) -> bool {
+        RW::weak_upgrade(&self.weak).is_some()
+    }
 }
 
 impl<T, R, RW> std::cmp::PartialOrd for WeakEntry<T, R, RW>
