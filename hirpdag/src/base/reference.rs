@@ -20,7 +20,13 @@ where
     R: Reference<HirpdagStorage<D>>,
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        R::strong_deref(&self.0).hash(state)
+        // Hash by creation ID rather than by recursively hashing the stored data.
+        // This is correct because hash-consing guarantees that structurally equal
+        // nodes share the same interned pointer and therefore the same creation ID.
+        // Deep structural hashing would recurse into child HirpdagRefs, which
+        // themselves recurse into their children, producing O(φ^N) work for DAGs
+        // with two-parent sharing (e.g. Fibonacci) instead of O(1).
+        R::strong_deref(&self.0).hirpdag_creation_id.hash(state)
     }
 }
 
