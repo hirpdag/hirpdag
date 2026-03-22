@@ -1,33 +1,34 @@
 // Binary serialization format for hirpdag DAGs.
 //
-// File layout:
-//   magic      4 bytes  b"HIRP"
-//   version    2 bytes  u16 LE = 1
-//   node_count 4 bytes  u32 LE
-//   per node:
-//     type_tag  4 bytes  u32 LE
-//     serial_id 4 bytes  u32 LE
-//     field_len 4 bytes  u32 LE
-//     field_bytes        (field_len bytes)
-//   root_count 4 bytes  u32 LE
-//   per root:
-//     type_tag  4 bytes  u32 LE
-//     serial_id 4 bytes  u32 LE
+// Uses `bincode` (v2, standard config) for field-level encoding/decoding,
+// mirroring how the JSON format delegates to `serde_json`.
 //
-// Field encoding inside field_bytes:
-//   u8/i8/bool:  1 byte
-//   u16/i16:     2 bytes LE
-//   u32/i32/f32: 4 bytes LE
-//   u64/i64/f64: 8 bytes LE
-//   u128/i128:   16 bytes LE
-//   usize/isize: 8 bytes LE  (always 64-bit)
-//   str:         u32 LE length + UTF-8 bytes
-//   seq_len:     u32 LE
-//   option_flag: u8 (0 = None, 1 = Some)
-//   variant_idx: u32 LE
-//   node_ref:    u32 LE serial_id
+// File layout — all values except the 4-byte magic are bincode-encoded:
+//   magic       b"HIRP" (4 raw bytes)
+//   version     u16
+//   node_count  u64
+//   per node (topological order — children before parents):
+//     type_tag    u32
+//     serial_id   u32
+//     field_data  [u8] (length-prefixed bincode encoding of the node's fields)
+//   root_count  u64
+//   per root:
+//     type_tag    u32
+//     serial_id   u32
+//
+// Zero-copy deserialization:
+//   `BinaryFieldDecoder<'a>` borrows a `&'a [u8]` and uses
+//   `bincode::decode_from_slice`, so reading fixed-size fields does not
+//   allocate.  String fields require one copy to produce an owned `String`.
+//
+//   `HirpdagDeserializer::from_binary_bytes` accepts a `&[u8]` directly;
+//   callers can pass a `memmap2::Mmap` deref'd to `&[u8]` for a
+//   memory-mapped, allocation-free read path.
 
 use std::io::{Read, Write};
+
+use bincode::config::standard;
+use bincode::{decode_from_slice, encode_into_std_write};
 
 use crate::base::serialize::{
     HirpdagDeserCtx, HirpdagDeserializer, HirpdagFieldDecoder, HirpdagFieldEncoder,
@@ -35,15 +36,23 @@ use crate::base::serialize::{
 };
 
 const MAGIC: &[u8; 4] = b"HIRP";
-const VERSION: u16 = 1;
+const BINCODE_CFG: bincode::config::Configuration = standard();
 
 // ---------------------------------------------------------------------------
-// BinaryFieldEncoder
+// BinaryFieldEncoder — backed by bincode
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
 pub struct BinaryFieldEncoder {
     buf: Vec<u8>,
+}
+
+impl BinaryFieldEncoder {
+    #[inline]
+    fn enc<T: bincode::Encode>(&mut self, v: T) {
+        encode_into_std_write(v, &mut self.buf, BINCODE_CFG)
+            .expect("in-memory bincode encode should never fail");
+    }
 }
 
 impl HirpdagFieldEncoder for BinaryFieldEncoder {
@@ -53,74 +62,37 @@ impl HirpdagFieldEncoder for BinaryFieldEncoder {
         self.buf
     }
 
-    fn write_u8(&mut self, v: u8) {
-        self.buf.push(v);
-    }
-    fn write_u16(&mut self, v: u16) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_u32(&mut self, v: u32) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_u64(&mut self, v: u64) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_u128(&mut self, v: u128) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_usize(&mut self, v: usize) {
-        self.buf.extend_from_slice(&(v as u64).to_le_bytes());
-    }
-    fn write_i8(&mut self, v: i8) {
-        self.buf.push(v as u8);
-    }
-    fn write_i16(&mut self, v: i16) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_i32(&mut self, v: i32) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_i64(&mut self, v: i64) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_i128(&mut self, v: i128) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_isize(&mut self, v: isize) {
-        self.buf.extend_from_slice(&(v as i64).to_le_bytes());
-    }
-    fn write_f32(&mut self, v: f32) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_f64(&mut self, v: f64) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
-    }
-    fn write_bool(&mut self, v: bool) {
-        self.buf.push(v as u8);
-    }
-    fn write_str(&mut self, v: &str) {
-        let bytes = v.as_bytes();
-        self.write_u32(bytes.len() as u32);
-        self.buf.extend_from_slice(bytes);
-    }
-    fn write_seq_len(&mut self, len: usize) {
-        self.write_u32(len as u32);
-    }
-    fn write_option_flag(&mut self, is_some: bool) {
-        self.buf.push(is_some as u8);
-    }
-    fn write_variant_idx(&mut self, idx: u32) {
-        self.write_u32(idx);
-    }
-    fn write_node_ref(&mut self, serial_id: u32) {
-        self.write_u32(serial_id);
-    }
+    fn write_u8(&mut self, v: u8)       { self.enc(v); }
+    fn write_u16(&mut self, v: u16)     { self.enc(v); }
+    fn write_u32(&mut self, v: u32)     { self.enc(v); }
+    fn write_u64(&mut self, v: u64)     { self.enc(v); }
+    fn write_u128(&mut self, v: u128)   { self.enc(v); }
+    fn write_usize(&mut self, v: usize) { self.enc(v as u64); }
+    fn write_i8(&mut self, v: i8)       { self.enc(v); }
+    fn write_i16(&mut self, v: i16)     { self.enc(v); }
+    fn write_i32(&mut self, v: i32)     { self.enc(v); }
+    fn write_i64(&mut self, v: i64)     { self.enc(v); }
+    fn write_i128(&mut self, v: i128)   { self.enc(v); }
+    fn write_isize(&mut self, v: isize) { self.enc(v as i64); }
+    fn write_f32(&mut self, v: f32)     { self.enc(v); }
+    fn write_f64(&mut self, v: f64)     { self.enc(v); }
+    fn write_bool(&mut self, v: bool)   { self.enc(v); }
+    fn write_str(&mut self, v: &str)    { self.enc(v); }
+    fn write_seq_len(&mut self, len: usize)      { self.enc(len as u64); }
+    fn write_option_flag(&mut self, is_some: bool) { self.enc(is_some); }
+    fn write_variant_idx(&mut self, idx: u32)    { self.enc(idx); }
+    fn write_node_ref(&mut self, serial_id: u32) { self.enc(serial_id); }
 }
 
 // ---------------------------------------------------------------------------
-// BinaryFieldDecoder
+// BinaryFieldDecoder — zero-copy slice reader backed by bincode
 // ---------------------------------------------------------------------------
 
+/// Reads field values from a borrowed byte slice using `bincode::decode_from_slice`.
+///
+/// Because the slice is borrowed, fixed-size field reads (integers, booleans,
+/// floats) do not allocate.  String fields require a copy into an owned `String`.
+/// When `data` originates from a `memmap2::Mmap`, file I/O is also allocation-free.
 pub struct BinaryFieldDecoder<'a> {
     data: &'a [u8],
     pos: usize,
@@ -131,134 +103,93 @@ impl<'a> BinaryFieldDecoder<'a> {
         BinaryFieldDecoder { data, pos: 0 }
     }
 
-    fn read_bytes(&mut self, n: usize) -> Result<&[u8], SerError> {
-        let end = self.pos + n;
-        if end > self.data.len() {
-            return Err(SerError::UnexpectedEof);
-        }
-        let slice = &self.data[self.pos..end];
-        self.pos = end;
-        Ok(slice)
+    #[inline]
+    fn dec<T: bincode::Decode<()>>(&mut self) -> Result<T, SerError> {
+        let (val, consumed) = decode_from_slice(&self.data[self.pos..], BINCODE_CFG)
+            .map_err(|e| SerError::Decode(e.to_string()))?;
+        self.pos += consumed;
+        Ok(val)
     }
 }
 
 impl<'a> HirpdagFieldDecoder for BinaryFieldDecoder<'a> {
-    fn read_u8(&mut self) -> Result<u8, SerError> {
-        Ok(self.read_bytes(1)?[0])
-    }
-    fn read_u16(&mut self) -> Result<u16, SerError> {
-        Ok(u16::from_le_bytes(self.read_bytes(2)?.try_into().unwrap()))
-    }
-    fn read_u32(&mut self) -> Result<u32, SerError> {
-        Ok(u32::from_le_bytes(self.read_bytes(4)?.try_into().unwrap()))
-    }
-    fn read_u64(&mut self) -> Result<u64, SerError> {
-        Ok(u64::from_le_bytes(self.read_bytes(8)?.try_into().unwrap()))
-    }
-    fn read_u128(&mut self) -> Result<u128, SerError> {
-        Ok(u128::from_le_bytes(self.read_bytes(16)?.try_into().unwrap()))
-    }
+    fn read_u8(&mut self)    -> Result<u8,    SerError> { self.dec() }
+    fn read_u16(&mut self)   -> Result<u16,   SerError> { self.dec() }
+    fn read_u32(&mut self)   -> Result<u32,   SerError> { self.dec() }
+    fn read_u64(&mut self)   -> Result<u64,   SerError> { self.dec() }
+    fn read_u128(&mut self)  -> Result<u128,  SerError> { self.dec() }
     fn read_usize(&mut self) -> Result<usize, SerError> {
-        Ok(u64::from_le_bytes(self.read_bytes(8)?.try_into().unwrap()) as usize)
+        self.dec::<u64>().map(|v| v as usize)
     }
-    fn read_i8(&mut self) -> Result<i8, SerError> {
-        Ok(self.read_bytes(1)?[0] as i8)
-    }
-    fn read_i16(&mut self) -> Result<i16, SerError> {
-        Ok(i16::from_le_bytes(self.read_bytes(2)?.try_into().unwrap()))
-    }
-    fn read_i32(&mut self) -> Result<i32, SerError> {
-        Ok(i32::from_le_bytes(self.read_bytes(4)?.try_into().unwrap()))
-    }
-    fn read_i64(&mut self) -> Result<i64, SerError> {
-        Ok(i64::from_le_bytes(self.read_bytes(8)?.try_into().unwrap()))
-    }
-    fn read_i128(&mut self) -> Result<i128, SerError> {
-        Ok(i128::from_le_bytes(self.read_bytes(16)?.try_into().unwrap()))
-    }
+    fn read_i8(&mut self)    -> Result<i8,    SerError> { self.dec() }
+    fn read_i16(&mut self)   -> Result<i16,   SerError> { self.dec() }
+    fn read_i32(&mut self)   -> Result<i32,   SerError> { self.dec() }
+    fn read_i64(&mut self)   -> Result<i64,   SerError> { self.dec() }
+    fn read_i128(&mut self)  -> Result<i128,  SerError> { self.dec() }
     fn read_isize(&mut self) -> Result<isize, SerError> {
-        Ok(i64::from_le_bytes(self.read_bytes(8)?.try_into().unwrap()) as isize)
+        self.dec::<i64>().map(|v| v as isize)
     }
-    fn read_f32(&mut self) -> Result<f32, SerError> {
-        Ok(f32::from_le_bytes(self.read_bytes(4)?.try_into().unwrap()))
+    fn read_f32(&mut self)  -> Result<f32,    SerError> { self.dec() }
+    fn read_f64(&mut self)  -> Result<f64,    SerError> { self.dec() }
+    fn read_bool(&mut self) -> Result<bool,   SerError> { self.dec() }
+    fn read_str(&mut self)  -> Result<String, SerError> { self.dec() }
+    fn read_seq_len(&mut self)     -> Result<usize, SerError> {
+        self.dec::<u64>().map(|v| v as usize)
     }
-    fn read_f64(&mut self) -> Result<f64, SerError> {
-        Ok(f64::from_le_bytes(self.read_bytes(8)?.try_into().unwrap()))
-    }
-    fn read_bool(&mut self) -> Result<bool, SerError> {
-        Ok(self.read_bytes(1)?[0] != 0)
-    }
-    fn read_str(&mut self) -> Result<String, SerError> {
-        let len = self.read_u32()? as usize;
-        let bytes = self.read_bytes(len)?;
-        String::from_utf8(bytes.to_vec()).map_err(|_| SerError::InvalidUtf8)
-    }
-    fn read_seq_len(&mut self) -> Result<usize, SerError> {
-        Ok(self.read_u32()? as usize)
-    }
-    fn read_option_flag(&mut self) -> Result<bool, SerError> {
-        Ok(self.read_bytes(1)?[0] != 0)
-    }
-    fn read_variant_idx(&mut self) -> Result<u32, SerError> {
-        self.read_u32()
-    }
-    fn read_node_ref(&mut self) -> Result<u32, SerError> {
-        self.read_u32()
-    }
+    fn read_option_flag(&mut self) -> Result<bool,  SerError> { self.dec() }
+    fn read_variant_idx(&mut self) -> Result<u32,   SerError> { self.dec() }
+    fn read_node_ref(&mut self)    -> Result<u32,   SerError> { self.dec() }
 }
 
 // ---------------------------------------------------------------------------
-// write_binary helper
+// File-level write / read helpers
 // ---------------------------------------------------------------------------
 
-fn write_u16_le<W: Write>(w: &mut W, v: u16) -> Result<(), SerError> {
-    w.write_all(&v.to_le_bytes())?;
+fn write_val<T: bincode::Encode, W: Write>(w: &mut W, v: T) -> Result<(), SerError> {
+    encode_into_std_write(v, w, BINCODE_CFG).map_err(|e| SerError::Decode(e.to_string()))?;
     Ok(())
 }
 
-fn write_u32_le<W: Write>(w: &mut W, v: u32) -> Result<(), SerError> {
-    w.write_all(&v.to_le_bytes())?;
-    Ok(())
+fn read_val<'a, T: bincode::Decode<()>>(data: &'a [u8], pos: &mut usize) -> Result<T, SerError> {
+    let (val, consumed) = decode_from_slice(&data[*pos..], BINCODE_CFG)
+        .map_err(|e| SerError::Decode(e.to_string()))?;
+    *pos += consumed;
+    Ok(val)
 }
 
-fn read_u16_le<R: Read>(r: &mut R) -> Result<u16, SerError> {
-    let mut buf = [0u8; 2];
-    r.read_exact(&mut buf).map_err(|_| SerError::UnexpectedEof)?;
-    Ok(u16::from_le_bytes(buf))
-}
-
-fn read_u32_le<R: Read>(r: &mut R) -> Result<u32, SerError> {
-    let mut buf = [0u8; 4];
-    r.read_exact(&mut buf).map_err(|_| SerError::UnexpectedEof)?;
-    Ok(u32::from_le_bytes(buf))
-}
+// ---------------------------------------------------------------------------
+// HirpdagSerializer::write_binary
+// ---------------------------------------------------------------------------
 
 impl HirpdagSerializer<BinaryFieldEncoder> {
     /// Write the serialized DAG to `w` in the hirpdag binary format.
     pub fn write_binary<W: Write>(&self, w: &mut W) -> Result<(), SerError> {
-        // magic + version
+        // 4-byte raw magic
         w.write_all(MAGIC)?;
-        write_u16_le(w, VERSION)?;
-
+        // version (u16), node_count (u64)
+        write_val(w, 1u16)?;
+        write_val(w, self.ctx.records.len() as u64)?;
         // node records
-        write_u32_le(w, self.ctx.records.len() as u32)?;
         for (type_tag, serial_id, field_bytes) in &self.ctx.records {
-            write_u32_le(w, *type_tag)?;
-            write_u32_le(w, *serial_id)?;
-            write_u32_le(w, field_bytes.len() as u32)?;
+            write_val(w, *type_tag)?;
+            write_val(w, *serial_id)?;
+            // field_data: length-prefixed bincode bytes
+            write_val(w, field_bytes.len() as u64)?;
             w.write_all(field_bytes)?;
         }
-
         // roots
-        write_u32_le(w, self.roots.len() as u32)?;
+        write_val(w, self.roots.len() as u64)?;
         for (type_tag, serial_id) in &self.roots {
-            write_u32_le(w, *type_tag)?;
-            write_u32_le(w, *serial_id)?;
+            write_val(w, *type_tag)?;
+            write_val(w, *serial_id)?;
         }
-
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------
+// HirpdagDeserializer::from_binary / from_binary_bytes
+// ---------------------------------------------------------------------------
 
 /// Dispatch function type for binary deserialization.
 pub type BinaryDispatchFn = fn(
@@ -269,45 +200,74 @@ pub type BinaryDispatchFn = fn(
 ) -> Result<(), SerError>;
 
 impl HirpdagDeserializer {
-    /// Read a hirpdag binary file from `r` and reconstruct all nodes via `dispatch`.
+    /// Read a hirpdag binary file from `r`.
     ///
-    /// `dispatch` is the `hirpdag_deser_dispatch_binary` function generated by `#[hirpdag_end]`.
+    /// Reads the entire contents into a `Vec<u8>` then delegates to
+    /// [`from_binary_bytes`](Self::from_binary_bytes).
     pub fn from_binary<R: Read>(
         r: &mut R,
         dispatch: BinaryDispatchFn,
     ) -> Result<Self, SerError> {
-        // Check magic
-        let mut magic = [0u8; 4];
-        r.read_exact(&mut magic).map_err(|_| SerError::UnexpectedEof)?;
-        if &magic != MAGIC {
+        let mut data = Vec::new();
+        r.read_to_end(&mut data)?;
+        Self::from_binary_bytes(&data, dispatch)
+    }
+
+    /// Reconstruct all nodes from a raw byte slice.
+    ///
+    /// This is the **zero-copy** entry point.  Pass the result of
+    /// `memmap2::Mmap::deref()` (i.e. `&*mmap`) to avoid any I/O allocation:
+    ///
+    /// ```no_run
+    /// # use std::fs::File;
+    /// # use hirpdag::base::serialize::HirpdagDeserializer;
+    /// let file = File::open("my.hirp").unwrap();
+    /// let mmap = unsafe { memmap2::Mmap::map(&file).unwrap() };
+    /// let deser = HirpdagDeserializer::from_binary_bytes(&mmap, hirpdag_deser_dispatch_binary).unwrap();
+    /// ```
+    ///
+    /// Fixed-size field reads (integers, booleans, floats) are zero-copy.
+    /// String fields require one allocation per string to produce an owned `String`.
+    pub fn from_binary_bytes(
+        data: &[u8],
+        dispatch: BinaryDispatchFn,
+    ) -> Result<Self, SerError> {
+        // 4-byte raw magic
+        if data.len() < 4 {
+            return Err(SerError::UnexpectedEof);
+        }
+        if &data[..4] != MAGIC {
             return Err(SerError::InvalidMagic);
         }
+        let mut pos = 4usize;
 
-        let version = read_u16_le(r)?;
-        if version != VERSION {
+        let version: u16 = read_val(data, &mut pos)?;
+        if version != 1 {
             return Err(SerError::UnsupportedVersion(version));
         }
 
         let mut ctx = HirpdagDeserCtx::new();
 
-        let node_count = read_u32_le(r)? as usize;
+        let node_count: u64 = read_val(data, &mut pos)?;
         for _ in 0..node_count {
-            let type_tag = read_u32_le(r)?;
-            let serial_id = read_u32_le(r)?;
-            let field_len = read_u32_le(r)? as usize;
-
-            let mut field_bytes = vec![0u8; field_len];
-            r.read_exact(&mut field_bytes).map_err(|_| SerError::UnexpectedEof)?;
-
-            let mut dec = BinaryFieldDecoder::new(&field_bytes);
+            let type_tag: u32 = read_val(data, &mut pos)?;
+            let serial_id: u32 = read_val(data, &mut pos)?;
+            let field_len: u64 = read_val(data, &mut pos)?;
+            let field_end = pos + field_len as usize;
+            if field_end > data.len() {
+                return Err(SerError::UnexpectedEof);
+            }
+            // Zero-copy: pass a sub-slice of the original data directly.
+            let mut dec = BinaryFieldDecoder::new(&data[pos..field_end]);
+            pos = field_end;
             dispatch(type_tag, serial_id, &mut dec, &mut ctx)?;
         }
 
-        let root_count = read_u32_le(r)? as usize;
-        let mut roots = Vec::with_capacity(root_count);
+        let root_count: u64 = read_val(data, &mut pos)?;
+        let mut roots = Vec::with_capacity(root_count as usize);
         for _ in 0..root_count {
-            let type_tag = read_u32_le(r)?;
-            let serial_id = read_u32_le(r)?;
+            let type_tag: u32 = read_val(data, &mut pos)?;
+            let serial_id: u32 = read_val(data, &mut pos)?;
             roots.push((type_tag, serial_id));
         }
 

@@ -30,6 +30,7 @@ pub enum SerError {
     InvalidUtf8,
     UnexpectedEof,
     Json(String),
+    Decode(String),
 }
 
 impl std::fmt::Display for SerError {
