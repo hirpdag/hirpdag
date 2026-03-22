@@ -10,6 +10,9 @@ description = "Procedural macro for generating hirpdag boilerplate. See hirpdag 
 [lib]
 proc-macro = true
 
+[features]
+serde = []
+
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"

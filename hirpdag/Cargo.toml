@@ -9,7 +9,11 @@ keywords = ["hashconsing", "persistent", "dag", "rewriting"]
 categories = ["caching", "memory-management", "data-structures"]
 description = "Library and procedural macros for Hash Consed, Immutable, Reference Counted, Persistent, Directed Acyclic Graph data structures."
 
+[features]
+serde = ["dep:serde", "hirpdag_derive/serde"]
+
 [dependencies]
 hirpdag_hashconsing = { version = "0.1.1", path = '../hirpdag_hashconsing' }
 hirpdag_derive = { version = "0.1.1", path = "../hirpdag_derive" }
 lazy_static = "1.5.0"
+serde = { version = "1", features = ["derive"], optional = true }

@@ -9,3 +9,6 @@ pub use hirpdag_hashconsing;
 pub use hirpdag_derive::*;
 
 pub use lazy_static::lazy_static;
+
+#[cfg(feature = "serde")]
+pub use serde;

@@ -7,11 +7,12 @@ publish = false
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-hirpdag = {path = '../hirpdag'}
+hirpdag = {path = '../hirpdag', features = ["serde"]}
 
 [dev-dependencies]
 hirpdag_derive = {path = '../hirpdag_derive'}
 criterion = "0.8"
+serde_json = "1"
 
 [[bench]]
 name = "primes"

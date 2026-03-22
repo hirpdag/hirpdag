@@ -17,10 +17,12 @@ use proc_macro2::{Ident, Span};
 extern crate lazy_static;
 
 lazy_static! {
-    /// Collects all of the Hirpdag struct types seen in the module.
+    /// Collects all of the Hirpdag types seen in the module.
+    /// Each entry is (type_name, is_enum). is_enum=true for hirpdag enums,
+    /// is_enum=false for hirpdag structs (which get a HirpdagStruct{Name} inner type).
     ///
     /// This will be used from the HirpdagEnd to generate code which can operate on all of them.
-    static ref DATA_TYPES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    static ref DATA_TYPES: std::sync::Mutex<Vec<(String, bool)>> = std::sync::Mutex::new(Vec::new());
 }
 
 #[proc_macro_attribute]
@@ -91,6 +93,17 @@ fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
             s
         });
     fields_compute_meta
+}
+
+fn get_fields_dag_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .map(|t| t.ident.as_ref().unwrap())
+        .fold(proc_macro2::TokenStream::new(), |mut s, field_name| {
+            s.extend(quote! { self.#field_name.hirpdag_dag_collect(ctx); });
+            s
+        })
 }
 
 fn get_fields_rewrite(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -198,6 +211,85 @@ fn get_builder_build_args(fields_named: &syn::FieldsNamed) -> proc_macro2::Token
         })
 }
 
+fn get_serde_struct_extras(
+    hirpdag_ref_name: &Ident,
+    hirpdag_struct_name: &Ident,
+    _fields_named: &syn::FieldsNamed,
+    fields_list: &proc_macro2::TokenStream,
+    fields_dag_collect: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    if !cfg!(feature = "serde") {
+        return quote! {};
+    }
+    quote! {
+        // ==== Serialization (DAG-aware)
+
+        impl hirpdag::serde::Serialize for #hirpdag_ref_name {
+            fn serialize<S: hirpdag::serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                hirpdag::base::dag_serde::HIRPDAG_DAG_SER_CTX.with(|ctx| {
+                    let ctx = ctx.borrow();
+                    let id_to_idx = ctx.as_ref().expect(
+                        "hirpdag::Serialize called outside of HirpdagDag serialization context; \
+                         wrap your root in HirpdagDag::new(root) before serializing"
+                    );
+                    let id = self.0.hirpdag_get_creation_id();
+                    let idx = *id_to_idx.get(&id).expect(
+                        "hirpdag node missing from DAG context; this is a bug in hirpdag"
+                    );
+                    hirpdag::serde::Serialize::serialize(&idx, s)
+                })
+            }
+        }
+
+        impl<'de> hirpdag::serde::Deserialize<'de> for #hirpdag_ref_name {
+            fn deserialize<D: hirpdag::serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                hirpdag::base::dag_serde::HIRPDAG_DAG_DESER_CTX.with(|ctx| {
+                    let ctx = ctx.borrow();
+                    let results = ctx.as_ref().expect(
+                        "hirpdag::Deserialize called outside of HirpdagDag deserialization context; \
+                         deserialize into HirpdagDag<T> rather than T directly"
+                    );
+                    let idx = <usize as hirpdag::serde::Deserialize>::deserialize(d)?;
+                    results[idx]
+                        .downcast_ref::<#hirpdag_ref_name>()
+                        .ok_or_else(|| hirpdag::serde::de::Error::custom(
+                            concat!("DAG deserialization type mismatch for ", stringify!(#hirpdag_ref_name))
+                        ))
+                        .map(Clone::clone)
+                })
+            }
+        }
+
+        impl hirpdag::base::dag_serde::HirpdagDagCollect for #hirpdag_ref_name {
+            fn hirpdag_dag_collect(
+                &self,
+                ctx: &mut hirpdag::base::dag_serde::HirpdagDagCollectCtx,
+            ) {
+                let id = self.0.hirpdag_get_creation_id();
+                if ctx.visited.contains(&id) {
+                    return;
+                }
+                // Visit fields first so dependencies are always before dependents.
+                #fields_dag_collect
+                // Record self.
+                let idx = ctx.nodes.len();
+                ctx.visited.insert(id);
+                ctx.id_to_idx.insert(id, idx);
+                ctx.nodes.push(std::sync::Arc::new(self.clone()));
+            }
+        }
+
+        impl #hirpdag_ref_name {
+            /// Reconstruct a `#hirpdag_ref_name` from its inner struct value.
+            /// Used by the DAG deserializer generated at `#[hirpdag_end]`.
+            pub fn hirpdag_from_hirpdag_struct(inner: #hirpdag_struct_name) -> Self {
+                let #hirpdag_struct_name { #fields_list } = inner;
+                Self::spawn(#fields_list)
+            }
+        }
+    }
+}
+
 fn get_default_normalizer(
     config: &HirpdagConfig,
     fields_named: &syn::FieldsNamed,
@@ -227,7 +319,7 @@ fn expand_hirpdag_struct(
 
     {
         let mut guard = DATA_TYPES.lock().unwrap();
-        guard.push(name_str.clone());
+        guard.push((name_str.clone(), false)); // false = struct, not enum
     }
 
     let hirpdag_ref_name_str = name_str.to_string();
@@ -251,6 +343,7 @@ fn expand_hirpdag_struct(
     let fields_list = get_fields_list(fields_named);
     let fields_compute_meta = get_fields_compute_meta(fields_named);
     let fields_rewrite = get_fields_rewrite(fields_named);
+    let fields_dag_collect = get_fields_dag_collect(fields_named);
 
     let builder_field_declarations = get_builder_field_declarations(fields_named);
     let builder_setters = get_builder_setters(fields_named);
@@ -260,10 +353,31 @@ fn expand_hirpdag_struct(
 
     let default_normalizer = get_default_normalizer(config, fields_named);
 
+    let serde_extras = get_serde_struct_extras(
+        &hirpdag_ref_name,
+        &hirpdag_struct_name,
+        fields_named,
+        &fields_list,
+        &fields_dag_collect,
+    );
+
+    let serde_struct_derives = if cfg!(feature = "serde") {
+        quote! { , hirpdag::serde::Serialize, hirpdag::serde::Deserialize }
+    } else {
+        quote! {}
+    };
+
+    let serde_struct_crate_attr = if cfg!(feature = "serde") {
+        quote! { #[serde(crate = "hirpdag::serde")] }
+    } else {
+        quote! {}
+    };
+
     quote! {
         use hirpdag::base::*;
 
-        #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord #serde_struct_derives)]
+        #serde_struct_crate_attr
         pub struct #hirpdag_struct_name {
             #fields_declarations
         }
@@ -404,6 +518,10 @@ fn expand_hirpdag_struct(
                 rewriter.#hirpdag_rewrite_method_name(self)
             }
         }
+
+        // ==== Serde (DAG-aware, only present when hirpdag/serde feature is enabled)
+
+        #serde_extras
     }
 }
 
@@ -435,6 +553,38 @@ fn get_variants_compute_meta(input_enum: &syn::DataEnum) -> proc_macro2::TokenSt
     variants_compute_meta
 }
 
+fn get_variants_dag_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
+    input_enum
+        .variants
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
+            let variant = t.ident.clone();
+            s.extend(quote! { #variant(x) => x.hirpdag_dag_collect(ctx), });
+            s
+        })
+}
+
+fn get_serde_enum_extras(name: &Ident, variants_dag_collect: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    if !cfg!(feature = "serde") {
+        return quote! {};
+    }
+    quote! {
+        // ==== Serialization (DAG-aware) for enum
+
+        impl hirpdag::base::dag_serde::HirpdagDagCollect for #name {
+            fn hirpdag_dag_collect(
+                &self,
+                ctx: &mut hirpdag::base::dag_serde::HirpdagDagCollectCtx,
+            ) {
+                use #name::*;
+                match self {
+                    #variants_dag_collect
+                }
+            }
+        }
+    }
+}
+
 fn get_variants_rewrite(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
     //let variants_compute_meta = quote! {
     //    Foo(x) => Foo(rewriter.rewrite(&x)),
@@ -464,7 +614,7 @@ fn expand_hirpdag_enum(
 
     {
         let mut guard = DATA_TYPES.lock().unwrap();
-        guard.push(name_str.clone());
+        guard.push((name_str.clone(), true)); // true = enum
     }
 
     let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name_str);
@@ -474,11 +624,27 @@ fn expand_hirpdag_enum(
     let variants_declarations = get_variants_declarations(input_enum);
     let variants_compute_meta = get_variants_compute_meta(input_enum);
     let variants_rewrite = get_variants_rewrite(input_enum);
+    let variants_dag_collect = get_variants_dag_collect(input_enum);
+
+    let serde_enum_extras = get_serde_enum_extras(&name, &variants_dag_collect);
+
+    let serde_enum_derives = if cfg!(feature = "serde") {
+        quote! { , hirpdag::serde::Serialize, hirpdag::serde::Deserialize }
+    } else {
+        quote! {}
+    };
+
+    let serde_enum_crate_attr = if cfg!(feature = "serde") {
+        quote! { #[serde(crate = "hirpdag::serde")] }
+    } else {
+        quote! {}
+    };
 
     quote! {
         use hirpdag::base::*;
 
-        #[derive(Hash, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Hash, Clone, Debug, PartialEq, Eq, PartialOrd, Ord #serde_enum_derives)]
+        #serde_enum_crate_attr
         pub enum #name {
             #variants_declarations
         }
@@ -505,6 +671,275 @@ fn expand_hirpdag_enum(
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
                 rewriter.#hirpdag_rewrite_method_name(self)
+            }
+        }
+
+        #serde_enum_extras
+    }
+}
+
+fn get_serde_end(entries: &[(String, bool)]) -> proc_macro2::TokenStream {
+    if !cfg!(feature = "serde") {
+        return quote! {};
+    }
+
+    // Only struct types are independently hash-consed and appear in the flat node list.
+    // Enum types are embedded as field values and serialized inline (with their own serde impls).
+    let struct_names: Vec<&String> = entries
+        .iter()
+        .filter(|(_, is_enum)| !is_enum)
+        .map(|(name, _)| name)
+        .collect();
+
+    let node_serde_variants: proc_macro2::TokenStream = struct_names
+        .iter()
+        .map(|name| {
+            let name_ident = Ident::new(name, Span::call_site());
+            let struct_ident =
+                Ident::new(&format!("HirpdagStruct{}", name), Span::call_site());
+            quote! { #name_ident(#struct_ident), }
+        })
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
+            s.extend(t);
+            s
+        });
+
+    let make_wrapper_arms: proc_macro2::TokenStream = struct_names
+        .iter()
+        .map(|name| {
+            let name_ident = Ident::new(name, Span::call_site());
+            quote! {
+                if let Some(n) = node.downcast_ref::<#name_ident>() {
+                    return HirpdagNodeSerde::#name_ident((**n).clone());
+                }
+            }
+        })
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
+            s.extend(t);
+            s
+        });
+
+    let hashcons_arms: proc_macro2::TokenStream = struct_names
+        .iter()
+        .map(|name| {
+            let name_ident = Ident::new(name, Span::call_site());
+            quote! {
+                HirpdagNodeSerde::#name_ident(inner) =>
+                    std::sync::Arc::new(#name_ident::hirpdag_from_hirpdag_struct(inner)),
+            }
+        })
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
+            s.extend(t);
+            s
+        });
+
+    quote! {
+        // ==== DAG-aware serde infrastructure (generated by #[hirpdag_end])
+
+        /// Unified enum for serializing and deserializing any hirpdag node in this module.
+        ///
+        /// When the DAG serialization thread-local context is active, child hirpdag-ref fields
+        /// serialize as integer indices and deserialize from integer indices, preserving sharing.
+        #[derive(hirpdag::serde::Serialize, hirpdag::serde::Deserialize)]
+        #[serde(crate = "hirpdag::serde")]
+        #[serde(tag = "t", content = "d")]
+        pub enum HirpdagNodeSerde {
+            #node_serde_variants
+        }
+
+        fn hirpdag_make_node_wrapper(
+            node: &std::sync::Arc<dyn std::any::Any>,
+        ) -> HirpdagNodeSerde {
+            #make_wrapper_arms
+            panic!("unknown hirpdag node type in DAG serialization; \
+                    ensure all node types in this module use #[hirpdag]")
+        }
+
+        fn hirpdag_hashcons_node_data(
+            data: HirpdagNodeSerde,
+        ) -> std::sync::Arc<dyn std::any::Any> {
+            match data {
+                #hashcons_arms
+            }
+        }
+
+        /// Wrapper for DAG-aware serde serialization of a hirpdag root node.
+        ///
+        /// Serializes as a flat list of all reachable nodes in topological order, with
+        /// child references encoded as integer indices — so shared sub-DAGs appear once.
+        ///
+        /// # Example
+        /// ```
+        /// let json = serde_json::to_string(&HirpdagDag::new(root)).unwrap();
+        /// let dag: HirpdagDag<MyType> = serde_json::from_str(&json).unwrap();
+        /// ```
+        pub struct HirpdagDag<T> {
+            pub root: T,
+        }
+
+        impl<T> HirpdagDag<T> {
+            pub fn new(root: T) -> Self {
+                Self { root }
+            }
+        }
+
+        impl<T> hirpdag::serde::Serialize for HirpdagDag<T>
+        where
+            T: hirpdag::base::dag_serde::HirpdagDagCollect + 'static,
+        {
+            fn serialize<S: hirpdag::serde::Serializer>(
+                &self,
+                s: S,
+            ) -> Result<S::Ok, S::Error> {
+                use hirpdag::serde::ser::SerializeStruct;
+
+                // Phase 1: collect all reachable nodes in topological order.
+                let mut collect_ctx =
+                    hirpdag::base::dag_serde::HirpdagDagCollectCtx::new();
+                self.root.hirpdag_dag_collect(&mut collect_ctx);
+                let root_idx = collect_ctx.nodes.len() - 1;
+
+                // Phase 2: build owned node wrappers (just clones inner struct data).
+                let node_wrappers: Vec<HirpdagNodeSerde> = collect_ctx
+                    .nodes
+                    .iter()
+                    .map(hirpdag_make_node_wrapper)
+                    .collect();
+
+                // Phase 3: serialize with DAG context active so child refs emit indices.
+                hirpdag::base::dag_serde::HIRPDAG_DAG_SER_CTX.with(|ctx| {
+                    *ctx.borrow_mut() = Some(collect_ctx.id_to_idx);
+                });
+
+                let mut state = s.serialize_struct("HirpdagDag", 2)?;
+                let nodes_result = state.serialize_field("nodes", &node_wrappers);
+
+                hirpdag::base::dag_serde::HIRPDAG_DAG_SER_CTX.with(|ctx| {
+                    *ctx.borrow_mut() = None;
+                });
+
+                nodes_result?;
+                state.serialize_field("root", &root_idx)?;
+                state.end()
+            }
+        }
+
+        impl<'de, T> hirpdag::serde::Deserialize<'de> for HirpdagDag<T>
+        where
+            T: std::any::Any + Clone + 'static,
+        {
+            fn deserialize<D: hirpdag::serde::Deserializer<'de>>(
+                d: D,
+            ) -> Result<Self, D::Error> {
+                use hirpdag::serde::de::{MapAccess, SeqAccess, Visitor};
+
+                // Seed that processes nodes one-at-a-time, keeping the DAG context
+                // up-to-date with already-deserialized nodes before each element.
+                struct NodeListSeed<'r> {
+                    results: &'r mut Vec<std::sync::Arc<dyn std::any::Any>>,
+                }
+                impl<'de2, 'r> hirpdag::serde::de::DeserializeSeed<'de2> for NodeListSeed<'r> {
+                    type Value = ();
+                    fn deserialize<D2: hirpdag::serde::Deserializer<'de2>>(
+                        self,
+                        d: D2,
+                    ) -> Result<(), D2::Error> {
+                        struct SeqVisitor<'r2> {
+                            results: &'r2 mut Vec<std::sync::Arc<dyn std::any::Any>>,
+                        }
+                        impl<'de3, 'r2> Visitor<'de3> for SeqVisitor<'r2> {
+                            type Value = ();
+                            fn expecting(
+                                &self,
+                                f: &mut std::fmt::Formatter,
+                            ) -> std::fmt::Result {
+                                write!(f, "a sequence of hirpdag nodes")
+                            }
+                            fn visit_seq<A: SeqAccess<'de3>>(
+                                self,
+                                mut seq: A,
+                            ) -> Result<(), A::Error> {
+                                loop {
+                                    // Expose already-deserialized refs so child fields
+                                    // can look up their dependencies by index.
+                                    hirpdag::base::dag_serde::HIRPDAG_DAG_DESER_CTX
+                                        .with(|ctx| {
+                                            *ctx.borrow_mut() =
+                                                Some(self.results.clone());
+                                        });
+                                    match seq.next_element::<HirpdagNodeSerde>()? {
+                                        None => break,
+                                        Some(node) => {
+                                            self.results.push(
+                                                hirpdag_hashcons_node_data(node),
+                                            );
+                                        }
+                                    }
+                                }
+                                hirpdag::base::dag_serde::HIRPDAG_DAG_DESER_CTX
+                                    .with(|ctx| *ctx.borrow_mut() = None);
+                                Ok(())
+                            }
+                        }
+                        d.deserialize_seq(SeqVisitor { results: self.results })
+                    }
+                }
+
+                struct DagVisitor<T2>(std::marker::PhantomData<T2>);
+                impl<'de2, T2: std::any::Any + Clone + 'static> Visitor<'de2>
+                    for DagVisitor<T2>
+                {
+                    type Value = HirpdagDag<T2>;
+                    fn expecting(
+                        &self,
+                        f: &mut std::fmt::Formatter,
+                    ) -> std::fmt::Result {
+                        write!(f, "a HirpdagDag with 'nodes' and 'root' fields")
+                    }
+                    fn visit_map<A: MapAccess<'de2>>(
+                        self,
+                        mut map: A,
+                    ) -> Result<HirpdagDag<T2>, A::Error> {
+                        let mut results: Vec<std::sync::Arc<dyn std::any::Any>> =
+                            Vec::new();
+                        let mut root_idx: Option<usize> = None;
+
+                        while let Some(key) =
+                            map.next_key::<std::string::String>()?
+                        {
+                            match key.as_str() {
+                                "nodes" => {
+                                    map.next_value_seed(NodeListSeed {
+                                        results: &mut results,
+                                    })?;
+                                }
+                                "root" => {
+                                    root_idx = Some(map.next_value::<usize>()?);
+                                }
+                                _ => {
+                                    let _ = map.next_value::<
+                                        hirpdag::serde::de::IgnoredAny,
+                                    >()?;
+                                }
+                            }
+                        }
+
+                        let root_idx = root_idx.ok_or_else(|| {
+                            hirpdag::serde::de::Error::missing_field("root")
+                        })?;
+                        let root = results[root_idx]
+                            .downcast_ref::<T2>()
+                            .ok_or_else(|| {
+                                hirpdag::serde::de::Error::custom(
+                                    "root type mismatch in HirpdagDag",
+                                )
+                            })?
+                            .clone();
+                        Ok(HirpdagDag { root })
+                    }
+                }
+
+                d.deserialize_map(DagVisitor::<T>(std::marker::PhantomData))
             }
         }
     }
@@ -604,37 +1039,39 @@ pub fn hirpdag_end(
 
     let mut guard = DATA_TYPES.lock().unwrap();
 
-    let rewrite_methods = guard.iter().map(|name| get_rewrite_datatype(name)).fold(
-        proc_macro2::TokenStream::new(),
-        |mut s, t| {
+    let rewrite_methods = guard
+        .iter()
+        .map(|(name, _)| get_rewrite_datatype(name))
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
             s.extend(t);
             s
-        },
-    );
+        });
 
-    let cache_members = guard.iter().map(|name| get_cache_member(name)).fold(
-        proc_macro2::TokenStream::new(),
-        |mut s, t| {
+    let cache_members = guard
+        .iter()
+        .map(|(name, _)| get_cache_member(name))
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
             s.extend(t);
             s
-        },
-    );
+        });
 
-    let cache_members_new = guard.iter().map(|name| get_cache_member_new(name)).fold(
-        proc_macro2::TokenStream::new(),
-        |mut s, t| {
+    let cache_members_new = guard
+        .iter()
+        .map(|(name, _)| get_cache_member_new(name))
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
             s.extend(t);
             s
-        },
-    );
+        });
 
-    let cache_methods = guard.iter().map(|name| get_cache_rewrite(name)).fold(
-        proc_macro2::TokenStream::new(),
-        |mut s, t| {
+    let cache_methods = guard
+        .iter()
+        .map(|(name, _)| get_cache_rewrite(name))
+        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
             s.extend(t);
             s
-        },
-    );
+        });
+
+    let serde_end = get_serde_end(&guard);
 
     guard.clear();
 
@@ -677,6 +1114,8 @@ pub fn hirpdag_end(
         impl<Rewriter: HirpdagRewriter> HirpdagRewriter for HirpdagRewriteMemoized<Rewriter> {
             #cache_methods
         }
+
+        #serde_end
     };
     t.into()
 }
