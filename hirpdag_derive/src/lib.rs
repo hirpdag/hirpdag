@@ -21,6 +21,11 @@ lazy_static! {
     ///
     /// This will be used from the HirpdagEnd to generate code which can operate on all of them.
     static ref DATA_TYPES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+    /// Collects only the hirpdag *struct* type names (not enums).
+    /// Used in #[hirpdag_end] to generate the type-dispatch functions for deserialization,
+    /// which only need to match hashconsed node types (enums are inlined into struct fields).
+    static ref DATA_STRUCT_TYPES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 }
 
 #[proc_macro_attribute]
@@ -108,6 +113,35 @@ fn get_fields_rewrite(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
             s
         });
     quote! { #fields_rewrite }
+}
+
+/// Generate: `self.field.hirpdag_ser_field(enc, ctx);` for every field.
+fn get_fields_ser(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .map(|t| t.ident.as_ref().unwrap())
+        .fold(proc_macro2::TokenStream::new(), |mut s, field_name| {
+            s.extend(quote! {
+                hirpdag::base::serialize::HirpdagSerField::hirpdag_ser_field(&self.#field_name, &mut enc, ctx);
+            });
+            s
+        })
+}
+
+/// Generate positional field deserialization arguments for `TypeName::new(...)`.
+/// Each field produces `FieldType::hirpdag_deser_field(dec, ctx)?`.
+fn get_fields_deser(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    fields_named
+        .named
+        .iter()
+        .map(|t| (&t.ty, t.ident.as_ref().unwrap()))
+        .fold(proc_macro2::TokenStream::new(), |mut s, (ty, _name)| {
+            s.extend(quote! {
+                <#ty as hirpdag::base::serialize::HirpdagDeserField<FD>>::hirpdag_deser_field(dec, ctx)?,
+            });
+            s
+        })
 }
 
 fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -229,6 +263,10 @@ fn expand_hirpdag_struct(
         let mut guard = DATA_TYPES.lock().unwrap();
         guard.push(name_str.clone());
     }
+    {
+        let mut guard = DATA_STRUCT_TYPES.lock().unwrap();
+        guard.push(name_str.clone());
+    }
 
     let hirpdag_ref_name_str = name_str.to_string();
     let hirpdag_ref_name = Ident::new(&hirpdag_ref_name_str, Span::call_site());
@@ -251,6 +289,8 @@ fn expand_hirpdag_struct(
     let fields_list = get_fields_list(fields_named);
     let fields_compute_meta = get_fields_compute_meta(fields_named);
     let fields_rewrite = get_fields_rewrite(fields_named);
+    let fields_ser = get_fields_ser(fields_named);
+    let fields_deser = get_fields_deser(fields_named);
 
     let builder_field_declarations = get_builder_field_declarations(fields_named);
     let builder_setters = get_builder_setters(fields_named);
@@ -259,6 +299,7 @@ fn expand_hirpdag_struct(
     let builder_build_args = get_builder_build_args(fields_named);
 
     let default_normalizer = get_default_normalizer(config, fields_named);
+    let name_str_lit = name_str.clone();
 
     quote! {
         use hirpdag::base::*;
@@ -404,6 +445,76 @@ fn expand_hirpdag_struct(
                 rewriter.#hirpdag_rewrite_method_name(self)
             }
         }
+
+        // ==== Serialization
+
+        impl<FE: hirpdag::base::serialize::HirpdagFieldEncoder>
+            hirpdag::base::serialize::HirpdagSerNode<FE> for #hirpdag_ref_name
+        {
+            const TYPE_TAG: u32 =
+                hirpdag::base::serialize::hirpdag_fnv1a(#name_str_lit.as_bytes());
+
+            fn hirpdag_ser_node(
+                &self,
+                ctx: &mut hirpdag::base::serialize::HirpdagSerCtx<FE>,
+            ) -> u32 {
+                let cid = self.0.hirpdag_get_creation_id();
+                if let Some(&sid) = ctx.id_map.get(&cid) {
+                    return sid;
+                }
+                let mut enc = FE::default();
+                #fields_ser
+                let sid = ctx.next_id;
+                ctx.next_id += 1;
+                ctx.id_map.insert(cid, sid);
+                ctx.records.push((
+                    <Self as hirpdag::base::serialize::HirpdagSerNode<FE>>::TYPE_TAG,
+                    sid,
+                    enc.finish(),
+                ));
+                sid
+            }
+        }
+
+        impl<FE: hirpdag::base::serialize::HirpdagFieldEncoder>
+            hirpdag::base::serialize::HirpdagSerField<FE> for #hirpdag_ref_name
+        {
+            fn hirpdag_ser_field(
+                &self,
+                enc: &mut FE,
+                ctx: &mut hirpdag::base::serialize::HirpdagSerCtx<FE>,
+            ) {
+                let sid = hirpdag::base::serialize::HirpdagSerNode::hirpdag_ser_node(self, ctx);
+                enc.write_node_ref(sid);
+            }
+        }
+
+        impl<FD: hirpdag::base::serialize::HirpdagFieldDecoder>
+            hirpdag::base::serialize::HirpdagDeserField<FD> for #hirpdag_ref_name
+        {
+            fn hirpdag_deser_field(
+                dec: &mut FD,
+                ctx: &hirpdag::base::serialize::HirpdagDeserCtx,
+            ) -> Result<Self, hirpdag::base::serialize::SerError> {
+                let sid = dec.read_node_ref()?;
+                ctx.get_node::<#hirpdag_ref_name>(sid)
+                    .ok_or(hirpdag::base::serialize::SerError::MissingNode(sid))
+            }
+        }
+
+        impl<FD: hirpdag::base::serialize::HirpdagFieldDecoder>
+            hirpdag::base::serialize::HirpdagDeserNode<FD> for #hirpdag_ref_name
+        {
+            fn hirpdag_deser_node(
+                serial_id: u32,
+                dec: &mut FD,
+                ctx: &mut hirpdag::base::serialize::HirpdagDeserCtx,
+            ) -> Result<Self, hirpdag::base::serialize::SerError> {
+                let node = #hirpdag_ref_name::new(#fields_deser);
+                ctx.insert_node(serial_id, node.clone());
+                Ok(node)
+            }
+        }
     }
 }
 
@@ -453,6 +564,53 @@ fn get_variants_rewrite(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream 
     variants_rewrite
 }
 
+/// Generate match arms for enum field serialization:
+///   Variant(x) => { enc.write_variant_idx(N); HirpdagSerField::hirpdag_ser_field(x, enc, ctx); }
+fn get_variants_ser(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
+    input_enum
+        .variants
+        .iter()
+        .enumerate()
+        .fold(proc_macro2::TokenStream::new(), |mut s, (idx, t)| {
+            let variant = t.ident.clone();
+            let idx_u32 = idx as u32;
+            s.extend(quote! {
+                #variant(x) => {
+                    enc.write_variant_idx(#idx_u32);
+                    hirpdag::base::serialize::HirpdagSerField::hirpdag_ser_field(x, enc, ctx);
+                }
+            });
+            s
+        })
+}
+
+/// Generate match arms for enum field deserialization:
+///   N => Ok(EnumName::Variant(<FieldType>::hirpdag_deser_field(dec, ctx)?)),
+fn get_variants_deser(
+    name: &Ident,
+    input_enum: &syn::DataEnum,
+) -> proc_macro2::TokenStream {
+    input_enum
+        .variants
+        .iter()
+        .enumerate()
+        .fold(proc_macro2::TokenStream::new(), |mut s, (idx, t)| {
+            let variant = t.ident.clone();
+            let idx_u32 = idx as u32;
+            // Get the field type of the single tuple variant field.
+            let field_ty = match &t.fields {
+                syn::Fields::Unnamed(f) => &f.unnamed.first().expect("enum variant must have exactly one field").ty,
+                _ => panic!("#[hirpdag] enum variants must be single-field tuple variants"),
+            };
+            s.extend(quote! {
+                #idx_u32 => Ok(#name::#variant(
+                    <#field_ty as hirpdag::base::serialize::HirpdagDeserField<FD>>::hirpdag_deser_field(dec, ctx)?
+                )),
+            });
+            s
+        })
+}
+
 fn expand_hirpdag_enum(
     _config: &HirpdagConfig,
     input: &syn::DeriveInput,
@@ -474,6 +632,8 @@ fn expand_hirpdag_enum(
     let variants_declarations = get_variants_declarations(input_enum);
     let variants_compute_meta = get_variants_compute_meta(input_enum);
     let variants_rewrite = get_variants_rewrite(input_enum);
+    let variants_ser = get_variants_ser(input_enum);
+    let variants_deser = get_variants_deser(name, input_enum);
 
     quote! {
         use hirpdag::base::*;
@@ -505,6 +665,38 @@ fn expand_hirpdag_enum(
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
                 rewriter.#hirpdag_rewrite_method_name(self)
+            }
+        }
+
+        // ==== Serialization
+
+        impl<FE: hirpdag::base::serialize::HirpdagFieldEncoder>
+            hirpdag::base::serialize::HirpdagSerField<FE> for #name
+        {
+            fn hirpdag_ser_field(
+                &self,
+                enc: &mut FE,
+                ctx: &mut hirpdag::base::serialize::HirpdagSerCtx<FE>,
+            ) {
+                use #name::*;
+                match self {
+                    #variants_ser
+                }
+            }
+        }
+
+        impl<FD: hirpdag::base::serialize::HirpdagFieldDecoder>
+            hirpdag::base::serialize::HirpdagDeserField<FD> for #name
+        {
+            fn hirpdag_deser_field(
+                dec: &mut FD,
+                ctx: &hirpdag::base::serialize::HirpdagDeserCtx,
+            ) -> Result<Self, hirpdag::base::serialize::SerError> {
+                let idx = dec.read_variant_idx()?;
+                match idx {
+                    #variants_deser
+                    _ => Err(hirpdag::base::serialize::SerError::UnknownVariant(idx)),
+                }
             }
         }
     }
@@ -603,6 +795,7 @@ pub fn hirpdag_end(
     let config = HirpdagConfig::from(&attrs);
 
     let mut guard = DATA_TYPES.lock().unwrap();
+    let mut struct_guard = DATA_STRUCT_TYPES.lock().unwrap();
 
     let rewrite_methods = guard.iter().map(|name| get_rewrite_datatype(name)).fold(
         proc_macro2::TokenStream::new(),
@@ -636,7 +829,46 @@ pub fn hirpdag_end(
         },
     );
 
+    // Generate match arms for both binary and JSON dispatch functions.
+    // Only struct types appear here; enums are inlined into struct field data.
+    let binary_dispatch_arms = struct_guard
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, name| {
+            let type_ident = Ident::new(name, Span::call_site());
+            s.extend(quote! {
+                tag if tag == <#type_ident as hirpdag::base::serialize::HirpdagSerNode<
+                    hirpdag::serialization::binary::BinaryFieldEncoder>>::TYPE_TAG =>
+                {
+                    <#type_ident as hirpdag::base::serialize::HirpdagDeserNode<
+                        hirpdag::serialization::binary::BinaryFieldDecoder>>::hirpdag_deser_node(
+                        serial_id, dec, ctx
+                    )?;
+                    Ok(())
+                }
+            });
+            s
+        });
+
+    let json_dispatch_arms = struct_guard
+        .iter()
+        .fold(proc_macro2::TokenStream::new(), |mut s, name| {
+            let type_ident = Ident::new(name, Span::call_site());
+            s.extend(quote! {
+                tag if tag == <#type_ident as hirpdag::base::serialize::HirpdagSerNode<
+                    hirpdag::serialization::json::JsonFieldEncoder>>::TYPE_TAG =>
+                {
+                    <#type_ident as hirpdag::base::serialize::HirpdagDeserNode<
+                        hirpdag::serialization::json::JsonFieldDecoder>>::hirpdag_deser_node(
+                        serial_id, dec, ctx
+                    )?;
+                    Ok(())
+                }
+            });
+            s
+        });
+
     guard.clear();
+    struct_guard.clear();
 
     let reference_type: proc_macro2::TokenStream = config.reference_type();
     let reference_weak_type: proc_macro2::TokenStream = config.reference_weak_type();
@@ -676,6 +908,40 @@ pub fn hirpdag_end(
 
         impl<Rewriter: HirpdagRewriter> HirpdagRewriter for HirpdagRewriteMemoized<Rewriter> {
             #cache_methods
+        }
+
+        // ==== Deserialization dispatch
+
+        /// Reconstruct one node from binary field data into `ctx`.
+        ///
+        /// Pass this function to [`hirpdag::base::serialize::HirpdagDeserializer::from_binary`].
+        #[allow(unused_variables)]
+        pub fn hirpdag_deser_dispatch_binary(
+            type_tag: u32,
+            serial_id: u32,
+            dec: &mut hirpdag::serialization::binary::BinaryFieldDecoder,
+            ctx: &mut hirpdag::base::serialize::HirpdagDeserCtx,
+        ) -> Result<(), hirpdag::base::serialize::SerError> {
+            match type_tag {
+                #binary_dispatch_arms
+                _ => Err(hirpdag::base::serialize::SerError::UnknownTypeTag(type_tag)),
+            }
+        }
+
+        /// Reconstruct one node from JSON field data into `ctx`.
+        ///
+        /// Pass this function to [`hirpdag::base::serialize::HirpdagDeserializer::from_json`].
+        #[allow(unused_variables)]
+        pub fn hirpdag_deser_dispatch_json(
+            type_tag: u32,
+            serial_id: u32,
+            dec: &mut hirpdag::serialization::json::JsonFieldDecoder,
+            ctx: &mut hirpdag::base::serialize::HirpdagDeserCtx,
+        ) -> Result<(), hirpdag::base::serialize::SerError> {
+            match type_tag {
+                #json_dispatch_arms
+                _ => Err(hirpdag::base::serialize::SerError::UnknownTypeTag(type_tag)),
+            }
         }
     };
     t.into()

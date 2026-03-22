@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod base;
+pub mod serialization;
 
 pub use hirpdag_hashconsing;
 
