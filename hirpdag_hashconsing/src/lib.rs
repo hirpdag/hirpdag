@@ -30,6 +30,10 @@ mod reference_leak;
 pub use crate::reference_leak::RefLeak;
 pub use crate::reference_leak::RefLeakWeak;
 
+mod reference_arc_cacheline;
+pub use crate::reference_arc_cacheline::RefArcCacheLine;
+pub use crate::reference_arc_cacheline::RefArcCacheLineWeak;
+
 // Hashconsing table implementations.
 
 mod table_vec_linear_weak;
@@ -169,6 +173,7 @@ mod tests {
             test_table_weak_all::<RefRc<TestData>, RefRcWeak<TestData>>();
             test_table_weak_all::<RefArc<TestData>, RefArcWeak<TestData>>();
             test_table_weak_all::<RefLeak<TestData>, RefLeakWeak<TestData>>();
+            test_table_weak_all::<RefArcCacheLine<TestData>, RefArcCacheLineWeak<TestData>>();
 
             // TableTovWeakTable does not work on RefLeak
             test_tableshared_all::<

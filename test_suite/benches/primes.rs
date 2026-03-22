@@ -189,6 +189,29 @@ mod arc_tovweaktable {
     implementation!();
 }
 
+mod arc_cacheline_hash_linear {
+    use hirpdag::*;
+
+    #[hirpdag]
+    struct Number {
+        n: usize,
+        prime_factors: Vec<Number>,
+        last_prime: Option<Number>,
+        v: usize,
+    }
+
+    #[hirpdag_end(
+        reference_type = "hirpdag_hashconsing::RefArcCacheLine<D>",
+        reference_weak_type = "hirpdag_hashconsing::RefArcCacheLineWeak<D>",
+        table_type = "hirpdag_hashconsing::TableHashmapFallbackWeak<D, hirpdag_hashconsing::RefArcCacheLine<D>, hirpdag_hashconsing::RefArcCacheLineWeak<D>, hirpdag_hashconsing::TableVecLinearWeak<D, hirpdag_hashconsing::RefArcCacheLine<D>, hirpdag_hashconsing::RefArcCacheLineWeak<D>>>",
+        tableshared_type = "hirpdag_hashconsing::TableSharedSharded<D, hirpdag_hashconsing::RefArcCacheLine<D>, ImplTable<D>>",
+        build_tableshared_type = "hirpdag_hashconsing::BuildTableSharedSharded<D, hirpdag_hashconsing::RefArcCacheLine<D>, ImplTable<D>, hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
+    )]
+    pub struct HirpdagEndMarker;
+
+    implementation!();
+}
+
 mod leak_hash_linear {
     use hirpdag::*;
 
@@ -248,6 +271,17 @@ fn bench_primes(c: &mut Criterion) {
                     &params,
                     |b, params| {
                         b.iter(|| arc_tovweaktable::populate_numbers(std::hint::black_box(params)))
+                    },
+                );
+                group.bench_with_input(
+                    BenchmarkId::new("ArcCacheLineHashLinear", params),
+                    &params,
+                    |b, params| {
+                        b.iter(|| {
+                            arc_cacheline_hash_linear::populate_numbers(std::hint::black_box(
+                                params,
+                            ))
+                        })
                     },
                 );
                 group.bench_with_input(
