@@ -30,6 +30,10 @@ mod reference_leak;
 pub use crate::reference_leak::RefLeak;
 pub use crate::reference_leak::RefLeakWeak;
 
+mod reference_arc_box;
+pub use crate::reference_arc_box::RefArcBox;
+pub use crate::reference_arc_box::RefArcBoxWeak;
+
 mod reference_arc_cacheline;
 pub use crate::reference_arc_cacheline::RefArcCacheLine;
 pub use crate::reference_arc_cacheline::RefArcCacheLineWeak;
@@ -173,6 +177,7 @@ mod tests {
             test_table_weak_all::<RefRc<TestData>, RefRcWeak<TestData>>();
             test_table_weak_all::<RefArc<TestData>, RefArcWeak<TestData>>();
             test_table_weak_all::<RefLeak<TestData>, RefLeakWeak<TestData>>();
+            test_table_weak_all::<RefArcBox<TestData>, RefArcBoxWeak<TestData>>();
             test_table_weak_all::<RefArcCacheLine<TestData>, RefArcCacheLineWeak<TestData>>();
 
             // TableTovWeakTable does not work on RefLeak
