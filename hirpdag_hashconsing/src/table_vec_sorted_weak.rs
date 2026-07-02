@@ -2,13 +2,14 @@ use crate::reference::*;
 use crate::table::Table;
 use crate::weak_entry::*;
 
+/// Hash-consing table backed by a hash-sorted `Vec` with O(log n) binary search + O(k) scan.
+///
+/// Entries are kept sorted by hash.  On lookup, binary search lands anywhere in the run of
+/// entries sharing that hash, then a linear scan outward in both directions finds the exact
+/// match.  Insert preserves sort order.  Outperforms [`TableVecLinearWeak`] for medium-sized
+/// node sets; the sorted invariant also enables the `Err(())` early-exit in
+/// [`WeakEntry::get_existing_near`].
 pub struct TableVecSortedWeak<D, R, RW> {
-    // Vector will be sorted by hash.
-    // Entries with equivalent hash will be contiguous, but not sorted further.
-    // We can do a binary search to find an entry with the given hash,
-    // or the next position if not present.
-    // The binary search will not necessarily find the first position with an equivalent hash, so
-    // we need to do a linear scan in both directions while the hash is equivalent.
     v: Vec<WeakEntry<D, R, RW>>,
 }
 

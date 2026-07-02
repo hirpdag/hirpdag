@@ -1,5 +1,10 @@
 use crate::reference::*;
 
+/// The storage unit inside vector-backed hash-consing tables.
+///
+/// Caches the precomputed hash alongside a weak reference to the interned value.  The hash
+/// enables cheap filtering before the equality check, and the weak reference allows the entry
+/// to be evicted (via [`is_alive`](Self::is_alive)) once all strong references are dropped.
 pub struct WeakEntry<T, R, RW> {
     hash: u64,
     weak: RW,
@@ -34,6 +39,7 @@ where
         None
     }
 
+    /// Probe this entry: returns `Some(strong)` if the hash matches and the data is equal.
     pub fn get(&self, hash: u64, data: &T) -> Option<R> {
         if self.hash == hash {
             return self.get_data(data);
@@ -41,6 +47,11 @@ where
         None
     }
 
+    /// Probe this entry for use in sorted tables.
+    ///
+    /// Returns `Ok(Some(strong))` on a hit, `Ok(None)` if the hash matches but data differs
+    /// (keep scanning neighbours), or `Err(())` if the hash differs (stop the linear scan —
+    /// no further entries in this direction can match).
     pub fn get_existing_near(&self, hash: u64, data: &T) -> Result<Option<R>, ()> {
         if self.hash == hash {
             return Ok(self.get_data(data));

@@ -1,3 +1,8 @@
+/// Sealed marker trait for primitive numeric types.
+///
+/// Provides blanket [`HirpdagComputeMeta`](crate::base::meta::HirpdagComputeMeta) and
+/// [`HirpdagRewritable`](crate::base::rewrite::HirpdagRewritable) implementations that treat
+/// numbers as opaque leaves — they contribute no metadata and pass through rewrites unchanged.
 pub trait IsNumber {}
 
 impl IsNumber for i8 {}

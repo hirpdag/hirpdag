@@ -1,4 +1,10 @@
+/// Implemented by every field type to enable recursive DAG rewriting.
+///
+/// The macro-generated `default_rewrite` for each node type calls `hirpdag_rewrite` on every
+/// field, then reconstructs the node.  Leaf types (numbers, strings) clone themselves;
+/// child `HirpdagRef` fields delegate to the rewriter.
 pub trait HirpdagRewritable<T> {
+    /// Apply `rewriter` to this value and return the (potentially new) transformed value.
     fn hirpdag_rewrite(&self, rewriter: &T) -> Self;
 }
 

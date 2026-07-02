@@ -1,17 +1,32 @@
 use crate::reference::*;
 
+/// Single-threaded hash-consing table — the inner storage unit behind [`TableShared`].
+///
+/// Implementations vary in lookup strategy (linear scan, sorted binary search, hash map) and
+/// eviction policy (weak references allow GC of unreferenced nodes).
 pub trait Table<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
 {
+    /// Look up an already-interned value by precomputed hash and equality.
+    ///
+    /// Returns `None` if no structurally equal value is currently stored.
     fn get(&self, hash: u64, data: &D) -> Option<R>;
 
+    /// Return an existing interned value or intern a fresh one.
+    ///
+    /// If `data` is not yet in the table, `creation_meta` is called on the new entry
+    /// before it is stored — allowing metadata and creation IDs to be set atomically
+    /// with insertion.
     fn get_or_insert<CF>(&mut self, hash: u64, data: D, creation_meta: CF) -> R
     where
         CF: FnOnce(&mut D);
 }
 
+/// Factory for constructing [`Table`] instances.
+///
+/// Used by [`BuildTableShared`] implementations to create per-shard inner tables.
 pub trait BuildTable<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
@@ -52,19 +67,31 @@ impl<T> Clone for BuildTableDefault<T> {
     }
 }
 
+/// Thread-safe hash-consing table; wraps one or more [`Table`] instances with a locking strategy.
+///
+/// Implementations choose how to serialize concurrent access — a single mutex, sharded mutexes,
+/// lock-free structures, etc.  The `hirpdag` macro selects the implementation via
+/// `#[hirpdag(tableshared_type = "...")]`.
 pub trait TableShared<D, R, T>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     T: Table<D, R>,
 {
+    /// Look up an already-interned value; returns `None` if not present.
     fn get(&self, data: &D) -> Option<R>;
 
+    /// Return an existing interned value or intern a fresh one, thread-safely.
+    ///
+    /// `creation_meta` is called exactly once if a new entry is inserted.
     fn get_or_insert<CF>(&self, data: D, creation_meta: CF) -> R
     where
         CF: FnOnce(&mut D);
 }
 
+/// Factory for constructing [`TableShared`] instances.
+///
+/// The default implementation calls [`BuildTable`] for each shard.
 pub trait BuildTableShared<D, R, T>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,

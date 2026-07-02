@@ -9,6 +9,13 @@ use hirpdag_hashconsing::Reference;
 use hirpdag_hashconsing::Table;
 use hirpdag_hashconsing::TableShared;
 
+/// A hash-consed, reference-counted pointer to an interned DAG node.
+///
+/// Two `HirpdagRef`s are equal (via `==`) iff they point to the same allocation — O(1) pointer
+/// equality guaranteed by hash-consing.  Ordering (via `cmp`) uses the creation ID, which
+/// reflects DAG dependency order: if A depends on B then B < A.
+///
+/// `Deref` gives direct access to the underlying `D` fields.
 pub struct HirpdagRef<D: HirpdagStruct, R: Reference<HirpdagStorage<D>>>(
     R,
     std::marker::PhantomData<D>,
@@ -82,6 +89,7 @@ where
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
 {
+    /// Returns the cached metadata for this node without traversing the DAG.
     pub fn hirpdag_get_meta(&self) -> &HirpdagMeta {
         &R::strong_deref(&self.0).hirpdag_meta
     }
@@ -131,6 +139,11 @@ where
 static HIRPDAG_CREATION_COUNTER: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
+/// The heap allocation stored behind every [`HirpdagRef`].
+///
+/// Holds the user data `D`, the pre-computed [`HirpdagMeta`], and the creation ID.
+/// Users never interact with this type directly; access goes through `HirpdagRef::deref`
+/// or `hirpdag_get_meta` / `hirpdag_get_creation_id`.
 pub struct HirpdagStorage<D: HirpdagStruct> {
     hirpdag_meta: HirpdagMeta,
     /// Monotonically increasing ID assigned at creation time.
@@ -184,6 +197,11 @@ where
     }
 }
 
+/// Per-type global table that deduplicates nodes via hash-consing.
+///
+/// One instance lives in a `lazy_static` per `#[hirpdag]` type.  All node construction
+/// funnels through [`hirpdag_hashcons`](Self::hirpdag_hashcons), which either returns an
+/// existing node or inserts a new one and computes its metadata and creation ID.
 pub struct HirpdagHashconsTable<
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
@@ -217,6 +235,8 @@ where
         }
     }
 
+    /// Intern `data`: return an existing node if a structurally equal one is already stored,
+    /// otherwise allocate a new one, compute its metadata and assign a creation ID.
     pub fn hirpdag_hashcons(&self, data: D) -> HirpdagRef<D, R> {
         let storage = HirpdagStorage::<D> {
             hirpdag_meta: HirpdagMeta::zero(),
