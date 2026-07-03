@@ -1,6 +1,6 @@
 # Design: DAG-aware Serialization / Deserialization
 
-Status: proposed (not yet implemented)
+Status: implemented (see `docs/adr/0001-serde-dag-aware-serialization.md`)
 
 ## Requirements
 
@@ -162,11 +162,11 @@ Consequences that fall out for free:
 
 ### Phase 1 — `hirpdag` crate: base support (~150 LOC)
 
-- `Cargo.toml`: add `serde` (with `derive`) and `postcard` (with `use-std`) as
-  dependencies; `serde_json` behind a `json` feature (default **on**; users who care
-  can disable it). Re-export `serde` from `hirpdag` so generated code can reference
-  `hirpdag::serde` via `#[serde(crate = "...")]` without users adding the dependency
-  themselves.
+- `Cargo.toml`: add `serde` (with `derive`), `postcard` (with `use-std`) and
+  `serde_json` as dependencies (unconditional — no feature matrix; a feature gate can
+  be added later if a user needs it). Re-export all three from `hirpdag` so generated
+  code can reference `hirpdag::serde` via `#[serde(crate = "...")]` without users
+  adding the dependencies themselves.
 - New `hirpdag/src/base/serialize.rs`:
   - `trait HirpdagCollect<C> { fn hirpdag_collect(&self, ctx: &mut C); }` with no-op
     impls for `IsNumber` types, `String`, and structural impls for `Option<T>`,
@@ -214,7 +214,7 @@ attribute (`#[hirpdag(no_serialize)]`) can be added later if a user needs it.
 - Public entry points:
   - `hirpdag_serialize(roots: &[HirpdagAnyRef]) -> Result<Vec<u8>, HirpdagSerializeError>`
   - `hirpdag_deserialize(bytes: &[u8]) -> Result<Vec<HirpdagAnyRef>, HirpdagSerializeError>`
-  - `hirpdag_serialize_json` / `hirpdag_deserialize_json` (behind the `json` feature)
+  - `hirpdag_serialize_json` / `hirpdag_deserialize_json`
 
 ### Phase 4 — tests (`test_suite`)
 

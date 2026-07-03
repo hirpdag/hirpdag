@@ -76,7 +76,13 @@
 
 ### Features
 
-- [P0] Serialization/deserialization
+- ~~[P0] Serialization/deserialization~~
+  - DONE: DAG-aware serialization built on serde. `#[hirpdag_end]` generates
+    `hirpdag_serialize`/`hirpdag_deserialize` (postcard binary) and
+    `hirpdag_serialize_json`/`hirpdag_deserialize_json` (text). Each unique node
+    is written exactly once into a topologically ordered node table with u64
+    indices; deserialization re-interns through the hashcons table. See
+    `docs/design/serialization.md` and `docs/adr/0001-serde-dag-aware-serialization.md`.
 
 - [P1] Visitor traversal code
 
