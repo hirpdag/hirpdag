@@ -18,33 +18,26 @@ pub const HIRPDAG_MAGIC: &[u8; 4] = b"HPDG";
 /// Version of the hirpdag archive format written by this library.
 pub const HIRPDAG_FORMAT_VERSION: u32 = 1;
 
-/// Error type for hirpdag serialization and deserialization.
+/// Error type for hirpdag serialization.
+///
+/// Distinct from [`HirpdagDeserializeError`], mirroring serde's separation of
+/// `serde::ser::Error` and `serde::de::Error`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HirpdagSerializeError {
-    /// The input does not start with the hirpdag binary magic prefix.
-    BadMagic,
-    /// A (de)serialization session is already active on this thread.
+    /// A serialization session is already active on this thread.
     /// Sessions are per-thread and not re-entrant.
     SessionActive,
-    /// A root had a different hirpdag type than the one requested.
-    TypeMismatch { expected: &'static str },
-    /// An underlying format error (postcard/serde_json), including
-    /// unsupported format versions, invalid node indices, node type
-    /// mismatches and truncated input.
+    /// An underlying format error (postcard/serde_json).
     Format(String),
 }
 
 impl std::fmt::Display for HirpdagSerializeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BadMagic => write!(f, "hirpdag: not a hirpdag binary archive (bad magic)"),
             Self::SessionActive => write!(
                 f,
                 "hirpdag: a serialization session is already active on this thread"
             ),
-            Self::TypeMismatch { expected } => {
-                write!(f, "hirpdag: root type mismatch, expected {}", expected)
-            }
             Self::Format(msg) => write!(f, "hirpdag: {}", msg),
         }
     }
@@ -52,11 +45,40 @@ impl std::fmt::Display for HirpdagSerializeError {
 
 impl std::error::Error for HirpdagSerializeError {}
 
+/// Error type for hirpdag deserialization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HirpdagDeserializeError {
+    /// The input does not start with the hirpdag binary magic prefix.
+    BadMagic,
+    /// A deserialization session is already active on this thread.
+    /// Sessions are per-thread and not re-entrant.
+    SessionActive,
+    /// An underlying format error (postcard/serde_json), including
+    /// unsupported format versions, invalid node indices, node type
+    /// mismatches and truncated input.
+    Format(String),
+}
+
+impl std::fmt::Display for HirpdagDeserializeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BadMagic => write!(f, "hirpdag: not a hirpdag binary archive (bad magic)"),
+            Self::SessionActive => write!(
+                f,
+                "hirpdag: a deserialization session is already active on this thread"
+            ),
+            Self::Format(msg) => write!(f, "hirpdag: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for HirpdagDeserializeError {}
+
 /// Strips and validates the binary archive magic prefix.
-pub fn hirpdag_strip_magic(bytes: &[u8]) -> Result<&[u8], HirpdagSerializeError> {
+pub fn hirpdag_strip_magic(bytes: &[u8]) -> Result<&[u8], HirpdagDeserializeError> {
     bytes
         .strip_prefix(&HIRPDAG_MAGIC[..])
-        .ok_or(HirpdagSerializeError::BadMagic)
+        .ok_or(HirpdagDeserializeError::BadMagic)
 }
 
 /// Marker type occupying the `version` field of an archive.

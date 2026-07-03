@@ -44,6 +44,10 @@ are hand-written.
   live in the process (in-process round trips are pointer-equal).
 - A ref serialized outside a session is a hard error — there is no accidental
   tree-expansion path, so serialization is always DAG-aware.
+- Roots are typed: struct types opt in with `#[hirpdag(root)]`, and the generated
+  `HirpdagArchiveRoots` struct (one vector per root type) is the serialize input and
+  deserialize output. Error types are split (`HirpdagSerializeError` /
+  `HirpdagDeserializeError`), mirroring serde's `ser::Error`/`de::Error` separation.
 - `serde`, `postcard`, and `serde_json` become unconditional dependencies of
   `hirpdag` (re-exported so users don't declare them); serialization code is
   generated unconditionally, avoiding a feature/cfg matrix in the proc macro. An

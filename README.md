@@ -185,26 +185,36 @@ once (as an entry in a topologically ordered node table), so structural sharing
 survives a round trip and output size is proportional to the number of unique
 nodes, not the tree expansion.
 
-`#[hirpdag_end]` generates `hirpdag_serialize`/`hirpdag_deserialize` (compact
-binary via [postcard]) and `hirpdag_serialize_json`/`hirpdag_deserialize_json`
-(text via [serde_json]). Multiple roots, possibly of different types, can be
-serialized into the same file.
+Struct types that may be serialization roots are marked `#[hirpdag(root)]`.
+`#[hirpdag_end]` generates a `HirpdagArchiveRoots` struct (one vector per root
+type; multiple roots of different types share one file) and the entry points
+`hirpdag_serialize`/`hirpdag_deserialize` (compact binary via [postcard]) and
+`hirpdag_serialize_json`/`hirpdag_deserialize_json` (text via [serde_json]).
 
 [postcard]: https://crates.io/crates/postcard
 [serde_json]: https://crates.io/crates/serde_json
 
 ```rust
+#[hirpdag(root, normalizer)]
+struct Expr {
+    x: ExprKind,
+}
+
+// ...
+
 let a: Expr = Expr::new(ExprKind::Var("a".to_string()));
 let e: Expr = Expr::new(ExprKind::Mul(vec![a.clone(), a.clone()]));
 
-let bytes: Vec<u8> = hirpdag_serialize(&[e.clone().into()]).unwrap();
+let bytes: Vec<u8> = hirpdag_serialize(&HirpdagArchiveRoots {
+    expr: vec![e.clone()],
+    ..Default::default()
+}).unwrap();
 
-let roots = hirpdag_deserialize(&bytes).unwrap();
-let e2: Expr = roots[0].clone().try_into().unwrap();
+let out = hirpdag_deserialize(&bytes).unwrap();
 
 // Deserialized nodes are re-interned through the hashcons table,
 // so in-process round trips are pointer-equal.
-assert_eq!(e2, e);
+assert_eq!(out.expr[0], e);
 ```
 
 See `docs/design/serialization.md` and

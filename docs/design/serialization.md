@@ -81,7 +81,8 @@ HirpdagArchive
 ├── nodes: NodeSeq                node table, topological order (children first)
 │     └── [ HirpdagArchiveNode ]  tagged union over all #[hirpdag] struct types
 │           e.g. Expr(HirpdagStructExpr) | Variables(HirpdagStructVariables)
-└── roots: Vec<HirpdagAnyRef>     tagged refs, each encoding a u64 node index
+└── roots: HirpdagArchiveRoots    one Vec per #[hirpdag(root)] type, each ref
+                                  encoded as a u64 node index
 ```
 
 - A node's `HirpdagRef` fields are encoded as `u64` indices into `nodes`.
@@ -107,8 +108,8 @@ session state lives in a thread-local scoped context, generated per hirpdag modu
 
 - **Serialize session**: `creation_id → u64 index` map. `hirpdag_get_creation_id()`
   is globally unique per interned node across all types, so one map suffices.
-- **Deserialize session**: `Vec<HirpdagAnyRef>` of already-reconstructed nodes,
-  indexed by node index.
+- **Deserialize session**: `Vec<HirpdagNodeRef>` (a private tagged enum over the
+  module's struct types) of already-reconstructed nodes, indexed by node index.
 
 Generated `impl Serialize for Foo` (the ref wrapper) looks up its creation ID in the
 session map and writes the `u64`; a missing entry (or no active session) is an error —
@@ -145,7 +146,7 @@ impls for data structs, enums, and ref types.
    re-interned via `hirpdag_hashcons()`** and the resulting ref is pushed into the
    session vec — so node *i+1* can reference it. Interning recomputes meta and
    assigns fresh creation IDs, and dedups against nodes already live in the process.
-3. Deserialize `roots`, resolve, return `Vec<HirpdagAnyRef>`.
+3. Deserialize `roots`, resolve, return the typed `HirpdagArchiveRoots`.
 
 Re-interning uses the raw hashcons path (`spawn`-equivalent), **not** `new()`: the
 serialized data was produced from already-normalized nodes, so normalizers must not
@@ -171,9 +172,11 @@ Consequences that fall out for free:
   - `trait HirpdagCollect<C> { fn hirpdag_collect(&self, ctx: &mut C); }` with no-op
     impls for `IsNumber` types, `String`, and structural impls for `Option<T>`,
     `Vec<T>` (mirrors `rewrite.rs`).
-  - `enum HirpdagSerializeError { Io, Format(String), BadMagic, UnsupportedVersion(u32),
-    InvalidNodeIndex { index: u64, limit: u64 }, RootTypeMismatch, NoSession, ... }`
-    with `Display`/`Error` impls and `From` conversions for postcard/serde_json errors.
+  - Two distinct error enums, mirroring serde's `ser::Error`/`de::Error` split:
+    `HirpdagSerializeError { SessionActive, Format(String) }` and
+    `HirpdagDeserializeError { BadMagic, SessionActive, Format(String) }`, with
+    `Display`/`Error` impls. Version, index and type-mismatch failures surface as
+    `Format` messages via serde's custom-error path.
   - Small helpers to write/check the magic prefix and version.
 
 ### Phase 2 — `hirpdag_derive`: per-type generation
@@ -201,19 +204,27 @@ attribute (`#[hirpdag(no_serialize)]`) can be added later if a user needs it.
 
 - `enum HirpdagArchiveNode { Foo(HirpdagStructFoo), … }` (struct types only) with the
   serde derive.
-- `pub enum HirpdagAnyRef { Foo(Foo), … }` with the serde derive (variant tag + inner
-  ref-as-`u64`), plus `From<Foo>` and `TryFrom<HirpdagAnyRef> for Foo` conveniences.
+- `enum HirpdagNodeRef { Foo(Foo), … }` (private): the deserialize session's
+  heterogeneous store of reconstructed nodes.
+- `pub struct HirpdagArchiveRoots { foo: Vec<Foo>, … }`: one snake_case-named vector
+  per `#[hirpdag(root)]` struct type. Derives serde (each ref serializes as a `u64`
+  index) plus `Default` and `#[serde(default)]`, so a subset of root types can be set
+  with struct update syntax and empty vectors can be omitted from hand-written JSON.
+  This is the input of the serialize entry points and the output of the deserialize
+  entry points. Types without `root` can still appear as interior nodes.
 - `HirpdagCollectCtx { seen: HashMap<u64 /*creation_id*/, u64 /*index*/>,
   nodes: Vec<HirpdagArchiveNode> }`.
 - Thread-local serialize session (`creation_id → index` map) and deserialize session
-  (`Vec<HirpdagAnyRef>`), with RAII guards so sessions are cleaned up on error paths.
+  (`Vec<HirpdagNodeRef>`), with RAII guards so sessions are cleaned up on error paths.
 - `struct NodeSeq` with custom serde impls: serialize emits the collected node vec as
   a seq; deserialize is a `SeqAccess` visitor that interns each element immediately
   and appends the resulting ref to the session (this is what enables the single
   forward pass).
-- Public entry points:
-  - `hirpdag_serialize(roots: &[HirpdagAnyRef]) -> Result<Vec<u8>, HirpdagSerializeError>`
-  - `hirpdag_deserialize(bytes: &[u8]) -> Result<Vec<HirpdagAnyRef>, HirpdagSerializeError>`
+- Public entry points (generated only when the module has at least one
+  `#[hirpdag(root)]` type; the session/collect infrastructure is generated whenever
+  the module has struct types):
+  - `hirpdag_serialize(roots: &HirpdagArchiveRoots) -> Result<Vec<u8>, HirpdagSerializeError>`
+  - `hirpdag_deserialize(bytes: &[u8]) -> Result<HirpdagArchiveRoots, HirpdagDeserializeError>`
   - `hirpdag_serialize_json` / `hirpdag_deserialize_json`
 
 ### Phase 4 — tests (`test_suite`)

@@ -8,33 +8,49 @@ a naive tree walk would be exponential.
 
 ## API
 
-`#[hirpdag_end]` generates entry points for the module's hirpdag types:
+Struct types that may be serialization roots are marked with
+`#[hirpdag(root)]`. `#[hirpdag_end]` then generates a `HirpdagArchiveRoots`
+struct with one vector per root type (field names are the snake_case type
+names), plus entry points:
 
-* `hirpdag_serialize(&[HirpdagAnyRef]) -> Result<Vec<u8>, _>` — compact binary
-  (via [postcard](https://crates.io/crates/postcard)).
-* `hirpdag_deserialize(&[u8]) -> Result<Vec<HirpdagAnyRef>, _>`
+* `hirpdag_serialize(&HirpdagArchiveRoots) -> Result<Vec<u8>, HirpdagSerializeError>`
+  — compact binary (via [postcard](https://crates.io/crates/postcard)).
+* `hirpdag_deserialize(&[u8]) -> Result<HirpdagArchiveRoots, HirpdagDeserializeError>`
 * `hirpdag_serialize_json` / `hirpdag_deserialize_json` — the same archive as
   human-readable JSON.
 
-`HirpdagAnyRef` is a generated enum with one variant per `#[hirpdag]` struct
-type in the module. Any mix of root types can be serialized into the same
-file, and `From`/`TryFrom` conversions are generated for each type:
+Types without `#[hirpdag(root)]` can still appear anywhere *inside* the DAG;
+they just cannot be roots. `HirpdagArchiveRoots` implements `Default`, so a
+subset of the root types can be set with struct update syntax:
 
 ```rust
-let bytes = hirpdag_serialize(&[expr.clone().into(), vars.clone().into()])?;
+#[hirpdag(root)]
+struct Expr { ... }
 
-let roots = hirpdag_deserialize(&bytes)?;
-let expr2: Expr = roots[0].clone().try_into()?;
-let vars2: Variables = roots[1].clone().try_into()?;
+#[hirpdag(root)]
+struct Variables { ... }
+
+let bytes = hirpdag_serialize(&HirpdagArchiveRoots {
+    expr: vec![e1, e2],
+    variables: vec![vars],
+})?;
+
+let out = hirpdag_deserialize(&bytes)?;
+let e1_again: &Expr = &out.expr[0];
 ```
+
+The error types are distinct (`HirpdagSerializeError` /
+`HirpdagDeserializeError`), mirroring serde's separation of `ser::Error` and
+`de::Error`.
 
 ## Format
 
-The archive is a version, then a node table, then the list of roots. Nodes are
-written in post-order DFS order (children before parents), and `#[hirpdag]`
-struct fields that reference other nodes are encoded as `u64` indices into the
-node table. `#[hirpdag]` enum values are not hashconsed and are stored inline
-inside their parent node.
+The archive is a version, then a node table, then the typed roots
+(`HirpdagArchiveRoots`, serialized as one index vector per root type). Nodes
+are written in post-order DFS order (children before parents), and
+`#[hirpdag]` struct fields that reference other nodes are encoded as `u64`
+indices into the node table. `#[hirpdag]` enum values are not hashconsed and
+are stored inline inside their parent node.
 
 Because children always precede parents, deserialization is a single forward
 pass: forward references are rejected, which also makes cycles
