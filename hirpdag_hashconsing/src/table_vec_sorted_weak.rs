@@ -10,6 +10,12 @@ use crate::weak_entry::*;
 /// node sets; the sorted invariant also enables the `Err(())` early-exit in
 /// [`WeakEntry::get_existing_near`].
 pub struct TableVecSortedWeak<D, R, RW> {
+    // Vector will be sorted by hash.
+    // Entries with equivalent hash will be contiguous, but not sorted further.
+    // We can do a binary search to find an entry with the given hash,
+    // or the next position if not present.
+    // The binary search will not necessarily find the first position with an equivalent hash, so
+    // we need to do a linear scan in both directions while the hash is equivalent.
     v: Vec<WeakEntry<D, R, RW>>,
 }
 

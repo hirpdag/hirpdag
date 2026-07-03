@@ -1,4 +1,4 @@
-/// Implemented by every field type to enable recursive DAG rewriting.
+/// Implemented by types that can appear as fields in `#[hirpdag]` structs to support rewriting.
 ///
 /// The macro-generated `default_rewrite` for each node type calls `hirpdag_rewrite` on every
 /// field, then reconstructs the node.  Leaf types (numbers, strings) clone themselves;
