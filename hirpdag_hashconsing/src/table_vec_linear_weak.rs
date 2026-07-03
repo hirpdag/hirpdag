@@ -2,6 +2,11 @@ use crate::reference::*;
 use crate::table::Table;
 use crate::weak_entry::*;
 
+/// Hash-consing table backed by an unsorted `Vec` of weak entries with O(n) linear search.
+///
+/// Simple and allocation-friendly for small node sets; outperformed by [`TableVecSortedWeak`]
+/// and [`TableHashmapFallbackWeak`] at larger sizes.  Dead entries are retained until the next
+/// insert, when a slot scan can evict them.
 pub struct TableVecLinearWeak<D, R, RW> {
     v: std::vec::Vec<WeakEntry<D, R, RW>>,
 }

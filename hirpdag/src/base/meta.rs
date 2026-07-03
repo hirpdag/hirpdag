@@ -1,9 +1,17 @@
 // ==== Metadata Base
 
+/// Total node count in a subtree (saturating u32; capped rather than overflowing).
 pub type HirpdagMetaCountType = u32;
+/// Height of a node's subtree — distance from the node to its deepest leaf (saturating u16).
 pub type HirpdagMetaHeightType = u16;
+/// Bitfield of user-defined flags propagated upward through the DAG via bitwise OR.
 pub type HirpdagMetaFlagType = u16;
 
+/// Aggregated structural metadata cached on every interned node.
+///
+/// Computed bottom-up at intern time via [`HirpdagComputeMeta`] and stored inside
+/// [`HirpdagStorage`](crate::base::reference::HirpdagStorage).  Reading any field is O(1);
+/// no DAG traversal is needed after the node is created.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HirpdagMeta {
     count: HirpdagMetaCountType,
@@ -12,6 +20,10 @@ pub struct HirpdagMeta {
 }
 
 impl HirpdagMeta {
+    /// Returns the zero / leaf metadata: count=0, height=0, flags=0.
+    ///
+    /// Used as the initial accumulator and as the metadata for terminal values
+    /// (numbers, strings) that contain no child nodes.
     pub fn zero() -> Self {
         Self {
             count: 0,
@@ -19,15 +31,27 @@ impl HirpdagMeta {
             flags: 0,
         }
     }
+
+    /// Wraps a child's metadata to represent one level higher in the DAG.
+    ///
+    /// Increments both count and height by 1 (saturating).  Call this when a node
+    /// has exactly one child and no siblings to merge with.
     pub fn increment(mut self) -> Self {
         self.count = self.count.saturating_add(1);
         self.height = self.height.saturating_add(1);
         self
     }
+
+    /// Sets additional flag bits (bitwise OR into the existing flags).
     pub fn add_flags(mut self, flag: HirpdagMetaFlagType) -> Self {
         self.flags |= flag;
         self
     }
+
+    /// Merges the metadata of two sibling subtrees.
+    ///
+    /// Counts are summed (saturating), height takes the maximum, flags are unioned.
+    /// Used as the fold step when iterating over a node's children.
     pub fn fold(self, other: Self) -> Self {
         let count = self.count.saturating_add(other.count);
         let height = std::cmp::max(self.height, other.height);
@@ -38,6 +62,11 @@ impl HirpdagMeta {
             flags,
         }
     }
+
+    /// Like [`fold`](Self::fold) but borrows `other` rather than taking ownership.
+    ///
+    /// Useful in iterator chains where `other` must remain valid (e.g. `fold_ref` as the
+    /// accumulator callback in `Iterator::fold`).
     pub fn fold_ref(self, other: &Self) -> Self {
         let count = self.count.saturating_add(other.count);
         let height = std::cmp::max(self.height, other.height);
@@ -77,6 +106,11 @@ impl<'a> std::iter::Sum<&'a HirpdagMeta> for HirpdagMeta {
     }
 }
 
+/// Implemented by every field type to compute its metadata contribution.
+///
+/// The macro-generated `hirpdag_compute_meta` for each struct folds together the results
+/// from all fields.  Leaf types (numbers, strings) return [`HirpdagMeta::zero`]; child
+/// `HirpdagRef` fields return their cached metadata.
 pub trait HirpdagComputeMeta {
     fn hirpdag_compute_meta(&self) -> HirpdagMeta;
 }

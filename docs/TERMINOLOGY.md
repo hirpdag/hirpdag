@@ -1,0 +1,170 @@
+# HIRPDAG Terminology
+
+This document defines the domain vocabulary used throughout the hirpdag codebase and book.
+
+---
+
+## Core Concepts
+
+### HIRPDAG
+**H**ash Consed · **I**mmutable · **R**eference Counted · **P**ersistent · **D**irected **A**cyclic **G**raph.
+
+The acronym names both the project and the combination of properties that make the data structure useful.  Each property reinforces the others — see `book/src/ch02-00-hirpdag.md`.
+
+### Hash Consing / Interning
+The practice of deduplicating structurally identical nodes so that only one allocation ever exists for a given value.  When a new node is constructed, the table checks whether an equal node already exists; if so, the existing pointer is returned instead of allocating a new one.
+
+Source: `hirpdag/src/base/reference.rs` — `HirpdagHashconsTable::hirpdag_hashcons`
+
+### Pointer Equality
+Because hash-consing guarantees at most one allocation per distinct value, two `HirpdagRef`s are equal **iff** they point to the same address — an O(1) check.  Deep structural comparison (`hirpdag_cmp_deep`) is available but O(n).
+
+Source: `hirpdag/src/base/reference.rs` — `HirpdagRef` `PartialEq` impl
+
+### Directed Acyclic Graph (DAG)
+The shape of the data structure.  Nodes reference children but never form cycles.  Hash-consing means multiple parent nodes can share the same child allocation — this sharing is what gives DAGs their space efficiency over trees.
+
+### Persistence
+The ability to create a modified version of a node without mutating the original.  Because all nodes are immutable and hash-consed, "modifying" a node means constructing a new one — existing references to the old node remain valid.
+
+### Referential Transparency
+Nodes with identical structure always have identical meaning and share the same interned pointer.  Programs can compare, cache, or substitute any two equal nodes freely.
+
+---
+
+## Metadata
+
+### `HirpdagMeta`
+Aggregated structural metadata cached on every interned node.  Computed bottom-up at intern time; reading any field is O(1).
+
+Source: `hirpdag/src/base/meta.rs`
+
+### count (`HirpdagMetaCountType` = u32)
+Total number of nodes in the subtree rooted at this node (saturating).  Useful for estimating expression size without traversal.
+
+### height (`HirpdagMetaHeightType` = u16)
+Distance from this node to its deepest leaf (saturating).  Proportional to the longest dependency chain.
+
+### flags (`HirpdagMetaFlagType` = u16)
+A user-defined bitfield propagated upward via bitwise OR.  Allows quickly testing whether *any* node in a subtree has a property (e.g. "contains a free variable") without traversal.
+
+### `HirpdagComputeMeta`
+Trait implemented by every field type.  The macro-generated implementation for each struct folds together the results from all fields.  Leaf types (numbers, strings) return zero; child `HirpdagRef` fields return their cached metadata.
+
+Source: `hirpdag/src/base/meta.rs`
+
+---
+
+## References
+
+### Strong Reference
+An owning handle that keeps the allocation alive.  Implemented by `RefArc<D>` (thread-safe `Arc`), `RefRc<D>` (single-threaded `Rc`), and `RefLeak<D>` (never deallocates).
+
+Trait: `hirpdag_hashconsing::Reference`
+
+### Weak Reference
+A non-owning handle that can be upgraded to a strong reference if one still exists, or fails if the allocation has been dropped.  The hash-consing table holds only weak references so that nodes are freed when no user holds a strong reference.
+
+Trait: `hirpdag_hashconsing::ReferenceWeak`
+
+### Creation ID
+A monotonically increasing integer (u64) assigned to each node at intern time.  If node A was interned after node B (e.g. because A contains B as a child), then B's ID is strictly less than A's.  Used to give `HirpdagRef` a total O(1) ordering consistent with DAG dependency order.
+
+Source: `hirpdag/src/base/reference.rs` — `HIRPDAG_CREATION_COUNTER`
+
+---
+
+## Tables
+
+### `Table<D, R>`
+The single-threaded storage unit for a hash-consing table.  Implementations differ in lookup strategy and memory layout.
+
+Trait: `hirpdag_hashconsing::Table`
+
+### `TableShared<D, R, T>`
+A thread-safe wrapper around one or more `Table` instances.  Implementations choose the locking strategy.
+
+Trait: `hirpdag_hashconsing::TableShared`
+
+### `WeakEntry`
+The per-element storage unit inside vector-backed tables: a precomputed hash plus a weak reference.  The cached hash allows O(1) filtering before the equality check.
+
+Source: `hirpdag_hashconsing/src/weak_entry.rs`
+
+### `TableVecLinearWeak`
+Unsorted `Vec` of weak entries; O(n) linear search.  Simple, allocation-friendly, suitable for small node sets.
+
+### `TableVecSortedWeak`
+Hash-sorted `Vec` of weak entries; O(log n) binary search to the hash run, then O(k) linear scan within the run.  Better than linear for medium node sets.
+
+### `TableHashmapFallbackWeak`
+`HashMap`-based table with a fallback to an alternate table for small sizes.  O(1) average lookup; the fallback handles the cold start efficiently.
+
+### `TableSharedMutex`
+`TableShared` implementation wrapping a single `Mutex`.  Simple; all threads serialise on one lock.
+
+### `TableSharedSharded`
+`TableShared` implementation using `N_SHARDS` (= 8) independent mutexes.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)` — a bitmask because `N_SHARDS` is a power of two.
+
+Source: `hirpdag_hashconsing/src/tableshared_sharded.rs`
+
+---
+
+## Rewriting
+
+### Rewriter
+A user-defined struct that implements the generated `HirpdagRewriter` trait.  It has one method per `#[hirpdag]` type (`rewrite_Foo`, `rewrite_Bar`, …) and is the single entry point for tree transformations.
+
+Generated by: `#[hirpdag_end]`
+
+### `default_rewrite`
+The default traversal provided for every `#[hirpdag]` type.  It rewrites each child field through the rewriter, then reconstructs the node with the new children (returning the original if nothing changed).  Override individual `rewrite_*` methods to intercept specific node types.
+
+### Memoization
+`HirpdagRewriteMemoized<Rewriter>` wraps any `HirpdagRewriter` and caches the result of each `rewrite_*` call.  Because nodes are hash-consed, the cache key is the creation ID — an O(1) lookup that avoids repeated traversal of shared subtrees.
+
+Generated by: `#[hirpdag_end]`
+
+### Normalization
+A user-supplied transformation applied during construction (`new()`), before interning.  Used to enforce canonical forms such as sorting commutative operands, flattening nested associative operators, or folding constant subexpressions.  Only triggered when `#[hirpdag(normalizer)]` is present.
+
+---
+
+## Macro Interface
+
+### `#[hirpdag]`
+The main attribute macro.  Applied to a named struct or enum to generate:
+- An inner struct holding the fields.
+- A `Builder` type for ergonomic construction.
+- A global `lazy_static` hash-consing table.
+- `spawn` (direct intern) and optionally `new` (intern via normalizer) constructors.
+- `HirpdagStruct`, `HirpdagComputeMeta`, `HirpdagRewritable` impls.
+
+### `#[hirpdag(normalizer)]`
+Variant of `#[hirpdag]` that also generates a `new()` constructor calling the user's normalizer function before interning.
+
+### `#[hirpdag_end]`
+Placed after all `#[hirpdag]` definitions in a module.  Generates the `HirpdagRewriter` trait (one `rewrite_*` method per type) and `HirpdagRewriteMemoized<Rewriter>`.
+
+### `spawn`
+Low-level node constructor that interns fields directly, bypassing any normalizer.  Use when you know the value is already in canonical form.
+
+### `new`
+High-level node constructor that runs the user-supplied normalizer before interning.  Only generated when `#[hirpdag(normalizer)]` is specified.
+
+### `builder` / `to_builder` / `build`
+A three-step ergonomic construction API.  `builder()` creates a fresh `Builder`; `to_builder()` copies an existing node into a builder (copy-on-write); `build()` finalises and interns the result.
+
+---
+
+## Configuration Overrides
+
+The following `#[hirpdag(...)]` options override the default pluggable implementations:
+
+| Option | Default | Controls |
+|--------|---------|----------|
+| `reference_type` | `RefArc` | Strong reference (e.g. swap in `RefRc` for single-threaded use) |
+| `reference_weak_type` | `RefArcWeak` | Weak reference |
+| `table_type` | `TableVecLinearWeak` | Inner table strategy |
+| `tableshared_type` | `TableSharedSharded` | Locking strategy |
+| `build_tableshared_type` | `BuildTableSharedSharded` | Factory for the shared table |

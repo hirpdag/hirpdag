@@ -2,10 +2,16 @@ use crate::reference::*;
 use crate::table::*;
 use array_init::array_init;
 
+/// Number of independent shard locks.  Power-of-two so shard selection is a bitmask (no modulo).
 const N_SHARDS: usize = 8;
 
 type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
 
+/// Concurrent hash-consing table using [`N_SHARDS`] independent mutexes.
+///
+/// The shard is selected by the low bits of the hash, so threads operating on
+/// structurally different nodes rarely contend.  This is the default `TableShared`
+/// implementation used by the `hirpdag` macro.
 pub struct TableSharedSharded<D, R, T, HB = DefaultHasher>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
