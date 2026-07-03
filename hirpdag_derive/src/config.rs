@@ -6,6 +6,10 @@ pub enum HirpdagArg {
     /// Normalizer will be defined by user for construction.
     Normalizer,
 
+    /// This struct type can be a serialization root: it gets a vector in the
+    /// generated HirpdagArchiveRoots struct.
+    Root,
+
     /// Hashconsing strong reference type specified by user.
     ReferenceType(String),
 
@@ -39,6 +43,7 @@ impl syn::parse::Parse for HirpdagArg {
         }
         let arg_handler = match arg_name.as_str() {
             "normalizer" => Handler::Flag(|| Ok(Self::Normalizer)),
+            "root" => Handler::Flag(|| Ok(Self::Root)),
             "reference_type" => {
                 Handler::String(|s: &syn::LitStr| Ok(Self::ReferenceType(s.value())))
             }
@@ -99,6 +104,7 @@ impl syn::parse::Parse for HirpdagArgs {
 
 pub struct HirpdagConfig {
     normalizer: bool,
+    root: bool,
 
     reference_type: String,
     reference_weak_type: String,
@@ -112,6 +118,7 @@ impl HirpdagConfig {
     fn default() -> Self {
         Self {
             normalizer: false,
+            root: false,
             reference_type: "hirpdag_hashconsing::RefArc<D>".to_string(),
             reference_weak_type: "hirpdag_hashconsing::RefArcWeak<D>".to_string(),
             table_type: "hirpdag_hashconsing::TableHashmapFallbackWeak<D, hirpdag_hashconsing::RefArc<D>, hirpdag_hashconsing::RefArcWeak<D>, hirpdag_hashconsing::TableVecLinearWeak<D, hirpdag_hashconsing::RefArc<D>, hirpdag_hashconsing::RefArcWeak<D>>>".to_string(),
@@ -128,6 +135,9 @@ impl HirpdagConfig {
             match a {
                 HirpdagArg::Normalizer => {
                     config.normalizer = true;
+                }
+                HirpdagArg::Root => {
+                    config.root = true;
                 }
                 HirpdagArg::ReferenceType(name) => {
                     config.reference_type = name.clone();
@@ -151,6 +161,9 @@ impl HirpdagConfig {
 
     pub fn has_normalizer(&self) -> bool {
         self.normalizer
+    }
+    pub fn is_root(&self) -> bool {
+        self.root
     }
     pub fn reference_type(&self) -> TokenStream {
         self.reference_type.parse().unwrap()

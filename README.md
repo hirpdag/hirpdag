@@ -178,6 +178,49 @@ Because hirpdag nodes are hash-consed, `build()` will return the existing
 interned node if an identical one already exists, so no duplicate allocation
 occurs.
 
+## Serialization
+
+Hirpdag serialization is always DAG-aware: each unique node is written exactly
+once (as an entry in a topologically ordered node table), so structural sharing
+survives a round trip and output size is proportional to the number of unique
+nodes, not the tree expansion.
+
+Struct types that may be serialization roots are marked `#[hirpdag(root)]`.
+`#[hirpdag_end]` generates a `HirpdagArchiveRoots` struct (one vector per root
+type; multiple roots of different types share one file) and the entry points
+`hirpdag_serialize`/`hirpdag_deserialize` (compact binary via [postcard]) and
+`hirpdag_serialize_json`/`hirpdag_deserialize_json` (text via [serde_json]).
+
+[postcard]: https://crates.io/crates/postcard
+[serde_json]: https://crates.io/crates/serde_json
+
+```rust
+#[hirpdag(root, normalizer)]
+struct Expr {
+    x: ExprKind,
+}
+
+// ...
+
+let a: Expr = Expr::new(ExprKind::Var("a".to_string()));
+let e: Expr = Expr::new(ExprKind::Mul(vec![a.clone(), a.clone()]));
+
+let bytes: Vec<u8> = hirpdag_serialize(&HirpdagArchiveRoots {
+    expr: vec![e.clone()],
+    ..Default::default()
+}).unwrap();
+
+let out = hirpdag_deserialize(&bytes).unwrap();
+
+// Deserialized nodes are re-interned through the hashcons table,
+// so in-process round trips are pointer-equal.
+assert_eq!(out.expr[0], e);
+```
+
+See `docs/design/serialization.md` and
+`docs/adr/0001-serde-dag-aware-serialization.md` for the format and design
+rationale.
+
 ## Benchmark Results
 
 ![Primes2000](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000_violin.svg)

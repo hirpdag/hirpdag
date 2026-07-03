@@ -5,3 +5,7 @@
 - [Implementation](./ch03-00-implementation.md)
 - [Techniques](./ch04-00-techniques.md)
 
+# User guide
+
+- [Serialization](./ch05-00-serialization.md)
+
