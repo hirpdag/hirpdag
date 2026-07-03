@@ -50,6 +50,14 @@ impl std::error::Error for HirpdagSerializeError {}
 pub enum HirpdagDeserializeError {
     /// The input does not start with the hirpdag binary magic prefix.
     BadMagic,
+    /// The binary archive was written by a different set of hirpdag type
+    /// definitions than the ones trying to read it.
+    SchemaMismatch {
+        expected_hash: u64,
+        expected_name: String,
+        found_hash: u64,
+        found_name: String,
+    },
     /// A deserialization session is already active on this thread.
     /// Sessions are per-thread and not re-entrant.
     SessionActive,
@@ -63,6 +71,17 @@ impl std::fmt::Display for HirpdagDeserializeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::BadMagic => write!(f, "hirpdag: not a hirpdag binary archive (bad magic)"),
+            Self::SchemaMismatch {
+                expected_hash,
+                expected_name,
+                found_hash,
+                found_name,
+            } => write!(
+                f,
+                "hirpdag: schema mismatch: archive was written by \"{}\" (hash {:#018x}) \
+                 but is being read by \"{}\" (hash {:#018x})",
+                found_name, found_hash, expected_name, expected_hash
+            ),
             Self::SessionActive => write!(
                 f,
                 "hirpdag: a deserialization session is already active on this thread"
@@ -73,6 +92,58 @@ impl std::fmt::Display for HirpdagDeserializeError {
 }
 
 impl std::error::Error for HirpdagDeserializeError {}
+
+/// Identifies the set of hirpdag type definitions that wrote a binary
+/// archive.
+///
+/// `hash` is a stable hash of the type definitions (names, field names and
+/// types, variant names and payloads, root markers, in declaration order) of
+/// every hirpdag type in the module, computed at macro expansion time.
+/// `name` is a human-readable identifier of those definitions (the defining
+/// crate's package name and the list of type names) carried purely for
+/// debuggability of mismatch errors; only `hash` decides equality.
+///
+/// In the binary format this fingerprint sits in the header, between the
+/// magic prefix and the archive payload. The JSON format deliberately omits
+/// it so JSON stays hand-editable.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HirpdagSchemaFingerprint {
+    pub hash: u64,
+    pub name: String,
+}
+
+/// Writes the binary archive header: magic prefix, then the schema
+/// fingerprint. The archive payload is appended after this.
+pub fn hirpdag_write_binary_header(
+    fingerprint: &HirpdagSchemaFingerprint,
+) -> Result<Vec<u8>, HirpdagSerializeError> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(HIRPDAG_MAGIC);
+    let fp = postcard::to_stdvec(fingerprint)
+        .map_err(|e| HirpdagSerializeError::Format(e.to_string()))?;
+    bytes.extend_from_slice(&fp);
+    Ok(bytes)
+}
+
+/// Validates the binary archive header (magic prefix and schema fingerprint)
+/// and returns the remaining archive payload.
+pub fn hirpdag_read_binary_header<'a>(
+    bytes: &'a [u8],
+    expected: &HirpdagSchemaFingerprint,
+) -> Result<&'a [u8], HirpdagDeserializeError> {
+    let payload = hirpdag_strip_magic(bytes)?;
+    let (found, rest): (HirpdagSchemaFingerprint, &[u8]) = postcard::take_from_bytes(payload)
+        .map_err(|e| HirpdagDeserializeError::Format(e.to_string()))?;
+    if found.hash != expected.hash {
+        return Err(HirpdagDeserializeError::SchemaMismatch {
+            expected_hash: expected.hash,
+            expected_name: expected.name.clone(),
+            found_hash: found.hash,
+            found_name: found.name,
+        });
+    }
+    Ok(rest)
+}
 
 /// Strips and validates the binary archive magic prefix.
 pub fn hirpdag_strip_magic(bytes: &[u8]) -> Result<&[u8], HirpdagDeserializeError> {

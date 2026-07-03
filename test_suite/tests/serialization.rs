@@ -286,3 +286,75 @@ fn handwritten_json_accepted() {
         )
     );
 }
+
+/// A module with different hirpdag type definitions, to test the schema
+/// fingerprint in the binary header.
+mod other_schema {
+    use hirpdag::*;
+
+    #[hirpdag(root)]
+    pub struct Widget {
+        id: u64,
+        parts: Vec<Widget>,
+    }
+
+    #[hirpdag_end]
+    pub struct HirpdagEndMarker;
+}
+
+#[test]
+fn schema_mismatch_rejected() {
+    let roots = HirpdagArchiveRoots {
+        item: vec![Item::new("schema_item".to_string(), vec![])],
+        ..Default::default()
+    };
+    let bytes = hirpdag_serialize(&roots).unwrap();
+
+    // Reading these bytes with a module built from different type
+    // definitions must fail up front with a debuggable error, not misparse.
+    let err = other_schema::hirpdag_deserialize(&bytes).unwrap_err();
+    match err {
+        hirpdag::base::HirpdagDeserializeError::SchemaMismatch {
+            expected_hash,
+            expected_name,
+            found_hash,
+            found_name,
+        } => {
+            assert_ne!(expected_hash, found_hash);
+            // Both names carry the package name and the type list.
+            assert!(found_name.contains("Item"), "found: {}", found_name);
+            assert!(
+                expected_name.contains("Widget"),
+                "expected: {}",
+                expected_name
+            );
+            assert!(
+                found_name.contains("hirpdag_test_suite"),
+                "found: {}",
+                found_name
+            );
+        }
+        other => panic!("expected SchemaMismatch, got {:?}", other),
+    }
+    // The Display form names both schemas for debuggability.
+    let msg = other_schema::hirpdag_deserialize(&bytes)
+        .unwrap_err()
+        .to_string();
+    assert!(msg.contains("schema mismatch"), "message: {}", msg);
+    assert!(msg.contains("Widget"), "message: {}", msg);
+    assert!(msg.contains("Item"), "message: {}", msg);
+}
+
+#[test]
+fn schema_match_accepted_across_modules_with_same_shape() {
+    // Same-schema round trip through the *same* module still works with the
+    // fingerprint present (covered by other tests too); this pins down that
+    // the fingerprint only rejects *different* definitions.
+    let roots = HirpdagArchiveRoots {
+        item: vec![Item::new("schema_same".to_string(), vec![])],
+        ..Default::default()
+    };
+    let bytes = hirpdag_serialize(&roots).unwrap();
+    let out = hirpdag_deserialize(&bytes).unwrap();
+    assert_eq!(out, roots);
+}

@@ -53,8 +53,12 @@ are hand-written.
   generated unconditionally, avoiding a feature/cfg matrix in the proc macro. An
   opt-out attribute can be added later if a user needs it.
 - Binary enum tags are ordinal: reordering `#[hirpdag]` type declarations or enum
-  variants breaks previously written binary files (JSON is name-tagged and more
-  tolerant). A schema fingerprint in the header is future work.
+  variants changes the wire format. The binary header therefore embeds a schema
+  fingerprint — a stable FNV-1a hash of the module's type definitions computed at
+  macro expansion time, plus a debug name (package name and type list) — and decoding
+  fails with a `SchemaMismatch` error naming both schemas instead of misparsing. JSON
+  is name-tagged, more tolerant, and carries no fingerprint (kept hand-editable by
+  design).
 - The collect walk is recursive; extremely deep DAG chains could overflow the stack
   (an explicit-stack DFS is a contained follow-up).
 

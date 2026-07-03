@@ -94,8 +94,13 @@ HirpdagArchive
   have no table; they are inlined into their parent node's payload by the serde
   derive, recursively, until a ref type is reached. Only struct types appear in the
   node table.
-- Binary: `postcard` (enum tags and `u64` indices are varints). A short magic prefix
-  (`b"HPDG"`) precedes the postcard payload for file identification.
+- Binary: `postcard` (enum tags and `u64` indices are varints). The header is a
+  short magic prefix (`b"HPDG"`) followed by a schema fingerprint: a stable FNV-1a
+  hash of the module's type definitions (names, fields, variants, root markers, in
+  declaration order) computed at macro expansion time, plus a human-readable schema
+  name (package name and type list) for debuggability. Decoding verifies the hash and
+  fails with a `SchemaMismatch` error naming both schemas if the archive was written
+  by different type definitions.
 - Text: the same `HirpdagArchive` through `serde_json`. Refs appear as plain numbers,
   nodes as `{"Expr": {...}}`-style tagged objects. Field order (`nodes` before
   `roots`) must be preserved if a JSON file is edited by hand.
@@ -252,9 +257,10 @@ attribute (`#[hirpdag(no_serialize)]`) can be added later if a user needs it.
   overflow the stack. `HirpdagMeta::height` (u16, saturating) gives a cheap upfront
   signal; an explicit-stack DFS is a contained follow-up.
 - **Schema evolution**: v1 requires matching type definitions. Binary enum tags are
-  ordinal, so reordering `#[hirpdag]` type declarations or enum variants breaks old
-  binary files (JSON is name-tagged and more tolerant). Future: schema fingerprint in
-  the header for early, clear errors.
+  ordinal, so reordering `#[hirpdag]` type declarations or enum variants changes the
+  wire format — the schema fingerprint in the binary header catches this with an
+  early `SchemaMismatch` error instead of misparsing. JSON is name-tagged, more
+  tolerant, and carries no fingerprint (kept hand-editable by design).
 - **Streaming writer**: v1 buffers the archive; a `std::io::Write`-based path is easy
   to add later since postcard supports incremental flavors.
 - **bitcode backend**: if size/speed ever matters more, the archive layer is

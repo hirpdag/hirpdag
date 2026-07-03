@@ -52,6 +52,21 @@ are written in post-order DFS order (children before parents), and
 indices into the node table. `#[hirpdag]` enum values are not hashconsed and
 are stored inline inside their parent node.
 
+The binary header additionally carries a **schema fingerprint**: a stable
+hash of the module's hirpdag type definitions (computed at macro expansion
+time) plus a human-readable name (the defining package and its type list).
+Deserializing a binary archive written by different type definitions fails up
+front with a `SchemaMismatch` error naming both schemas, instead of
+misparsing:
+
+```text
+hirpdag: schema mismatch: archive was written by
+"my_app:Item,Kind,Node" (hash 0x…) but is being read by
+"my_app:Widget" (hash 0x…)
+```
+
+The JSON format deliberately omits the fingerprint so it stays hand-editable.
+
 Because children always precede parents, deserialization is a single forward
 pass: forward references are rejected, which also makes cycles
 unrepresentable. Each node is re-interned through the hashcons table as it is
@@ -71,8 +86,9 @@ decoded, so:
   hirpdag reference outside a session (e.g. calling `serde_json::to_string` on
   a node directly) is an error — there is no accidental tree-expansion path.
 * Binary enum tags are ordinal: reordering `#[hirpdag]` type declarations or
-  enum variants breaks previously written binary files. JSON is name-tagged
-  and more tolerant.
+  enum variants changes the wire format. The schema fingerprint turns this
+  into an early, clear error for binary archives; JSON is name-tagged, more
+  tolerant, and unfingerprinted.
 * The collect walk is recursive; extremely deep chains could overflow the
   stack.
 
