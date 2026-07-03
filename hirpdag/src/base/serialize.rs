@@ -13,7 +13,16 @@
 // the error type, the format version marker, and the binary magic prefix.
 
 /// Magic prefix identifying a hirpdag binary archive.
-pub const HIRPDAG_MAGIC: &[u8; 4] = b"HPDG";
+///
+/// Modelled on the PNG signature (`\x89PNG\r\n\x1a\n`):
+/// - `\x89` has the high bit set, marking the file as binary (and catching
+///   transfers that strip to 7 bits);
+/// - `HPDG` names the format for anyone inspecting the file as text;
+/// - `\r` catches CR-to-LF and CR-stripping text-mode translations;
+/// - `\x1a` (Ctrl+Z) stops accidental terminal/DOS `type` output;
+/// - the trailing `\n` catches LF-to-CRLF translation, and means the magic
+///   reads as a tidy single "HPDG" line when opened in a text viewer.
+pub const HIRPDAG_MAGIC: &[u8; 8] = b"\x89HPDG\r\x1a\n";
 
 /// Version of the hirpdag archive format written by this library.
 pub const HIRPDAG_FORMAT_VERSION: u32 = 1;

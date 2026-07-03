@@ -95,7 +95,9 @@ HirpdagArchive
   derive, recursively, until a ref type is reached. Only struct types appear in the
   node table.
 - Binary: `postcard` (enum tags and `u64` indices are varints). The header is a
-  short magic prefix (`b"HPDG"`) followed by a schema fingerprint: a stable FNV-1a
+  PNG-style 8-byte magic prefix (`b"\x89HPDG\r\x1a\n"` — a high-bit byte marking the
+  file as binary, the format name readable as text, and text-mode-translation trip
+  bytes ending in a newline) followed by a schema fingerprint: a stable FNV-1a
   hash of the module's type definitions (names, fields, variants, root markers, in
   declaration order) computed at macro expansion time, plus a human-readable schema
   name (package name and type list) for debuggability. Decoding verifies the hash and

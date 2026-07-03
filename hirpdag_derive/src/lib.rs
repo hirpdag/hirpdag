@@ -902,9 +902,17 @@ pub fn hirpdag_end(
         let type_names: Vec<&str> = guard.iter().map(|entry| entry.name.as_str()).collect();
         let mut name = format!("{}:{}", pkg, type_names.join(","));
         const SCHEMA_NAME_MAX: usize = 128;
+        const ELLIPSIS: &str = "...";
         if name.len() > SCHEMA_NAME_MAX {
-            name.truncate(SCHEMA_NAME_MAX);
-            name.push_str("...");
+            // Leave room for the ellipsis so the total stays within the
+            // limit, and back off to a char boundary (identifiers may be
+            // non-ASCII; String::truncate panics mid-character).
+            let mut cut = SCHEMA_NAME_MAX - ELLIPSIS.len();
+            while !name.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            name.truncate(cut);
+            name.push_str(ELLIPSIS);
         }
         name
     };
