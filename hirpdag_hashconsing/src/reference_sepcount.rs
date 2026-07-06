@@ -101,6 +101,12 @@ impl<S: CountSlot> SlotPool<S> {
         let mut guard = self.inner.lock().unwrap();
         guard.free.push(slot);
     }
+
+    /// (allocated chunks, free slots) — for tests and leak diagnosis.
+    pub fn stats(&self) -> (usize, usize) {
+        let guard = self.inner.lock().unwrap();
+        (guard.chunks.len(), guard.free.len())
+    }
 }
 
 macro_rules! define_count_slot {
@@ -321,3 +327,57 @@ pub type RefSepPadWeak<D> = RefSepGenericWeak<D, SlotPadded>;
 /// Separate contiguous counts, packed 8-byte slots with `u32` counters.
 pub type RefSepU32<D> = RefSepGeneric<D, SlotPackedU32>;
 pub type RefSepU32Weak<D> = RefSepGenericWeak<D, SlotPackedU32>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::table::Table;
+    use crate::test_utils::TestData;
+
+    // Dedicated slot type so this test's pool is not shared with other tests
+    // running in parallel.
+    define_count_slot!(
+        SlotTestOnly,
+        std::sync::atomic::AtomicUsize,
+        SLOT_POOL_TEST_ONLY
+    );
+
+    /// Mimic the benchmark pattern: every iteration re-interns the same set of
+    /// nodes after all strong references from the previous iteration died.
+    /// Slots must be recycled through the pool, not leaked.
+    #[test]
+    fn slots_recycled_across_intern_cycles() {
+        type R = RefSepGeneric<TestData, SlotTestOnly>;
+        type RW = RefSepGenericWeak<TestData, SlotTestOnly>;
+        type T = crate::TableHashmapFallbackWeak<
+            TestData,
+            R,
+            RW,
+            crate::TableVecLinearWeak<TestData, R, RW>,
+        >;
+        let mut table = T::default();
+
+        let n = 1000usize;
+        let mut chunks_after_warmup = 0;
+        for iteration in 0..50 {
+            let mut live: Vec<R> = Vec::with_capacity(n);
+            for k in 0..n {
+                let data = TestData::new(k as i32, 0, "slots_recycled".to_string());
+                live.push(table.get_or_insert(k as u64, data, |_| {}));
+            }
+            drop(live);
+            let (chunks, _free) = SlotTestOnly::pool().stats();
+            if iteration == 5 {
+                chunks_after_warmup = chunks;
+            } else if iteration > 5 {
+                assert!(
+                    chunks <= chunks_after_warmup,
+                    "slot pool grew from {} to {} chunks by iteration {}: slots are leaking",
+                    chunks_after_warmup,
+                    chunks,
+                    iteration
+                );
+            }
+        }
+    }
+}
