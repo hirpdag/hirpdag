@@ -25,8 +25,6 @@ We decided to replace the pair with one attribute on the module itself:
 ```rust
 #[hirpdag_module]
 mod datamodel {
-    use hirpdag::*;
-
     #[hirpdag]
     struct Node { children: Vec<Node> }
 }
@@ -81,3 +79,12 @@ suite stamp out its per-configuration modules with a ten-line
 - Struct fields may carry `pub`, since consuming code can now sit outside
   the defining module; generated constructors strip the visibility from
   their parameter lists.
+- Generated code (including the default and preset configuration types)
+  refers to the hirpdag crate by absolute paths, so modules need no
+  `use hirpdag::*;` for the generated code — imports inside the module are
+  only for the user's own code.
+- The inner attribute form (`#![hirpdag_module]` inside the module or at
+  file scope) is not possible: Rust rejects proc-macro inner attributes
+  (E0658, rust-lang/rust#54726). A `compile_fail` doctest on the hirpdag
+  crate pins this. File-scope usage therefore always goes through an inline
+  `mod` plus re-export.

@@ -13,8 +13,6 @@ macro_rules! hirpdag_bench_configs {
     (@one $module:ident, $preset:literal, $($items:item)*) => {
         #[hirpdag::hirpdag_module(preset = $preset)]
         mod $module {
-            use hirpdag::*;
-
             $($items)*
         }
     };

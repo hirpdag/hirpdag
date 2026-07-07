@@ -133,7 +133,7 @@ A user-supplied transformation applied during construction (`new()`), before int
 ## Macro Interface
 
 ### `#[hirpdag_module]`
-The attribute macro.  Applied to an inline module (`mod name { ... }`), it expands every struct and enum in the module marked `#[hirpdag]`, passes other items through unchanged, and generates the module-level code (the `HirpdagRewriter` trait with one `rewrite_*` method per type, `HirpdagRewriteMemoized<Rewriter>`, and the serialization machinery).  The hash-consing configuration is given as attribute arguments: a named `preset = "..."` or the explicit type overrides listed below.
+The attribute macro.  Applied to an inline module (`mod name { ... }`), it expands every struct and enum in the module marked `#[hirpdag]`, passes other items through unchanged, and generates the module-level code (the `HirpdagRewriter` trait with one `rewrite_*` method per type, `HirpdagRewriteMemoized<Rewriter>`, and the serialization machinery).  The hash-consing configuration is given as attribute arguments: a named `preset = "..."` or the explicit type overrides listed below.  The generated code refers to the hirpdag crate by absolute paths, so the module needs no imports beyond what the user's own code uses.  Must be an outer attribute on an inline module; Rust does not accept the inner form (`#![hirpdag_module]`, rust-lang/rust#54726).
 
 ### `#[hirpdag]`
 Inert marker consumed by `#[hirpdag_module]`.  Applied to a named struct or enum inside the module to generate:

@@ -6,8 +6,6 @@ use hirpdag::*;
 
 #[hirpdag_module]
 mod datamodel {
-    use hirpdag::*;
-
     #[hirpdag(root)]
     struct Item {
         name: String,
@@ -295,8 +293,6 @@ fn handwritten_json_accepted() {
 /// fingerprint in the binary header.
 #[hirpdag_module]
 mod other_schema {
-    use hirpdag::*;
-
     #[hirpdag(root)]
     pub struct Widget {
         id: u64,

@@ -28,8 +28,6 @@ use hirpdag::*;
 
 #[hirpdag_module]
 mod expressions {
-    use hirpdag::*;
-
     #[hirpdag(normalizer)]
     struct Expr {
         x: ExprKind,
@@ -155,8 +153,6 @@ use hirpdag::*;
 
 #[hirpdag_module]
 mod points {
-    use hirpdag::*;
-
     #[hirpdag]
     struct Point {
         x: i32,

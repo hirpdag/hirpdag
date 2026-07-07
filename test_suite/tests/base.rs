@@ -2,8 +2,6 @@ use hirpdag::*;
 
 #[hirpdag_module]
 mod datamodel {
-    use hirpdag::*;
-
     #[hirpdag]
     struct MessageA {
         a: i32,

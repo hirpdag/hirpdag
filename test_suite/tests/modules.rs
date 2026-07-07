@@ -5,8 +5,6 @@
 
 #[hirpdag::hirpdag_module]
 mod foo {
-    use hirpdag::*;
-
     #[hirpdag]
     pub struct Data {
         a: i32,
@@ -42,8 +40,6 @@ mod foo {
 
 #[hirpdag::hirpdag_module]
 mod bar {
-    use hirpdag::*;
-
     #[hirpdag]
     pub struct Data {
         a: i32,

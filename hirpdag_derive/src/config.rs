@@ -47,16 +47,16 @@ const PRESETS: &[&str] = &[
 /// are derived from the reference type.
 fn preset_types(name: &str) -> Option<[String; 5]> {
     const ARC: (&str, &str) = (
-        "hirpdag_hashconsing::RefArc<D>",
-        "hirpdag_hashconsing::RefArcWeak<D>",
+        "hirpdag::hirpdag_hashconsing::RefArc<D>",
+        "hirpdag::hirpdag_hashconsing::RefArcWeak<D>",
     );
     const LEAK: (&str, &str) = (
-        "hirpdag_hashconsing::RefLeak<D>",
-        "hirpdag_hashconsing::RefLeakWeak<D>",
+        "hirpdag::hirpdag_hashconsing::RefLeak<D>",
+        "hirpdag::hirpdag_hashconsing::RefLeakWeak<D>",
     );
     fn hashmap_fallback(fallback_table: &str, (r, w): (&str, &str)) -> String {
         format!(
-            "hirpdag_hashconsing::TableHashmapFallbackWeak<D, {r}, {w}, hirpdag_hashconsing::{fallback_table}<D, {r}, {w}>>"
+            "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, {r}, {w}, hirpdag::hirpdag_hashconsing::{fallback_table}<D, {r}, {w}>>"
         )
     }
     let ((reference_type, reference_weak_type), table_type) = match name {
@@ -65,7 +65,7 @@ fn preset_types(name: &str) -> Option<[String; 5]> {
         "arc_tovweaktable" => (
             ARC,
             format!(
-                "hirpdag_hashconsing::TableTovWeakTable<D, {}, {}>",
+                "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, {}, {}>",
                 ARC.0, ARC.1
             ),
         ),
@@ -76,9 +76,9 @@ fn preset_types(name: &str) -> Option<[String; 5]> {
         reference_type.to_string(),
         reference_weak_type.to_string(),
         table_type,
-        format!("hirpdag_hashconsing::TableSharedSharded<D, {reference_type}, ImplTable<D>>"),
+        format!("hirpdag::hirpdag_hashconsing::TableSharedSharded<D, {reference_type}, ImplTable<D>>"),
         format!(
-            "hirpdag_hashconsing::BuildTableSharedSharded<D, {reference_type}, ImplTable<D>, hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
+            "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, {reference_type}, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
         ),
     ])
 }
@@ -189,11 +189,11 @@ impl HirpdagConfig {
         Self {
             normalizer: false,
             root: false,
-            reference_type: "hirpdag_hashconsing::RefArc<D>".to_string(),
-            reference_weak_type: "hirpdag_hashconsing::RefArcWeak<D>".to_string(),
-            table_type: "hirpdag_hashconsing::TableHashmapFallbackWeak<D, hirpdag_hashconsing::RefArc<D>, hirpdag_hashconsing::RefArcWeak<D>, hirpdag_hashconsing::TableVecLinearWeak<D, hirpdag_hashconsing::RefArc<D>, hirpdag_hashconsing::RefArcWeak<D>>>".to_string(),
-            tableshared_type: "hirpdag_hashconsing::TableSharedSharded<D, hirpdag_hashconsing::RefArc<D>, ImplTable<D>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
-            build_tableshared_type: "hirpdag_hashconsing::BuildTableSharedSharded<D, hirpdag_hashconsing::RefArc<D>, ImplTable<D>, hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+            reference_type: "hirpdag::hirpdag_hashconsing::RefArc<D>".to_string(),
+            reference_weak_type: "hirpdag::hirpdag_hashconsing::RefArcWeak<D>".to_string(),
+            table_type: "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, hirpdag::hirpdag_hashconsing::RefArc<D>, hirpdag::hirpdag_hashconsing::RefArcWeak<D>, hirpdag::hirpdag_hashconsing::TableVecLinearWeak<D, hirpdag::hirpdag_hashconsing::RefArc<D>, hirpdag::hirpdag_hashconsing::RefArcWeak<D>>>".to_string(),
+            tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, hirpdag::hirpdag_hashconsing::RefArc<D>, ImplTable<D>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, hirpdag::hirpdag_hashconsing::RefArc<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
         }
     }
 
