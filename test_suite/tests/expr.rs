@@ -1,115 +1,141 @@
 use hirpdag::*;
 
-#[hirpdag(normalizer)]
-struct Expr {
-    x: ExprKind,
-}
+#[hirpdag_module]
+mod datamodel {
+    use hirpdag::*;
 
-#[hirpdag]
-enum ExprKind {
-    Num(u32),
-    Add(Vec<Expr>),
-    Mul(Vec<Expr>),
-    Var(String),
-}
+    #[hirpdag(normalizer)]
+    struct Expr {
+        x: ExprKind,
+    }
 
-#[hirpdag]
-struct Variables {
-    x: Expr,
-}
+    #[hirpdag]
+    enum ExprKind {
+        Num(u32),
+        Add(Vec<Expr>),
+        Mul(Vec<Expr>),
+        Var(String),
+    }
 
-#[hirpdag_end]
-pub struct HirpdagEndMarker;
+    #[hirpdag]
+    struct Variables {
+        x: Expr,
+    }
 
-fn nary_expr_normalize<CombineFn, FlatternElementsFn, CreateFn>(
-    mut original_elements: Vec<Expr>,
-    identity: u32,
-    combine: CombineFn,
-    flattern: FlatternElementsFn,
-    create: CreateFn,
-) -> Expr
-where
-    CombineFn: std::ops::Fn(u32, u32) -> u32,
-    FlatternElementsFn: std::ops::Fn(&ExprKind) -> Option<&Vec<Expr>>,
-    CreateFn: std::ops::FnOnce(Vec<Expr>) -> Expr,
-{
-    let mut elements: Vec<Expr> = Vec::with_capacity(original_elements.len());
-    let mut combined = 1;
-    let mut process = |e: Expr| {
-        match &e.x {
-            ExprKind::Num(n) => {
-                // - Combine constant Num
-                //   Mul([Num(2), Num(3), Num(4), Var(a)]) => Mul([Num(24), Var(a)])
-                //   Add([Num(2), Num(3), Num(4), Num(a)]) => Add([Num(9), Var(a)])
-                combined = combine(combined, *n);
+    fn nary_expr_normalize<CombineFn, FlatternElementsFn, CreateFn>(
+        mut original_elements: Vec<Expr>,
+        identity: u32,
+        combine: CombineFn,
+        flattern: FlatternElementsFn,
+        create: CreateFn,
+    ) -> Expr
+    where
+        CombineFn: std::ops::Fn(u32, u32) -> u32,
+        FlatternElementsFn: std::ops::Fn(&ExprKind) -> Option<&Vec<Expr>>,
+        CreateFn: std::ops::FnOnce(Vec<Expr>) -> Expr,
+    {
+        let mut elements: Vec<Expr> = Vec::with_capacity(original_elements.len());
+        let mut combined = 1;
+        let mut process = |e: Expr| {
+            match &e.x {
+                ExprKind::Num(n) => {
+                    // - Combine constant Num
+                    //   Mul([Num(2), Num(3), Num(4), Var(a)]) => Mul([Num(24), Var(a)])
+                    //   Add([Num(2), Num(3), Num(4), Num(a)]) => Add([Num(9), Var(a)])
+                    combined = combine(combined, *n);
+                }
+                _ => {
+                    elements.push(e);
+                }
             }
-            _ => {
-                elements.push(e);
+        };
+        for e in original_elements.drain(..) {
+            // - Flattern nested:
+            //   Mul([Num(2), Mul([Var(a), Var(b)]), Var(c)]) => Mul([Num(2), Var(a), Var(b), Var(c)])
+            //   Add([Num(2), Add([Var(a), Var(b)]), Var(c)]) => Add([Num(2), Var(a), Var(b), Var(c)])
+            if let Some(inner_elements) = flattern(&e.x) {
+                for i in inner_elements.iter() {
+                    process(i.clone()); // Unecessary clone here in the case of Num to make code shorter.
+                }
+            } else {
+                process(e);
             }
         }
-    };
-    for e in original_elements.drain(..) {
-        // - Flattern nested:
-        //   Mul([Num(2), Mul([Var(a), Var(b)]), Var(c)]) => Mul([Num(2), Var(a), Var(b), Var(c)])
-        //   Add([Num(2), Add([Var(a), Var(b)]), Var(c)]) => Add([Num(2), Var(a), Var(b), Var(c)])
-        if let Some(inner_elements) = flattern(&e.x) {
-            for i in inner_elements.iter() {
-                process(i.clone()); // Unecessary clone here in the case of Num to make code shorter.
+        if combined != identity {
+            elements.push(Expr::spawn(ExprKind::Num(combined)));
+        }
+        // - Yield single element:
+        //   Mul([Var(a)]) => Var(a)
+        //   Add([Var(a)]) => Var(a)
+        if elements.len() == 1 {
+            return elements.pop().unwrap();
+        }
+        // - Sort:
+        //   Mul([Var(c), Var(b), Var(a)]) => Mul([Var(a), Var(b), Var(c)])
+        //   Add([Var(c), Var(b), Var(a)]) => Add([Var(a), Var(b), Var(c)])
+        elements.sort();
+        return create(elements);
+    }
+
+    impl Expr {
+        // Because we added the normalizer attribute on Expr, we implement Expr::new(...).
+        // To produce a normalized Expr, this function will use Expr::spawn(...).
+        pub fn new(x: ExprKind) -> Expr {
+            // Normalization
+            match x {
+                ExprKind::Mul(original_factors) => {
+                    return nary_expr_normalize(
+                        original_factors,
+                        1,            // Identity when combining constants
+                        |a, b| a * b, // Combine constants
+                        |x| match x {
+                            ExprKind::Mul(e) => Some(&e),
+                            _ => None,
+                        }, // Flatten nested Mul
+                        |e| Expr::spawn(ExprKind::Mul(e)), // Spawn as Mul
+                    );
+                }
+                ExprKind::Add(original_terms) => {
+                    return nary_expr_normalize(
+                        original_terms,
+                        0,            // Identity when combining constants
+                        |a, b| a + b, // Combine constants
+                        |x| match x {
+                            ExprKind::Add(e) => Some(&e),
+                            _ => None,
+                        }, // Flatten nested Add
+                        |e| Expr::spawn(ExprKind::Add(e)), // Spawn as Add
+                    );
+                }
+                _ => Expr::spawn(x),
             }
-        } else {
-            process(e);
         }
     }
-    if combined != identity {
-        elements.push(Expr::spawn(ExprKind::Num(combined)));
+
+    pub struct Substitute {
+        var: String,
+        s: Expr,
     }
-    // - Yield single element:
-    //   Mul([Var(a)]) => Var(a)
-    //   Add([Var(a)]) => Var(a)
-    if elements.len() == 1 {
-        return elements.pop().unwrap();
+
+    impl Substitute {
+        pub fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
+            HirpdagRewriteMemoized::new(Self { var: var, s: s })
+        }
     }
-    // - Sort:
-    //   Mul([Var(c), Var(b), Var(a)]) => Mul([Var(a), Var(b), Var(c)])
-    //   Add([Var(c), Var(b), Var(a)]) => Add([Var(a), Var(b), Var(c)])
-    elements.sort();
-    return create(elements);
+
+    impl HirpdagRewriter for Substitute {
+        fn rewrite_Expr(&self, x: &Expr) -> Expr {
+            if let ExprKind::Var(name) = &x.x {
+                if *name == self.var {
+                    return self.s.clone();
+                }
+            }
+            x.default_rewrite(self)
+        }
+    }
 }
 
-impl Expr {
-    // Because we added the normalizer attribute on Expr, we implement Expr::new(...).
-    // To produce a normalized Expr, this function will use Expr::spawn(...).
-    fn new(x: ExprKind) -> Expr {
-        // Normalization
-        match x {
-            ExprKind::Mul(original_factors) => {
-                return nary_expr_normalize(
-                    original_factors,
-                    1,            // Identity when combining constants
-                    |a, b| a * b, // Combine constants
-                    |x| match x {
-                        ExprKind::Mul(e) => Some(&e),
-                        _ => None,
-                    }, // Flatten nested Mul
-                    |e| Expr::spawn(ExprKind::Mul(e)), // Spawn as Mul
-                );
-            }
-            ExprKind::Add(original_terms) => {
-                return nary_expr_normalize(
-                    original_terms,
-                    0,            // Identity when combining constants
-                    |a, b| a + b, // Combine constants
-                    |x| match x {
-                        ExprKind::Add(e) => Some(&e),
-                        _ => None,
-                    }, // Flatten nested Add
-                    |e| Expr::spawn(ExprKind::Add(e)), // Spawn as Add
-                );
-            }
-            _ => Expr::spawn(x),
-        }
-    }
-}
+use datamodel::*;
 
 #[test]
 fn expr_normalizer_test() {
@@ -147,28 +173,6 @@ fn builder_variables() {
     let vars_b: Variables = vars_a.to_builder().x(vb.clone()).build();
     let vars_b2: Variables = Variables::new(vb);
     assert_eq!(vars_b, vars_b2);
-}
-
-struct Substitute {
-    var: String,
-    s: Expr,
-}
-
-impl Substitute {
-    fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
-        HirpdagRewriteMemoized::new(Self { var: var, s: s })
-    }
-}
-
-impl HirpdagRewriter for Substitute {
-    fn rewrite_Expr(&self, x: &Expr) -> Expr {
-        if let ExprKind::Var(name) = &x.x {
-            if *name == self.var {
-                return self.s.clone();
-            }
-        }
-        x.default_rewrite(self)
-    }
 }
 
 #[test]

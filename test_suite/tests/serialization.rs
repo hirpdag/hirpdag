@@ -4,39 +4,43 @@
 
 use hirpdag::*;
 
-#[hirpdag(root)]
-struct Item {
-    name: String,
-    deps: Vec<Item>,
+#[hirpdag_module]
+mod datamodel {
+    use hirpdag::*;
+
+    #[hirpdag(root)]
+    struct Item {
+        name: String,
+        pub deps: Vec<Item>,
+    }
+
+    #[hirpdag]
+    enum Kind {
+        Num(u32),
+        Sum(Vec<Node>),
+    }
+
+    #[hirpdag(root)]
+    struct Node {
+        pub kind: Kind,
+    }
+
+    // Label is deliberately NOT a root type: it can only appear as an interior
+    // node of the DAG, and HirpdagArchiveRoots has no field for it.
+    #[hirpdag]
+    struct Label {
+        text: String,
+    }
+
+    #[hirpdag(root)]
+    struct Pair {
+        pub left: Item,
+        pub right: Item,
+        pub tag: Label,
+    }
 }
 
-#[hirpdag]
-enum Kind {
-    Num(u32),
-    Sum(Vec<Node>),
-}
-
-#[hirpdag(root)]
-struct Node {
-    kind: Kind,
-}
-
-// Label is deliberately NOT a root type: it can only appear as an interior
-// node of the DAG, and HirpdagArchiveRoots has no field for it.
-#[hirpdag]
-struct Label {
-    text: String,
-}
-
-#[hirpdag(root)]
-struct Pair {
-    left: Item,
-    right: Item,
-    tag: Label,
-}
-
-#[hirpdag_end]
-pub struct HirpdagEndMarker;
+use datamodel::*;
 
 #[test]
 fn binary_round_trip_pointer_equal() {
@@ -289,6 +293,7 @@ fn handwritten_json_accepted() {
 
 /// A module with different hirpdag type definitions, to test the schema
 /// fingerprint in the binary header.
+#[hirpdag_module]
 mod other_schema {
     use hirpdag::*;
 
@@ -297,9 +302,6 @@ mod other_schema {
         id: u64,
         parts: Vec<Widget>,
     }
-
-    #[hirpdag_end]
-    pub struct HirpdagEndMarker;
 }
 
 #[test]

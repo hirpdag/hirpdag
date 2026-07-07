@@ -28,9 +28,7 @@ impl core::fmt::Display for BenchFibParams {
     }
 }
 
-hirpdag::hirpdag_configurations! {
-    configurations = [arc_hash_linear, arc_hash_sorted, arc_tovweaktable, leak_hash_linear];
-
+hirpdag_bench_configs! {
     #[hirpdag]
     struct FibNode {
         n: usize,

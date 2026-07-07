@@ -25,6 +25,62 @@ pub enum HirpdagArg {
 
     /// Builder for Hashconsing table sharing type specified by user.
     BuildTableSharedType(String),
+
+    /// Named preset selecting the reference and table types together.
+    Preset(String),
+}
+
+/// Known named configuration presets, selectable with
+/// `#[hirpdag_module(preset = "name")]`.
+const PRESETS: &[&str] = &[
+    "arc_hash_linear",
+    "arc_hash_sorted",
+    "arc_tovweaktable",
+    "leak_hash_linear",
+];
+
+/// The [reference_type, reference_weak_type, table_type, tableshared_type,
+/// build_tableshared_type] strings for a named preset.
+///
+/// Each preset names a strong/weak reference type pair and a table
+/// implementation from hirpdag_hashconsing; the shared-table wrapper types
+/// are derived from the reference type.
+fn preset_types(name: &str) -> Option<[String; 5]> {
+    const ARC: (&str, &str) = (
+        "hirpdag_hashconsing::RefArc<D>",
+        "hirpdag_hashconsing::RefArcWeak<D>",
+    );
+    const LEAK: (&str, &str) = (
+        "hirpdag_hashconsing::RefLeak<D>",
+        "hirpdag_hashconsing::RefLeakWeak<D>",
+    );
+    fn hashmap_fallback(fallback_table: &str, (r, w): (&str, &str)) -> String {
+        format!(
+            "hirpdag_hashconsing::TableHashmapFallbackWeak<D, {r}, {w}, hirpdag_hashconsing::{fallback_table}<D, {r}, {w}>>"
+        )
+    }
+    let ((reference_type, reference_weak_type), table_type) = match name {
+        "arc_hash_linear" => (ARC, hashmap_fallback("TableVecLinearWeak", ARC)),
+        "arc_hash_sorted" => (ARC, hashmap_fallback("TableVecSortedWeak", ARC)),
+        "arc_tovweaktable" => (
+            ARC,
+            format!(
+                "hirpdag_hashconsing::TableTovWeakTable<D, {}, {}>",
+                ARC.0, ARC.1
+            ),
+        ),
+        "leak_hash_linear" => (LEAK, hashmap_fallback("TableVecLinearWeak", LEAK)),
+        _ => return None,
+    };
+    Some([
+        reference_type.to_string(),
+        reference_weak_type.to_string(),
+        table_type,
+        format!("hirpdag_hashconsing::TableSharedSharded<D, {reference_type}, ImplTable<D>>"),
+        format!(
+            "hirpdag_hashconsing::BuildTableSharedSharded<D, {reference_type}, ImplTable<D>, hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
+        ),
+    ])
 }
 
 impl syn::parse::Parse for HirpdagArg {
@@ -57,6 +113,20 @@ impl syn::parse::Parse for HirpdagArg {
             "build_tableshared_type" => {
                 Handler::String(|s: &syn::LitStr| Ok(Self::BuildTableSharedType(s.value())))
             }
+            "preset" => Handler::String(|s: &syn::LitStr| {
+                let name = s.value();
+                if preset_types(&name).is_none() {
+                    return Err(syn::Error::new(
+                        s.span(),
+                        format!(
+                            "unknown preset `{}`; known presets: {}",
+                            name,
+                            PRESETS.join(", ")
+                        ),
+                    ));
+                }
+                Ok(Self::Preset(name))
+            }),
             _ => Handler::NotRecognised,
         };
         match arg_handler {
@@ -154,28 +224,19 @@ impl HirpdagConfig {
                 HirpdagArg::BuildTableSharedType(name) => {
                     config.build_tableshared_type = name.clone();
                 }
+                HirpdagArg::Preset(name) => {
+                    // Validated when the argument was parsed.
+                    let [r, w, t, ts, bts] =
+                        preset_types(name).expect("preset validated at parse time");
+                    config.reference_type = r;
+                    config.reference_weak_type = w;
+                    config.table_type = t;
+                    config.tableshared_type = ts;
+                    config.build_tableshared_type = bts;
+                }
             }
         }
         config
-    }
-
-    /// A config with explicit hash-consing types. Used by the
-    /// `hirpdag_configurations!` presets.
-    pub fn with_types(
-        reference_type: String,
-        reference_weak_type: String,
-        table_type: String,
-        tableshared_type: String,
-        build_tableshared_type: String,
-    ) -> Self {
-        Self {
-            reference_type,
-            reference_weak_type,
-            table_type,
-            tableshared_type,
-            build_tableshared_type,
-            ..Self::default()
-        }
     }
 
     pub fn has_normalizer(&self) -> bool {

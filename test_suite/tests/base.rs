@@ -1,29 +1,57 @@
 use hirpdag::*;
 
-#[hirpdag]
-struct MessageA {
-    a: i32,
-    b: String,
-    c: Option<MessageA>,
-    d: i32,
+#[hirpdag_module]
+mod datamodel {
+    use hirpdag::*;
+
+    #[hirpdag]
+    struct MessageA {
+        a: i32,
+        b: String,
+        c: Option<MessageA>,
+        d: i32,
+    }
+
+    #[hirpdag]
+    enum EnumB {
+        Foo(i32),
+        Bar(String),
+        Baz(Option<MessageA>),
+        Brr(String),
+    }
+
+    #[hirpdag]
+    pub struct MessageC {
+        d: i32,
+        pub e: EnumB,
+    }
+
+    pub struct MessageAExtendLeaf {
+        doot: MessageA,
+    }
+
+    impl MessageAExtendLeaf {
+        pub fn new() -> HirpdagRewriteMemoized<Self> {
+            let extension = MessageA::new(0, "DOOT".to_string(), None, 7007);
+            HirpdagRewriteMemoized::new(Self { doot: extension })
+        }
+    }
+
+    impl HirpdagRewriter for MessageAExtendLeaf {
+        fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+            if x.c.is_none() {
+                return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
+            }
+
+            // In the case where we don't want to make changes to extend the leaf,
+            // we want to apply the default rewrite which will apply the rewrite
+            // transitively to all applicable members.
+            x.default_rewrite(self)
+        }
+    }
 }
 
-#[hirpdag]
-enum EnumB {
-    Foo(i32),
-    Bar(String),
-    Baz(Option<MessageA>),
-    Brr(String),
-}
-
-#[hirpdag]
-pub struct MessageC {
-    d: i32,
-    e: EnumB,
-}
-
-#[hirpdag_end]
-pub struct HirpdagEndMarker;
+use datamodel::*;
 
 /// Test that the creation-order Ord is semantically correct:
 /// if A refers to B, then B < A.
@@ -133,30 +161,6 @@ fn builder_from_existing() {
     // Extend with child using builder
     let c: MessageA = a.to_builder().c(Some(a.clone())).build();
     assert_eq!(b, c);
-}
-
-struct MessageAExtendLeaf {
-    doot: MessageA,
-}
-
-impl MessageAExtendLeaf {
-    fn new() -> HirpdagRewriteMemoized<Self> {
-        let extension = MessageA::new(0, "DOOT".to_string(), None, 7007);
-        HirpdagRewriteMemoized::new(Self { doot: extension })
-    }
-}
-
-impl HirpdagRewriter for MessageAExtendLeaf {
-    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-        if x.c.is_none() {
-            return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
-        }
-
-        // In the case where we don't want to make changes to extend the leaf,
-        // we want to apply the default rewrite which will apply the rewrite
-        // transitively to all applicable members.
-        x.default_rewrite(self)
-    }
 }
 
 #[test]

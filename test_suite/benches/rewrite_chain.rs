@@ -31,9 +31,7 @@ impl core::fmt::Display for BenchRewriteChainParams {
     }
 }
 
-hirpdag::hirpdag_configurations! {
-    configurations = [arc_hash_linear, arc_hash_sorted, arc_tovweaktable, leak_hash_linear];
-
+hirpdag_bench_configs! {
     #[hirpdag]
     struct ChainLink {
         n: usize,
