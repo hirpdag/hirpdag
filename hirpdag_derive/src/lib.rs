@@ -8,6 +8,7 @@ extern crate proc_macro;
 extern crate proc_macro2;
 
 mod config;
+mod configurations;
 
 use crate::config::{HirpdagArgs, HirpdagConfig};
 
@@ -839,7 +840,14 @@ pub fn hirpdag_end(
 ) -> proc_macro::TokenStream {
     let attrs = syn::parse_macro_input!(attr as HirpdagArgs);
     let config = HirpdagConfig::from(&attrs);
+    expand_hirpdag_end(&config).into()
+}
 
+/// Generates the module-level code for the given configuration from all of
+/// the `#[hirpdag]` types registered since the last end marker: the Impl*
+/// type aliases, the HirpdagRewriter trait, memoized rewriting, and the
+/// serialization machinery. Drains the DATA_TYPES registry.
+fn expand_hirpdag_end(config: &HirpdagConfig) -> proc_macro2::TokenStream {
     let mut guard = DATA_TYPES.lock().unwrap();
 
     let rewrite_methods = guard
@@ -963,7 +971,7 @@ pub fn hirpdag_end(
 
         #serialization_items
     };
-    t.into()
+    t
 }
 
 /// Converts a CamelCase type name to a snake_case field name.
@@ -1351,4 +1359,32 @@ fn get_serialization_roots_items(
             Ok(archive.roots)
         }
     }
+}
+
+/// Expands the given items once per named hash-consing configuration.
+///
+/// Each configuration becomes a module named after it, containing
+/// `use hirpdag::*;`, the given items, and the matching
+/// `#[hirpdag_end(...)]` marker for that configuration. The items should be
+/// the `#[hirpdag]` type definitions followed by the code using them.
+///
+/// ```ignore
+/// hirpdag_configurations! {
+///     configurations = [arc_hash_linear, leak_hash_linear];
+///
+///     #[hirpdag]
+///     struct Node {
+///         children: Vec<Node>,
+///     }
+///
+///     pub fn build_graph(size: usize) {
+///         // ... uses Node::new ...
+///     }
+/// }
+/// ```
+#[proc_macro]
+pub fn hirpdag_configurations(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    configurations::expand(input.into())
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
 }

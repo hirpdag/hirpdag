@@ -159,6 +159,25 @@ impl HirpdagConfig {
         config
     }
 
+    /// A config with explicit hash-consing types. Used by the
+    /// `hirpdag_configurations!` presets.
+    pub fn with_types(
+        reference_type: String,
+        reference_weak_type: String,
+        table_type: String,
+        tableshared_type: String,
+        build_tableshared_type: String,
+    ) -> Self {
+        Self {
+            reference_type,
+            reference_weak_type,
+            table_type,
+            tableshared_type,
+            build_tableshared_type,
+            ..Self::default()
+        }
+    }
+
     pub fn has_normalizer(&self) -> bool {
         self.normalizer
     }
