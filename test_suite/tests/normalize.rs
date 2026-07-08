@@ -1,24 +1,42 @@
 use hirpdag::*;
 
-#[hirpdag(normalizer)]
-struct EvenNumber {
-    a: u32,
-}
+#[hirpdag_module]
+mod datamodel {
+    #[hirpdag(normalizer)]
+    struct EvenNumber {
+        a: u32,
+    }
 
-#[hirpdag]
-struct Holder {
-    x: EvenNumber,
-}
+    #[hirpdag]
+    struct Holder {
+        x: EvenNumber,
+    }
 
-#[hirpdag_end]
-pub struct HirpdagEndMarker;
+    impl EvenNumber {
+        pub fn new(a: u32) -> EvenNumber {
+            // Mask to subtract 1 from odd numbers.
+            EvenNumber::spawn(a & !1)
+        }
+    }
 
-impl EvenNumber {
-    fn new(a: u32) -> EvenNumber {
-        // Mask to subtract 1 from odd numbers.
-        EvenNumber::spawn(a & !1)
+    pub struct AddN {
+        n: u32,
+    }
+
+    impl AddN {
+        pub fn new(x: u32) -> HirpdagRewriteMemoized<Self> {
+            HirpdagRewriteMemoized::new(Self { n: x })
+        }
+    }
+
+    impl HirpdagRewriter for AddN {
+        fn rewrite_EvenNumber(&self, x: &EvenNumber) -> EvenNumber {
+            EvenNumber::new(x.a + self.n)
+        }
     }
 }
+
+use datamodel::*;
 
 #[test]
 fn round_down_test() {
@@ -29,22 +47,6 @@ fn round_down_test() {
 
     assert_eq!(a, b);
     assert_ne!(b, c);
-}
-
-struct AddN {
-    n: u32,
-}
-
-impl AddN {
-    fn new(x: u32) -> HirpdagRewriteMemoized<Self> {
-        HirpdagRewriteMemoized::new(Self { n: x })
-    }
-}
-
-impl HirpdagRewriter for AddN {
-    fn rewrite_EvenNumber(&self, x: &EvenNumber) -> EvenNumber {
-        EvenNumber::new(x.a + self.n)
-    }
 }
 
 #[test]

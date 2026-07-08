@@ -1,11 +1,10 @@
-// Test that hirpdag can be invoked multiple times in the same compile unit,
-// as long as it is in different mod and separated by hirpdag_end.
+// Test that hirpdag_module can be applied to multiple modules in the same
+// compile unit, each with independent generated code.
 //
 // Also test that generated code that needs to be public, is public.
 
+#[hirpdag::hirpdag_module]
 mod foo {
-    use hirpdag::*;
-
     #[hirpdag]
     pub struct Data {
         a: i32,
@@ -13,9 +12,6 @@ mod foo {
         c: Option<Data>,
         d: i32,
     }
-
-    #[hirpdag_end]
-    pub struct HirpdagEndMarker;
 
     pub struct ExtendLeaf {
         doot: Data,
@@ -42,9 +38,8 @@ mod foo {
     }
 }
 
+#[hirpdag::hirpdag_module]
 mod bar {
-    use hirpdag::*;
-
     #[hirpdag]
     pub struct Data {
         a: i32,
@@ -52,9 +47,6 @@ mod bar {
         c: Option<Data>,
         d: i32,
     }
-
-    #[hirpdag_end]
-    pub struct HirpdagEndMarker;
 
     pub struct ExtendLeaf {
         doot: Data,

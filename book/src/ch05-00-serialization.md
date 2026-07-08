@@ -9,7 +9,7 @@ a naive tree walk would be exponential.
 ## API
 
 Struct types that may be serialization roots are marked with
-`#[hirpdag(root)]`. `#[hirpdag_end]` then generates a `HirpdagArchiveRoots`
+`#[hirpdag(root)]`. `#[hirpdag_module]` then generates a `HirpdagArchiveRoots`
 struct with one vector per root type (field names are the snake_case type
 names), plus entry points:
 

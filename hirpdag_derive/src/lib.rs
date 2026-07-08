@@ -13,9 +13,6 @@ use crate::config::{HirpdagArgs, HirpdagConfig};
 
 use proc_macro2::{Ident, Span};
 
-#[macro_use]
-extern crate lazy_static;
-
 /// A hirpdag data type seen in the module.
 struct DataTypeEntry {
     name: String,
@@ -44,29 +41,121 @@ fn fnv1a_64(data: &str) -> u64 {
     hash
 }
 
-lazy_static! {
-    /// Collects all of the Hirpdag data types seen in the module.
-    ///
-    /// This will be used from the HirpdagEnd to generate code which can operate on all of them.
-    static ref DATA_TYPES: std::sync::Mutex<Vec<DataTypeEntry>> = std::sync::Mutex::new(Vec::new());
-}
-
+/// Generates hirpdag data structures for an inline module.
+///
+/// Each struct or enum marked `#[hirpdag]` becomes a hash-consed data type,
+/// other items pass through unchanged, and the module-level machinery
+/// (rewriting, serialization) is appended. Attribute arguments select the
+/// hash-consing configuration: a named `preset = "..."` or the explicit
+/// `reference_type`, `reference_weak_type`, `table_type`,
+/// `tableshared_type`, and `build_tableshared_type` strings.
+///
+/// ```ignore
+/// #[hirpdag_module]
+/// mod datamodel {
+///     #[hirpdag]
+///     struct Node {
+///         children: Vec<Node>,
+///     }
+/// }
+/// ```
+///
+/// Generated code uses absolute paths (the module needs no imports) and is
+/// produced by this single invocation (no state shared between expansions;
+/// see docs/adr/0002-module-attribute-macro.md). Outer attribute form only
+/// (rust-lang/rust#54726).
 #[proc_macro_attribute]
-pub fn hirpdag(
+pub fn hirpdag_module(
     attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let attrs = syn::parse_macro_input!(attr as HirpdagArgs);
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    expand_hirpdag(&attrs, &input).into()
+    let config = HirpdagConfig::from(&attrs);
+    let module = syn::parse_macro_input!(input as syn::ItemMod);
+    expand_hirpdag_module(&config, &module)
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
 }
 
-fn expand_hirpdag(attrs: &HirpdagArgs, input: &syn::DeriveInput) -> proc_macro2::TokenStream {
-    let config = HirpdagConfig::from(attrs);
-    match &input.data {
-        syn::Data::Struct(s) => expand_hirpdag_struct(&config, input, s),
-        syn::Data::Enum(e) => expand_hirpdag_enum(&config, input, e),
-        _ => panic!("`#[Hirpdag]` can only be applied to named structs and enums"),
+fn expand_hirpdag_module(
+    config: &HirpdagConfig,
+    module: &syn::ItemMod,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let (_, items) = module.content.as_ref().ok_or_else(|| {
+        syn::Error::new_spanned(
+            module,
+            "#[hirpdag_module] requires an inline module: `mod name { ... }`",
+        )
+    })?;
+    let body = expand_module_items(config, items)?;
+    let (inner_attrs, outer_attrs): (Vec<_>, Vec<_>) = module
+        .attrs
+        .iter()
+        .partition(|a| matches!(a.style, syn::AttrStyle::Inner(_)));
+    let vis = &module.vis;
+    let ident = &module.ident;
+    Ok(quote! {
+        #(#outer_attrs)*
+        #vis mod #ident {
+            #(#inner_attrs)*
+            #body
+        }
+    })
+}
+
+/// Expands the items of a hirpdag module: structs and enums marked with an
+/// inert `#[hirpdag]` attribute become hash-consed data types, other items
+/// pass through unchanged, and the module-level code for the given
+/// configuration is appended.
+fn expand_module_items(
+    config: &HirpdagConfig,
+    items: &[syn::Item],
+) -> syn::Result<proc_macro2::TokenStream> {
+    let mut types: Vec<DataTypeEntry> = Vec::new();
+    let mut body = proc_macro2::TokenStream::new();
+    for item in items {
+        let mut item = item.clone();
+        if let Some(attr) = take_hirpdag_attr(&mut item) {
+            let args = parse_hirpdag_args(&attr)?;
+            let type_config = HirpdagConfig::from(&args);
+            let input: syn::DeriveInput = match item {
+                syn::Item::Struct(s) => s.into(),
+                syn::Item::Enum(e) => e.into(),
+                _ => unreachable!("take_hirpdag_attr only matches structs and enums"),
+            };
+            body.extend(match &input.data {
+                syn::Data::Struct(s) => expand_hirpdag_struct(&type_config, &input, s, &mut types),
+                syn::Data::Enum(e) => expand_hirpdag_enum(&type_config, &input, e, &mut types),
+                _ => unreachable!(),
+            });
+        } else {
+            body.extend(quote! { #item });
+        }
+    }
+    body.extend(expand_hirpdag_end(config, &types));
+    Ok(body)
+}
+
+/// If the item is a struct or enum with a `#[hirpdag]` attribute, removes
+/// and returns that attribute.
+fn take_hirpdag_attr(item: &mut syn::Item) -> Option<syn::Attribute> {
+    let attrs = match item {
+        syn::Item::Struct(s) => &mut s.attrs,
+        syn::Item::Enum(e) => &mut e.attrs,
+        _ => return None,
+    };
+    let position = attrs.iter().position(|a| a.path().is_ident("hirpdag"))?;
+    Some(attrs.remove(position))
+}
+
+fn parse_hirpdag_args(attr: &syn::Attribute) -> syn::Result<HirpdagArgs> {
+    match &attr.meta {
+        syn::Meta::Path(_) => syn::parse2(proc_macro2::TokenStream::new()),
+        syn::Meta::List(list) => syn::parse2(list.tokens.clone()),
+        syn::Meta::NameValue(nv) => Err(syn::Error::new_spanned(
+            nv,
+            "unexpected `#[hirpdag = ...]`; use `#[hirpdag]` or `#[hirpdag(...)]`",
+        )),
     }
 }
 
@@ -126,6 +215,17 @@ fn get_fields_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
     //};
     let fields_declarations = fields_named.named.clone();
     quote! { #fields_declarations }
+}
+
+/// The fields as a function parameter list: `a: i32, b: String,`.
+/// Field visibility and attributes are not valid on parameters.
+fn get_fields_parameters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    let mut parameters = fields_named.named.clone();
+    for field in parameters.iter_mut() {
+        field.vis = syn::Visibility::Inherited;
+        field.attrs.clear();
+    }
+    quote! { #parameters }
 }
 
 fn get_fields_list(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -292,10 +392,10 @@ fn get_default_normalizer(
     if config.has_normalizer() {
         quote! {}
     } else {
-        let fields_declarations = get_fields_declarations(fields_named);
+        let fields_parameters = get_fields_parameters(fields_named);
         let fields_list = get_fields_list(fields_named);
         quote! {
-            pub fn new(#fields_declarations) -> Self {
+            pub fn new(#fields_parameters) -> Self {
                 Self::spawn(#fields_list)
             }
         }
@@ -306,25 +406,23 @@ fn expand_hirpdag_struct(
     config: &HirpdagConfig,
     input: &syn::DeriveInput,
     input_struct: &syn::DataStruct,
+    types: &mut Vec<DataTypeEntry>,
 ) -> proc_macro2::TokenStream {
     let name: &Ident = &input.ident;
 
     let name_str = name.to_string();
     let name_uppercase_str = name_str.to_ascii_uppercase();
 
-    {
-        let mut guard = DATA_TYPES.lock().unwrap();
-        guard.push(DataTypeEntry {
-            name: name_str.clone(),
-            is_struct: true,
-            is_root: config.is_root(),
-            definition: get_definition_string_struct(
-                &name_str,
-                config.is_root(),
-                get_fields_named(input_struct),
-            ),
-        });
-    }
+    types.push(DataTypeEntry {
+        name: name_str.clone(),
+        is_struct: true,
+        is_root: config.is_root(),
+        definition: get_definition_string_struct(
+            &name_str,
+            config.is_root(),
+            get_fields_named(input_struct),
+        ),
+    });
 
     let hirpdag_ref_name_str = name_str.to_string();
     let hirpdag_ref_name = Ident::new(&hirpdag_ref_name_str, Span::call_site());
@@ -344,6 +442,7 @@ fn expand_hirpdag_struct(
 
     let fields_named = get_fields_named(input_struct);
     let fields_declarations = get_fields_declarations(fields_named);
+    let fields_parameters = get_fields_parameters(fields_named);
     let fields_list = get_fields_list(fields_named);
     let fields_compute_meta = get_fields_compute_meta(fields_named);
     let fields_rewrite = get_fields_rewrite(fields_named);
@@ -448,7 +547,7 @@ fn expand_hirpdag_struct(
         }
 
         impl #hirpdag_ref_name {
-            fn spawn(#fields_declarations) -> Self {
+            fn spawn(#fields_parameters) -> Self {
                 let data = #hirpdag_struct_name { #fields_list };
                 Self(data.hirpdag_hashcons())
             }
@@ -466,7 +565,7 @@ fn expand_hirpdag_struct(
             #default_normalizer
 
             #[allow(non_snake_case)]
-            fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
+            pub fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
                 Self::new(
                     #fields_rewrite
                     )
@@ -669,6 +768,7 @@ fn expand_hirpdag_enum(
     config: &HirpdagConfig,
     input: &syn::DeriveInput,
     input_enum: &syn::DataEnum,
+    types: &mut Vec<DataTypeEntry>,
 ) -> proc_macro2::TokenStream {
     let name: &Ident = &input.ident;
 
@@ -678,15 +778,12 @@ fn expand_hirpdag_enum(
         panic!("`#[hirpdag(root)]` can only be applied to structs; enums are not hashconsed");
     }
 
-    {
-        let mut guard = DATA_TYPES.lock().unwrap();
-        guard.push(DataTypeEntry {
-            name: name_str.clone(),
-            is_struct: false,
-            is_root: false,
-            definition: get_definition_string_enum(&name_str, input_enum),
-        });
-    }
+    types.push(DataTypeEntry {
+        name: name_str.clone(),
+        is_struct: false,
+        is_root: false,
+        definition: get_definition_string_enum(&name_str, input_enum),
+    });
 
     let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name_str);
     let hirpdag_rewrite_method_name =
@@ -718,7 +815,7 @@ fn expand_hirpdag_enum(
 
         impl #name {
             #[allow(non_snake_case)]
-            fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
+            pub fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
                 use #name::*;
                 match self {
                     #variants_rewrite
@@ -832,17 +929,12 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     }
 }
 
-#[proc_macro_attribute]
-pub fn hirpdag_end(
-    attr: proc_macro::TokenStream,
-    _input: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    let attrs = syn::parse_macro_input!(attr as HirpdagArgs);
-    let config = HirpdagConfig::from(&attrs);
-
-    let mut guard = DATA_TYPES.lock().unwrap();
-
-    let rewrite_methods = guard
+/// Generates the module-level code for the given configuration from all of
+/// the `#[hirpdag]` types in the module: the Impl* type aliases, the
+/// HirpdagRewriter trait, memoized rewriting, and the serialization
+/// machinery.
+fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_macro2::TokenStream {
+    let rewrite_methods = types
         .iter()
         .map(|entry| get_rewrite_datatype(&entry.name))
         .fold(proc_macro2::TokenStream::new(), |mut s, t| {
@@ -850,7 +942,7 @@ pub fn hirpdag_end(
             s
         });
 
-    let cache_members = guard
+    let cache_members = types
         .iter()
         .map(|entry| get_cache_member(&entry.name))
         .fold(proc_macro2::TokenStream::new(), |mut s, t| {
@@ -858,7 +950,7 @@ pub fn hirpdag_end(
             s
         });
 
-    let cache_members_new = guard
+    let cache_members_new = types
         .iter()
         .map(|entry| get_cache_member_new(&entry.name))
         .fold(proc_macro2::TokenStream::new(), |mut s, t| {
@@ -866,7 +958,7 @@ pub fn hirpdag_end(
             s
         });
 
-    let cache_methods = guard
+    let cache_methods = types
         .iter()
         .map(|entry| get_cache_rewrite(&entry.name))
         .fold(proc_macro2::TokenStream::new(), |mut s, t| {
@@ -875,7 +967,7 @@ pub fn hirpdag_end(
         });
 
     // (name, is_root) for each hashconsed struct type in the module.
-    let struct_types: Vec<(String, bool)> = guard
+    let struct_types: Vec<(String, bool)> = types
         .iter()
         .filter(|entry| entry.is_struct)
         .map(|entry| (entry.name.clone(), entry.is_root))
@@ -887,7 +979,7 @@ pub fn hirpdag_end(
     // errors. Computed at macro expansion time and embedded in the header of
     // binary archives.
     let schema_hash = {
-        let definitions: Vec<&str> = guard
+        let definitions: Vec<&str> = types
             .iter()
             .map(|entry| entry.definition.as_str())
             .collect();
@@ -899,7 +991,7 @@ pub fn hirpdag_end(
         // source file name, so package name + type names identify the
         // hirpdag_end for debugging purposes.
         let pkg = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
-        let type_names: Vec<&str> = guard.iter().map(|entry| entry.name.as_str()).collect();
+        let type_names: Vec<&str> = types.iter().map(|entry| entry.name.as_str()).collect();
         let mut name = format!("{}:{}", pkg, type_names.join(","));
         const SCHEMA_NAME_MAX: usize = 128;
         const ELLIPSIS: &str = "...";
@@ -918,8 +1010,6 @@ pub fn hirpdag_end(
     };
 
     let serialization_items = get_serialization_items(&struct_types, schema_hash, &schema_name);
-
-    guard.clear();
 
     let reference_type: proc_macro2::TokenStream = config.reference_type();
     let reference_weak_type: proc_macro2::TokenStream = config.reference_weak_type();
@@ -963,7 +1053,7 @@ pub fn hirpdag_end(
 
         #serialization_items
     };
-    t.into()
+    t
 }
 
 /// Converts a CamelCase type name to a snake_case field name.

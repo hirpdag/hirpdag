@@ -16,6 +16,9 @@
 // rewrites.  Comparing different K values reveals how the cost
 // scales linearly with the number of rewrite steps.
 
+#[macro_use]
+mod support;
+
 #[derive(Copy, Clone)]
 pub struct BenchRewriteChainParams {
     length: usize,
@@ -28,42 +31,7 @@ impl core::fmt::Display for BenchRewriteChainParams {
     }
 }
 
-macro_rules! implementation {
-    () => {
-        struct BumpV;
-
-        impl BumpV {
-            fn new() -> HirpdagRewriteMemoized<Self> {
-                HirpdagRewriteMemoized::new(BumpV)
-            }
-        }
-
-        impl HirpdagRewriter for BumpV {
-            fn rewrite_ChainLink(&self, x: &ChainLink) -> ChainLink {
-                ChainLink::new(x.n, self.rewrite(&x.next), x.v + 1)
-            }
-        }
-
-        pub fn bench_rewrite_chain(params: &crate::BenchRewriteChainParams) {
-            // Build an N-node chain with v=0.
-            let mut head: Option<ChainLink> = None;
-            for i in 0..params.length {
-                head = Some(ChainLink::new(i, head, 0));
-            }
-            // Apply K rewrites sequentially, each bumping v by 1.
-            let mut current = head;
-            for _ in 0..params.rewrites {
-                let t = BumpV::new();
-                current = t.rewrite(&current);
-            }
-            std::hint::black_box(current);
-        }
-    };
-}
-
-mod arc_hash_linear {
-    use hirpdag::*;
-
+hirpdag_bench_configs! {
     #[hirpdag]
     struct ChainLink {
         n: usize,
@@ -71,74 +39,56 @@ mod arc_hash_linear {
         v: usize,
     }
 
-    #[hirpdag_end(
-        reference_type = "hirpdag_hashconsing::RefArc<D>",
-        reference_weak_type = "hirpdag_hashconsing::RefArcWeak<D>",
-        table_type = "hirpdag_hashconsing::TableHashmapFallbackWeak<D, hirpdag_hashconsing::RefArc<D>, hirpdag_hashconsing::RefArcWeak<D>, hirpdag_hashconsing::TableVecLinearWeak<D, hirpdag_hashconsing::RefArc<D>, hirpdag_hashconsing::RefArcWeak<D>>>",
-        tableshared_type = "hirpdag_hashconsing::TableSharedSharded<D, hirpdag_hashconsing::RefArc<D>, ImplTable<D>>",
-        build_tableshared_type = "hirpdag_hashconsing::BuildTableSharedSharded<D, hirpdag_hashconsing::RefArc<D>, ImplTable<D>, hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
-    )]
-    pub struct HirpdagEndMarker;
+    struct BumpV;
 
-    implementation!();
-}
-
-mod leak_hash_linear {
-    use hirpdag::*;
-
-    #[hirpdag]
-    struct ChainLink {
-        n: usize,
-        next: Option<ChainLink>,
-        v: usize,
+    impl BumpV {
+        fn new() -> HirpdagRewriteMemoized<Self> {
+            HirpdagRewriteMemoized::new(BumpV)
+        }
     }
 
-    #[hirpdag_end(
-        reference_type = "hirpdag_hashconsing::RefLeak<D>",
-        reference_weak_type = "hirpdag_hashconsing::RefLeakWeak<D>",
-        table_type = "hirpdag_hashconsing::TableHashmapFallbackWeak<D, hirpdag_hashconsing::RefLeak<D>, hirpdag_hashconsing::RefLeakWeak<D>, hirpdag_hashconsing::TableVecLinearWeak<D, hirpdag_hashconsing::RefLeak<D>, hirpdag_hashconsing::RefLeakWeak<D>>>",
-        tableshared_type = "hirpdag_hashconsing::TableSharedSharded<D, hirpdag_hashconsing::RefLeak<D>, ImplTable<D>>",
-        build_tableshared_type = "hirpdag_hashconsing::BuildTableSharedSharded<D, hirpdag_hashconsing::RefLeak<D>, ImplTable<D>, hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
-    )]
-    pub struct HirpdagEndMarker;
+    impl HirpdagRewriter for BumpV {
+        fn rewrite_ChainLink(&self, x: &ChainLink) -> ChainLink {
+            ChainLink::new(x.n, self.rewrite(&x.next), x.v + 1)
+        }
+    }
 
-    implementation!();
+    pub fn bench_rewrite_chain(params: &crate::BenchRewriteChainParams) {
+        // Build an N-node chain with v=0.
+        let mut head: Option<ChainLink> = None;
+        for i in 0..params.length {
+            head = Some(ChainLink::new(i, head, 0));
+        }
+        // Apply K rewrites sequentially, each bumping v by 1.
+        let mut current = head;
+        for _ in 0..params.rewrites {
+            let t = BumpV::new();
+            current = t.rewrite(&current);
+        }
+        std::hint::black_box(current);
+    }
 }
 
-use criterion::{
-    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
-};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_rewrite_chain(c: &mut Criterion) {
     let mut group = c.benchmark_group("RewriteChain");
-    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
-    group.plot_config(plot_config);
+    support::configure_log_scale(&mut group);
     for (length, rewrites) in [(500usize, 20usize), (2000, 5)].iter() {
         let params = BenchRewriteChainParams {
             length: *length,
             rewrites: *rewrites,
         };
-        group.bench_with_input(
-            BenchmarkId::new("ArcHashLinear", params),
-            &params,
-            |b, params| {
-                b.iter(|| arc_hash_linear::bench_rewrite_chain(std::hint::black_box(params)))
-            },
-        );
-        group.bench_with_input(
-            BenchmarkId::new("LeakHashLinear", params),
-            &params,
-            |b, params| {
-                b.iter(|| leak_hash_linear::bench_rewrite_chain(std::hint::black_box(params)))
-            },
-        );
+        bench_each_config!(group, params, bench_rewrite_chain);
     }
     group.finish();
 }
 
 criterion_group! {
     name = benches;
-    config = Criterion::default().sample_size(10).measurement_time(core::time::Duration::from_secs(15));
+    config = Criterion::default()
+        .sample_size(10)
+        .measurement_time(core::time::Duration::from_secs(15));
     targets = bench_rewrite_chain
 }
 criterion_main!(benches);

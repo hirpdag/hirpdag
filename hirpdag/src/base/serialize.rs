@@ -2,7 +2,7 @@
 //
 // DAG-aware serialization support shared by all hirpdag modules.
 //
-// The archive layout (generated per hirpdag module by `#[hirpdag_end]`) is:
+// The archive layout (generated per `#[hirpdag_module]` module) is:
 //   version, then a node table in post-order DFS order (children before
 //   parents), then a list of roots. `HirpdagRef` fields are encoded as u64
 //   indices into the node table. Because children always precede parents,
@@ -191,7 +191,7 @@ impl<'de> serde::Deserialize<'de> for HirpdagFormatVersion {
 /// Traversal trait used by the serialization collect phase to register every
 /// unique node reachable from the roots, children first (post-order DFS).
 ///
-/// `C` is the collect context generated per hirpdag module by `#[hirpdag_end]`.
+/// `C` is the collect context generated per `#[hirpdag_module]` module.
 /// Follows the same shape as `HirpdagRewritable`: no-op for leaf values,
 /// structural for containers, generated for hirpdag types.
 pub trait HirpdagCollect<C> {

@@ -111,7 +111,7 @@ HirpdagArchive
 
 serde's `Serialize`/`Deserialize` traits carry no user state, so the (de)serialization
 session state lives in a thread-local scoped context, generated per hirpdag module by
-`#[hirpdag_end]` (mirroring how each module already gets its own table statics):
+the module attribute (mirroring how each module already gets its own table statics):
 
 - **Serialize session**: `creation_id → u64 index` map. `hirpdag_get_creation_id()`
   is globally unique per interned node across all types, so one map suffices.
@@ -207,7 +207,7 @@ Generation is unconditional (no attribute flag, no feature matrix): less generat
 code, no cfg plumbing; serde+postcard are small, ubiquitous dependencies. An opt-out
 attribute (`#[hirpdag(no_serialize)]`) can be added later if a user needs it.
 
-### Phase 3 — `hirpdag_derive`: `#[hirpdag_end]` module-level generation
+### Phase 3 — `hirpdag_derive`: module-level generation
 
 - `enum HirpdagArchiveNode { Foo(HirpdagStructFoo), … }` (struct types only) with the
   serde derive.

@@ -26,53 +26,76 @@ benchmarking suite for evaluating performance of different hashconsing implement
 ```rust
 use hirpdag::*;
 
-#[hirpdag(normalizer)]
-struct Expr {
-    x: ExprKind,
-}
+#[hirpdag_module]
+mod expressions {
+    #[hirpdag(normalizer)]
+    struct Expr {
+        x: ExprKind,
+    }
 
-#[hirpdag]
-enum ExprKind {
-    Num(u32),
-    Add(Vec<Expr>),
-    Mul(Vec<Expr>),
-    Var(String),
-}
+    #[hirpdag]
+    enum ExprKind {
+        Num(u32),
+        Add(Vec<Expr>),
+        Mul(Vec<Expr>),
+        Var(String),
+    }
 
-#[hirpdag]
-struct Variables {
-    x: Expr,
-}
+    #[hirpdag]
+    struct Variables {
+        x: Expr,
+    }
 
-#[hirpdag_end]
-pub struct HirpdagEndMarker;
+    fn nary_expr_normalize(...) { ... } // See full code in test suite.
 
-fn nary_expr_normalize(...) { ... } // See full code in test suite.
-
-impl Expr {
-    // Because we added the normalizer attribute on Expr, we implement Expr::new(...).
-    // To produce a normalized Expr, this function will use Expr::spawn(...).
-    fn new(x: ExprKind) -> Expr {
-        // Normalization
-        match x {
-            ExprKind::Mul(original_factors) => {
-                return nary_expr_normalize(original_factors,
-                    1, // Identity when combining constants
-                    |a, b| a * b, // Combine constants
-                    |x| match x { ExprKind::Mul(e) => Some(&e), _ => None }, // Flatten nested Mul
-                    |e| Expr::spawn(ExprKind::Mul(e))); // Spawn as Mul
+    impl Expr {
+        // Because we added the normalizer attribute on Expr, we implement Expr::new(...).
+        // To produce a normalized Expr, this function will use Expr::spawn(...).
+        pub fn new(x: ExprKind) -> Expr {
+            // Normalization
+            match x {
+                ExprKind::Mul(original_factors) => {
+                    return nary_expr_normalize(original_factors,
+                        1, // Identity when combining constants
+                        |a, b| a * b, // Combine constants
+                        |x| match x { ExprKind::Mul(e) => Some(&e), _ => None }, // Flatten nested Mul
+                        |e| Expr::spawn(ExprKind::Mul(e))); // Spawn as Mul
+                }
+                ExprKind::Add(original_terms) => {
+                    return nary_expr_normalize(original_terms,
+                        0, // Identity when combining constants
+                        |a, b| a + b, // Combine constants
+                        |x| match x { ExprKind::Add(e) => Some(&e), _ => None }, // Flatten nested Add
+                        |e| Expr::spawn(ExprKind::Add(e))); // Spawn as Add
+                }
+                _ => Expr::spawn(x),
             }
-            ExprKind::Add(original_terms) => {
-                return nary_expr_normalize(original_terms,
-                    0, // Identity when combining constants
-                    |a, b| a + b, // Combine constants
-                    |x| match x { ExprKind::Add(e) => Some(&e), _ => None }, // Flatten nested Add
-                    |e| Expr::spawn(ExprKind::Add(e))); // Spawn as Add
+        }
+    }
+
+    pub struct Substitute {
+        var: String,
+        s: Expr,
+    }
+
+    impl Substitute {
+        pub fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
+            HirpdagRewriteMemoized::new(Self { var: var, s: s })
+        }
+    }
+
+    impl HirpdagRewriter for Substitute {
+        fn rewrite_Expr(&self, x: &Expr) -> Expr {
+            if let ExprKind::Var(name) = &x.x {
+                if *name == self.var {
+                    return self.s.clone();
+                }
             }
-            _ => Expr::spawn(x),
+            x.default_rewrite(self)
         }
     }
 }
+use expressions::*;
 
 #[test]
 fn expr_normalizer_test() {
@@ -96,28 +119,6 @@ fn expr_normalizer_test() {
     // 2 * 3 * a == 6 * a
     // Note that this uses pointer equality, not a deep tree comparison.
     assert_eq!(n2n3va, n6va);
-}
-
-struct Substitute {
-    var: String,
-    s: Expr,
-}
-
-impl Substitute {
-    fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
-        HirpdagRewriteMemoized::new(Self { var: var, s: s })
-    }
-}
-
-impl HirpdagRewriter for Substitute {
-    fn rewrite_Expr(&self, x: &Expr) -> Expr {
-        if let ExprKind::Var(name) = &x.x {
-            if *name == self.var {
-                return self.s.clone();
-            }
-        }
-        x.default_rewrite(self)
-    }
 }
 
 #[test]
@@ -150,14 +151,15 @@ non-destructive modification of nodes.
 ```rust
 use hirpdag::*;
 
-#[hirpdag]
-struct Point {
-    x: i32,
-    y: i32,
+#[hirpdag_module]
+mod points {
+    #[hirpdag]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
 }
-
-#[hirpdag_end]
-pub struct HirpdagEndMarker;
+use points::*;
 
 // Construct a new node via the builder.
 let p: Point = Point::builder()
@@ -186,7 +188,7 @@ survives a round trip and output size is proportional to the number of unique
 nodes, not the tree expansion.
 
 Struct types that may be serialization roots are marked `#[hirpdag(root)]`.
-`#[hirpdag_end]` generates a `HirpdagArchiveRoots` struct (one vector per root
+`#[hirpdag_module]` generates a `HirpdagArchiveRoots` struct (one vector per root
 type; multiple roots of different types share one file) and the entry points
 `hirpdag_serialize`/`hirpdag_deserialize` (compact binary via [postcard]) and
 `hirpdag_serialize_json`/`hirpdag_deserialize_json` (text via [serde_json]).
