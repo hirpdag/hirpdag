@@ -30,6 +30,9 @@ pub enum HirpdagArg {
     Preset(String),
 }
 
+/// Preset used when no `preset`/type arguments are given.
+const DEFAULT_PRESET: &str = "arc_hash_linear";
+
 /// Known named configuration presets, selectable with
 /// `#[hirpdag_module(preset = "name")]`.
 const PRESETS: &[&str] = &[
@@ -43,72 +46,72 @@ const PRESETS: &[&str] = &[
     "tlc_hash_linear",
 ];
 
-/// The [reference_type, reference_weak_type, table_type, tableshared_type,
-/// build_tableshared_type] strings for a named preset.
+/// The type strings that select a hash-consing implementation.
 ///
-/// Each preset names a strong/weak reference type pair and a table
-/// implementation from hirpdag_hashconsing; the shared-table wrapper types
-/// are derived from the reference type.
-fn preset_types(name: &str) -> Option<[String; 5]> {
-    const ARC: (&str, &str) = (
-        "hirpdag::hirpdag_hashconsing::RefArc<D>",
-        "hirpdag::hirpdag_hashconsing::RefArcWeak<D>",
-    );
-    const LEAK: (&str, &str) = (
-        "hirpdag::hirpdag_hashconsing::RefLeak<D>",
-        "hirpdag::hirpdag_hashconsing::RefLeakWeak<D>",
-    );
-    // Reference-counting experiments with counts stored separately from the
-    // data (see hirpdag_hashconsing::reference_sepcount).
-    const SEP: (&str, &str) = (
-        "hirpdag::hirpdag_hashconsing::RefSep<D>",
-        "hirpdag::hirpdag_hashconsing::RefSepWeak<D>",
-    );
-    const SEPPAD: (&str, &str) = (
-        "hirpdag::hirpdag_hashconsing::RefSepPad<D>",
-        "hirpdag::hirpdag_hashconsing::RefSepPadWeak<D>",
-    );
-    const SEPU32: (&str, &str) = (
-        "hirpdag::hirpdag_hashconsing::RefSepU32<D>",
-        "hirpdag::hirpdag_hashconsing::RefSepU32Weak<D>",
-    );
-    // Thread-local deferred reference counting (see
-    // hirpdag_hashconsing::reference_tlc).
-    const TLC: (&str, &str) = (
-        "hirpdag::hirpdag_hashconsing::RefTlc<D>",
-        "hirpdag::hirpdag_hashconsing::RefTlcWeak<D>",
-    );
-    fn hashmap_fallback(fallback_table: &str, (r, w): (&str, &str)) -> String {
-        format!(
-            "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, {r}, {w}, hirpdag::hirpdag_hashconsing::{fallback_table}<D, {r}, {w}>>"
+/// Each string is spliced into a `type Impl…<D> = …;` alias in the generated
+/// code, so they share a `D` data-type parameter and refer to each other
+/// through the generated aliases `ImplRef<D>`, `ImplRefWeak<D>` and
+/// `ImplTable<D>`. Using those aliases instead of respelling the concrete
+/// reference/table types keeps the strings short and makes the shared-table
+/// types follow whatever reference and table the config ends up with.
+#[derive(Clone)]
+struct ConfigTypes {
+    reference_type: String,
+    reference_weak_type: String,
+    table_type: String,
+    tableshared_type: String,
+    build_tableshared_type: String,
+}
+
+/// The [`ConfigTypes`] for a named preset, or `None` if the name is unknown.
+///
+/// A preset only chooses a strong/weak reference pair and an inner table
+/// strategy from hirpdag_hashconsing. The shared-table types are always the
+/// sharded implementation over the configured reference (`ImplRef<D>`) and
+/// inner table (`ImplTable<D>`), so they are the same for every preset:
+/// `TableSharedSharded`'s `HB` defaults to `DefaultHasher` and is left off,
+/// while `BuildTableSharedSharded` has no default hasher so it is named.
+fn preset_types(name: &str) -> Option<ConfigTypes> {
+    // Strong/weak reference pair, named `Ref…` / `Ref…Weak`.
+    fn reference(base: &str) -> (String, String) {
+        (
+            format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
+            format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
         )
     }
-    let ((reference_type, reference_weak_type), table_type) = match name {
-        "arc_hash_linear" => (ARC, hashmap_fallback("TableVecLinearWeak", ARC)),
-        "arc_hash_sorted" => (ARC, hashmap_fallback("TableVecSortedWeak", ARC)),
+    // A hashmap that falls back to `inner_table` at larger sizes.
+    fn hashmap_fallback(inner_table: &str) -> String {
+        format!(
+            "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, ImplRef<D>, ImplRefWeak<D>, hirpdag::hirpdag_hashconsing::{inner_table}<D, ImplRef<D>, ImplRefWeak<D>>>"
+        )
+    }
+    let (reference_base, table_type) = match name {
+        "arc_hash_linear" => ("RefArc", hashmap_fallback("TableVecLinearWeak")),
+        "arc_hash_sorted" => ("RefArc", hashmap_fallback("TableVecSortedWeak")),
         "arc_tovweaktable" => (
-            ARC,
-            format!(
-                "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, {}, {}>",
-                ARC.0, ARC.1
-            ),
+            "RefArc",
+            "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"
+                .to_string(),
         ),
-        "leak_hash_linear" => (LEAK, hashmap_fallback("TableVecLinearWeak", LEAK)),
-        "sep_hash_linear" => (SEP, hashmap_fallback("TableVecLinearWeak", SEP)),
-        "seppad_hash_linear" => (SEPPAD, hashmap_fallback("TableVecLinearWeak", SEPPAD)),
-        "sepu32_hash_linear" => (SEPU32, hashmap_fallback("TableVecLinearWeak", SEPU32)),
-        "tlc_hash_linear" => (TLC, hashmap_fallback("TableVecLinearWeak", TLC)),
+        "leak_hash_linear" => ("RefLeak", hashmap_fallback("TableVecLinearWeak")),
+        // Reference-counting experiments with counts stored separately from the
+        // data (see hirpdag_hashconsing::reference_sepcount).
+        "sep_hash_linear" => ("RefSep", hashmap_fallback("TableVecLinearWeak")),
+        "seppad_hash_linear" => ("RefSepPad", hashmap_fallback("TableVecLinearWeak")),
+        "sepu32_hash_linear" => ("RefSepU32", hashmap_fallback("TableVecLinearWeak")),
+        // Thread-local deferred reference counting (see
+        // hirpdag_hashconsing::reference_tlc).
+        "tlc_hash_linear" => ("RefTlc", hashmap_fallback("TableVecLinearWeak")),
         _ => return None,
     };
-    Some([
-        reference_type.to_string(),
-        reference_weak_type.to_string(),
+    let (reference_type, reference_weak_type) = reference(reference_base);
+    Some(ConfigTypes {
+        reference_type,
+        reference_weak_type,
         table_type,
-        format!("hirpdag::hirpdag_hashconsing::TableSharedSharded<D, {reference_type}, ImplTable<D>>"),
-        format!(
-            "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, {reference_type}, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
-        ),
-    ])
+        tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
+        build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+    })
 }
 
 impl syn::parse::Parse for HirpdagArg {
@@ -203,13 +206,7 @@ impl syn::parse::Parse for HirpdagArgs {
 pub struct HirpdagConfig {
     normalizer: bool,
     root: bool,
-
-    reference_type: String,
-    reference_weak_type: String,
-
-    table_type: String,
-    tableshared_type: String,
-    build_tableshared_type: String,
+    types: ConfigTypes,
 }
 
 impl HirpdagConfig {
@@ -217,11 +214,7 @@ impl HirpdagConfig {
         Self {
             normalizer: false,
             root: false,
-            reference_type: "hirpdag::hirpdag_hashconsing::RefArc<D>".to_string(),
-            reference_weak_type: "hirpdag::hirpdag_hashconsing::RefArcWeak<D>".to_string(),
-            table_type: "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, hirpdag::hirpdag_hashconsing::RefArc<D>, hirpdag::hirpdag_hashconsing::RefArcWeak<D>, hirpdag::hirpdag_hashconsing::TableVecLinearWeak<D, hirpdag::hirpdag_hashconsing::RefArc<D>, hirpdag::hirpdag_hashconsing::RefArcWeak<D>>>".to_string(),
-            tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, hirpdag::hirpdag_hashconsing::RefArc<D>, ImplTable<D>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
-            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, hirpdag::hirpdag_hashconsing::RefArc<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+            types: preset_types(DEFAULT_PRESET).expect("default preset is known"),
         }
     }
 
@@ -231,36 +224,20 @@ impl HirpdagConfig {
         // Override according to the arguments in macro attributes.
         for a in &args.args {
             match a {
-                HirpdagArg::Normalizer => {
-                    config.normalizer = true;
-                }
-                HirpdagArg::Root => {
-                    config.root = true;
-                }
-                HirpdagArg::ReferenceType(name) => {
-                    config.reference_type = name.clone();
-                }
+                HirpdagArg::Normalizer => config.normalizer = true,
+                HirpdagArg::Root => config.root = true,
+                HirpdagArg::ReferenceType(name) => config.types.reference_type = name.clone(),
                 HirpdagArg::ReferenceWeakType(name) => {
-                    config.reference_weak_type = name.clone();
+                    config.types.reference_weak_type = name.clone()
                 }
-                HirpdagArg::TableType(name) => {
-                    config.table_type = name.clone();
-                }
-                HirpdagArg::TableSharedType(name) => {
-                    config.tableshared_type = name.clone();
-                }
+                HirpdagArg::TableType(name) => config.types.table_type = name.clone(),
+                HirpdagArg::TableSharedType(name) => config.types.tableshared_type = name.clone(),
                 HirpdagArg::BuildTableSharedType(name) => {
-                    config.build_tableshared_type = name.clone();
+                    config.types.build_tableshared_type = name.clone()
                 }
                 HirpdagArg::Preset(name) => {
                     // Validated when the argument was parsed.
-                    let [r, w, t, ts, bts] =
-                        preset_types(name).expect("preset validated at parse time");
-                    config.reference_type = r;
-                    config.reference_weak_type = w;
-                    config.table_type = t;
-                    config.tableshared_type = ts;
-                    config.build_tableshared_type = bts;
+                    config.types = preset_types(name).expect("preset validated at parse time");
                 }
             }
         }
@@ -274,18 +251,18 @@ impl HirpdagConfig {
         self.root
     }
     pub fn reference_type(&self) -> TokenStream {
-        self.reference_type.parse().unwrap()
+        self.types.reference_type.parse().unwrap()
     }
     pub fn reference_weak_type(&self) -> TokenStream {
-        self.reference_weak_type.parse().unwrap()
+        self.types.reference_weak_type.parse().unwrap()
     }
     pub fn table_type(&self) -> TokenStream {
-        self.table_type.parse().unwrap()
+        self.types.table_type.parse().unwrap()
     }
     pub fn tableshared_type(&self) -> TokenStream {
-        self.tableshared_type.parse().unwrap()
+        self.types.tableshared_type.parse().unwrap()
     }
     pub fn build_tableshared_type(&self) -> TokenStream {
-        self.build_tableshared_type.parse().unwrap()
+        self.types.build_tableshared_type.parse().unwrap()
     }
 }
