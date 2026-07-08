@@ -229,20 +229,15 @@ fn get_fields_parameters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenS
 }
 
 fn get_fields_list(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    use quote::TokenStreamExt;
     //let fields_list = quote! {
     //    a, b, c
     //};
-    let fields_list: proc_macro2::TokenStream = fields_named
+    fields_named
         .named
         .iter()
         .map(|t| t.ident.as_ref().unwrap())
-        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-            s.append(t.clone());
-            s.append(proc_macro2::Punct::new(',', proc_macro2::Spacing::Alone));
-            s
-        });
-    fields_list
+        .map(|field_name| quote! { #field_name, })
+        .collect()
 }
 
 fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -251,15 +246,12 @@ fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
     //    self.b.hirpdag_compute_meta(),
     //    self.c.hirpdag_compute_meta(),
     //};
-    let fields_compute_meta: proc_macro2::TokenStream = fields_named
+    fields_named
         .named
         .iter()
         .map(|t| t.ident.as_ref().unwrap())
-        .fold(proc_macro2::TokenStream::new(), |mut s, field_name| {
-            s.extend(quote! { self.#field_name.hirpdag_compute_meta(), });
-            s
-        });
-    fields_compute_meta
+        .map(|field_name| quote! { self.#field_name.hirpdag_compute_meta(), })
+        .collect()
 }
 
 fn get_fields_rewrite(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -268,15 +260,12 @@ fn get_fields_rewrite(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
     //    rewriter.rewrite(&self.b),
     //    rewriter.rewrite(&self.c),
     //};
-    let fields_rewrite: proc_macro2::TokenStream = fields_named
+    fields_named
         .named
         .iter()
         .map(|t| t.ident.as_ref().unwrap())
-        .fold(proc_macro2::TokenStream::new(), |mut s, field_name| {
-            s.extend(quote! { rewriter.rewrite(&self.#field_name), });
-            s
-        });
-    quote! { #fields_rewrite }
+        .map(|field_name| quote! { rewriter.rewrite(&self.#field_name), })
+        .collect()
 }
 
 fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -289,12 +278,12 @@ fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
         .named
         .iter()
         .map(|t| t.ident.as_ref().unwrap())
-        .fold(proc_macro2::TokenStream::new(), |mut s, field_name| {
-            s.extend(quote! {
+        .map(|field_name| {
+            quote! {
                 hirpdag::base::HirpdagCollect::hirpdag_collect(&self.#field_name, ctx);
-            });
-            s
+            }
         })
+        .collect()
 }
 
 fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -306,12 +295,12 @@ fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro
     fields_named
         .named
         .iter()
-        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+        .map(|field| {
             let name = field.ident.as_ref().unwrap();
             let ty = &field.ty;
-            s.extend(quote! { #name: Option<#ty>, });
-            s
+            quote! { #name: Option<#ty>, }
         })
+        .collect()
 }
 
 fn get_builder_setters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -323,17 +312,17 @@ fn get_builder_setters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStr
     fields_named
         .named
         .iter()
-        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+        .map(|field| {
             let name = field.ident.as_ref().unwrap();
             let ty = &field.ty;
-            s.extend(quote! {
+            quote! {
                 pub fn #name(mut self, value: #ty) -> Self {
                     self.#name = Some(value);
                     self
                 }
-            });
-            s
+            }
         })
+        .collect()
 }
 
 fn get_builder_none_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -345,11 +334,11 @@ fn get_builder_none_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
     fields_named
         .named
         .iter()
-        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+        .map(|field| {
             let name = field.ident.as_ref().unwrap();
-            s.extend(quote! { #name: None, });
-            s
+            quote! { #name: None, }
         })
+        .collect()
 }
 
 fn get_builder_from_node_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -361,11 +350,11 @@ fn get_builder_from_node_fields(fields_named: &syn::FieldsNamed) -> proc_macro2:
     fields_named
         .named
         .iter()
-        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+        .map(|field| {
             let name = field.ident.as_ref().unwrap();
-            s.extend(quote! { #name: Some(node.#name.clone()), });
-            s
+            quote! { #name: Some(node.#name.clone()), }
         })
+        .collect()
 }
 
 fn get_builder_build_args(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -377,12 +366,12 @@ fn get_builder_build_args(fields_named: &syn::FieldsNamed) -> proc_macro2::Token
     fields_named
         .named
         .iter()
-        .fold(proc_macro2::TokenStream::new(), |mut s, field| {
+        .map(|field| {
             let name = field.ident.as_ref().unwrap();
             let msg = format!("Builder field '{}' not set", name);
-            s.extend(quote! { self.#name.expect(#msg), });
-            s
+            quote! { self.#name.expect(#msg), }
         })
+        .collect()
 }
 
 fn get_default_normalizer(
@@ -716,16 +705,14 @@ fn get_variants_compute_meta(input_enum: &syn::DataEnum) -> proc_macro2::TokenSt
     //    Bar(a) => a.hirpdag_compute_meta(),
     //    Baz(a) => a.hirpdag_compute_meta(),
     //};
-    let variants_compute_meta: proc_macro2::TokenStream =
-        input_enum
-            .variants
-            .iter()
-            .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-                let variant = t.ident.clone();
-                s.extend(quote! { #variant(x) => x.hirpdag_compute_meta(), });
-                s
-            });
-    variants_compute_meta
+    input_enum
+        .variants
+        .iter()
+        .map(|t| {
+            let variant = &t.ident;
+            quote! { #variant(x) => x.hirpdag_compute_meta(), }
+        })
+        .collect()
 }
 
 fn get_variants_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
@@ -737,13 +724,13 @@ fn get_variants_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream 
     input_enum
         .variants
         .iter()
-        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-            let variant = t.ident.clone();
-            s.extend(quote! {
+        .map(|t| {
+            let variant = &t.ident;
+            quote! {
                 #variant(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
-            });
-            s
+            }
         })
+        .collect()
 }
 
 fn get_variants_rewrite(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
@@ -752,16 +739,14 @@ fn get_variants_rewrite(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream 
     //    Bar(x) => Bar(rewriter.rewrite(&x)),
     //    Baz(x) => Baz(rewriter.rewrite(&x)),
     //};
-    let variants_rewrite: proc_macro2::TokenStream =
-        input_enum
-            .variants
-            .iter()
-            .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-                let variant = t.ident.clone();
-                s.extend(quote! { #variant(x) => #variant(rewriter.rewrite(&x)), });
-                s
-            });
-    variants_rewrite
+    input_enum
+        .variants
+        .iter()
+        .map(|t| {
+            let variant = &t.ident;
+            quote! { #variant(x) => #variant(rewriter.rewrite(&x)), }
+        })
+        .collect()
 }
 
 fn expand_hirpdag_enum(
@@ -918,9 +903,7 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
         fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
             self.#hirpdag_cache_member_name
                 .get(x)
-                .map(|v| {
-                    v.clone()
-                })
+                .cloned()
                 .unwrap_or_else(|| {
                     self.rewriter.rewrite(x)
                 })
@@ -934,37 +917,25 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
 /// HirpdagRewriter trait, memoized rewriting, and the serialization
 /// machinery.
 fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_macro2::TokenStream {
-    let rewrite_methods = types
+    let rewrite_methods: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_rewrite_datatype(&entry.name))
-        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-            s.extend(t);
-            s
-        });
+        .collect();
 
-    let cache_members = types
+    let cache_members: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_cache_member(&entry.name))
-        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-            s.extend(t);
-            s
-        });
+        .collect();
 
-    let cache_members_new = types
+    let cache_members_new: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_cache_member_new(&entry.name))
-        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-            s.extend(t);
-            s
-        });
+        .collect();
 
-    let cache_methods = types
+    let cache_methods: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_cache_rewrite(&entry.name))
-        .fold(proc_macro2::TokenStream::new(), |mut s, t| {
-            s.extend(t);
-            s
-        });
+        .collect();
 
     // (name, is_root) for each hashconsed struct type in the module.
     let struct_types: Vec<(String, bool)> = types
@@ -1018,7 +989,7 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
     let tableshared_type: proc_macro2::TokenStream = config.tableshared_type();
     let build_tableshared_type: proc_macro2::TokenStream = config.build_tableshared_type();
 
-    let t = quote! {
+    quote! {
         type ImplRef<D> = #reference_type;
         type ImplRefWeak<D> = #reference_weak_type;
         type ImplTable<D> = #table_type;
@@ -1052,8 +1023,7 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         }
 
         #serialization_items
-    };
-    t
+    }
 }
 
 /// Converts a CamelCase type name to a snake_case field name.
