@@ -30,10 +30,6 @@ pub enum HirpdagArg {
     Preset(String),
 }
 
-/// Fully-qualified path to the hash-consing crate. Every configured type lives
-/// under it, so factor it out rather than repeat it in every string.
-const HC: &str = "hirpdag::hirpdag_hashconsing";
-
 /// Preset used when no `preset`/type arguments are given.
 const DEFAULT_PRESET: &str = "arc_hash_linear";
 
@@ -67,36 +63,26 @@ struct ConfigTypes {
     build_tableshared_type: String,
 }
 
-/// The shared-table wrapper is always the sharded implementation over the
-/// configured reference (`ImplRef<D>`) and inner table (`ImplTable<D>`), so it
-/// is derived rather than spelled out per preset. `HB` defaults to
-/// `DefaultHasher`, so it is left off here.
-fn sharded_tableshared_type() -> String {
-    format!("{HC}::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>")
-}
-
-/// Builder matching [`sharded_tableshared_type`]. `BuildTableSharedSharded` has
-/// no default hasher, so `DefaultHasher` is named explicitly.
-fn sharded_build_tableshared_type() -> String {
-    format!(
-        "{HC}::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, {HC}::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"
-    )
-}
-
 /// The [`ConfigTypes`] for a named preset, or `None` if the name is unknown.
 ///
 /// A preset only chooses a strong/weak reference pair and an inner table
-/// strategy from hirpdag_hashconsing; the shared-table types are derived (see
-/// [`sharded_tableshared_type`]).
+/// strategy from hirpdag_hashconsing. The shared-table types are always the
+/// sharded implementation over the configured reference (`ImplRef<D>`) and
+/// inner table (`ImplTable<D>`), so they are the same for every preset:
+/// `TableSharedSharded`'s `HB` defaults to `DefaultHasher` and is left off,
+/// while `BuildTableSharedSharded` has no default hasher so it is named.
 fn preset_types(name: &str) -> Option<ConfigTypes> {
     // Strong/weak reference pair, named `Ref…` / `Ref…Weak`.
     fn reference(base: &str) -> (String, String) {
-        (format!("{HC}::{base}<D>"), format!("{HC}::{base}Weak<D>"))
+        (
+            format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
+            format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
+        )
     }
     // A hashmap that falls back to `inner_table` at larger sizes.
     fn hashmap_fallback(inner_table: &str) -> String {
         format!(
-            "{HC}::TableHashmapFallbackWeak<D, ImplRef<D>, ImplRefWeak<D>, {HC}::{inner_table}<D, ImplRef<D>, ImplRefWeak<D>>>"
+            "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, ImplRef<D>, ImplRefWeak<D>, hirpdag::hirpdag_hashconsing::{inner_table}<D, ImplRef<D>, ImplRefWeak<D>>>"
         )
     }
     let (reference_base, table_type) = match name {
@@ -104,7 +90,8 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         "arc_hash_sorted" => ("RefArc", hashmap_fallback("TableVecSortedWeak")),
         "arc_tovweaktable" => (
             "RefArc",
-            format!("{HC}::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"),
+            "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"
+                .to_string(),
         ),
         "leak_hash_linear" => ("RefLeak", hashmap_fallback("TableVecLinearWeak")),
         // Reference-counting experiments with counts stored separately from the
@@ -122,8 +109,8 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         reference_type,
         reference_weak_type,
         table_type,
-        tableshared_type: sharded_tableshared_type(),
-        build_tableshared_type: sharded_build_tableshared_type(),
+        tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
+        build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
     })
 }
 
