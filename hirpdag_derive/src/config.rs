@@ -37,6 +37,10 @@ const PRESETS: &[&str] = &[
     "arc_hash_sorted",
     "arc_tovweaktable",
     "leak_hash_linear",
+    "sep_hash_linear",
+    "seppad_hash_linear",
+    "sepu32_hash_linear",
+    "tlc_hash_linear",
 ];
 
 /// The [reference_type, reference_weak_type, table_type, tableshared_type,
@@ -54,6 +58,26 @@ fn preset_types(name: &str) -> Option<[String; 5]> {
         "hirpdag::hirpdag_hashconsing::RefLeak<D>",
         "hirpdag::hirpdag_hashconsing::RefLeakWeak<D>",
     );
+    // Reference-counting experiments with counts stored separately from the
+    // data (see hirpdag_hashconsing::reference_sepcount).
+    const SEP: (&str, &str) = (
+        "hirpdag::hirpdag_hashconsing::RefSep<D>",
+        "hirpdag::hirpdag_hashconsing::RefSepWeak<D>",
+    );
+    const SEPPAD: (&str, &str) = (
+        "hirpdag::hirpdag_hashconsing::RefSepPad<D>",
+        "hirpdag::hirpdag_hashconsing::RefSepPadWeak<D>",
+    );
+    const SEPU32: (&str, &str) = (
+        "hirpdag::hirpdag_hashconsing::RefSepU32<D>",
+        "hirpdag::hirpdag_hashconsing::RefSepU32Weak<D>",
+    );
+    // Thread-local deferred reference counting (see
+    // hirpdag_hashconsing::reference_tlc).
+    const TLC: (&str, &str) = (
+        "hirpdag::hirpdag_hashconsing::RefTlc<D>",
+        "hirpdag::hirpdag_hashconsing::RefTlcWeak<D>",
+    );
     fn hashmap_fallback(fallback_table: &str, (r, w): (&str, &str)) -> String {
         format!(
             "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, {r}, {w}, hirpdag::hirpdag_hashconsing::{fallback_table}<D, {r}, {w}>>"
@@ -70,6 +94,10 @@ fn preset_types(name: &str) -> Option<[String; 5]> {
             ),
         ),
         "leak_hash_linear" => (LEAK, hashmap_fallback("TableVecLinearWeak", LEAK)),
+        "sep_hash_linear" => (SEP, hashmap_fallback("TableVecLinearWeak", SEP)),
+        "seppad_hash_linear" => (SEPPAD, hashmap_fallback("TableVecLinearWeak", SEPPAD)),
+        "sepu32_hash_linear" => (SEPU32, hashmap_fallback("TableVecLinearWeak", SEPU32)),
+        "tlc_hash_linear" => (TLC, hashmap_fallback("TableVecLinearWeak", TLC)),
         _ => return None,
     };
     Some([

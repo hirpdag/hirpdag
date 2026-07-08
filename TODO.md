@@ -37,18 +37,27 @@
 
 ### Experiment with more refcounting implementations
 
-- [P1] Locate many reference counts contiguously, separate from the data.
-  - Cachlines holding data can be shared read only and never dirtied (to other CPU cores)
-    due to ref count updates.
+- ~~[P1] Locate many reference counts contiguously, separate from the data.~~
+  - ~~Cachlines holding data can be shared read only and never dirtied (to other CPU cores)
+    due to ref count updates.~~
   - https://users.rust-lang.org/t/why-does-arc-use-one-contiguous-allocation-for-data-and-counters/113319
   - https://ddanilov.me/shared-ptr-is-evil/
-  - Try padding ref counts to one (pair, strong and weak) per cacheline. Look for performance/space trade-off.
+  - ~~Try padding ref counts to one (pair, strong and weak) per cacheline. Look for performance/space trade-off.~~
+  - DONE: `reference_sepcount.rs` stores (strong, weak) count slots in a contiguous global
+    arena (chunked, with a free list), separate from the data allocation. The handle is
+    two pointers (data + slot). Three slot layouts explore the space/perf trade-off:
+    `RefSep` (packed 16B slots), `RefSepPad` (one slot per 64B cacheline, no false
+    sharing) and `RefSepU32` (packed 8B u32 slots, densest).
 
-- [P3] Thread local reference counts, periodically flush back to main counter.
-  - Is this even possible? Is it good?
-  - Possible design: `thread_local! { static THREAD_RC: RefCell<HashMap<HirpdagRef, u32>> = ...; }`
-    - If counter in value of map reaches 0, remove the map entry (release the Rc held as key)
-  - Would we need to allow thread local counts to go negative (e.g. thread recieves many Rc handles to drop)?
+- ~~[P3] Thread local reference counts, periodically flush back to main counter.~~
+  - ~~Is this even possible? Is it good?~~
+  - DONE: `reference_tlc.rs` (`RefTlc`). Buffering *increments* thread-locally is unsound
+    (a handle whose increment is still buffered can move to another thread whose drop
+    takes the shared count to zero prematurely). Buffering *decrements* is safe: it only
+    delays frees. Each thread keeps a `HashMap<addr, deferred_dec_count>`; drop buffers a
+    decrement, clone/weak-upgrade first try to cancel against a buffered decrement (taking
+    over the shared count the dropped handle held) before touching the shared atomic.
+    The map is flushed after a bounded number of ops and at thread exit.
 
 ### More benchmarks
 
