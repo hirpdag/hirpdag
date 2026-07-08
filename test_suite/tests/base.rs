@@ -4,10 +4,10 @@ use hirpdag::*;
 mod datamodel {
     #[hirpdag]
     struct MessageA {
-        a: i32,
-        b: String,
-        c: Option<MessageA>,
-        d: i32,
+        pub a: i32,
+        pub b: String,
+        pub c: Option<MessageA>,
+        pub d: i32,
     }
 
     #[hirpdag]
@@ -23,33 +23,36 @@ mod datamodel {
         d: i32,
         pub e: EnumB,
     }
-
-    pub struct MessageAExtendLeaf {
-        doot: MessageA,
-    }
-
-    impl MessageAExtendLeaf {
-        pub fn new() -> HirpdagRewriteMemoized<Self> {
-            let extension = MessageA::new(0, "DOOT".to_string(), None, 7007);
-            HirpdagRewriteMemoized::new(Self { doot: extension })
-        }
-    }
-
-    impl HirpdagRewriter for MessageAExtendLeaf {
-        fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-            if x.c.is_none() {
-                return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
-            }
-
-            // In the case where we don't want to make changes to extend the leaf,
-            // we want to apply the default rewrite which will apply the rewrite
-            // transitively to all applicable members.
-            x.default_rewrite(self)
-        }
-    }
 }
 
 use datamodel::*;
+
+// A rewriter defined outside the hirpdag module: the generated
+// HirpdagRewriter trait, HirpdagRewriteMemoized, and default_rewrite are
+// public, so external rewriters only need the fields they touch to be pub.
+struct MessageAExtendLeaf {
+    doot: MessageA,
+}
+
+impl MessageAExtendLeaf {
+    fn new() -> HirpdagRewriteMemoized<Self> {
+        let extension = MessageA::new(0, "DOOT".to_string(), None, 7007);
+        HirpdagRewriteMemoized::new(Self { doot: extension })
+    }
+}
+
+impl HirpdagRewriter for MessageAExtendLeaf {
+    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+        if x.c.is_none() {
+            return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
+        }
+
+        // In the case where we don't want to make changes to extend the leaf,
+        // we want to apply the default rewrite which will apply the rewrite
+        // transitively to all applicable members.
+        x.default_rewrite(self)
+    }
+}
 
 /// Test that the creation-order Ord is semantically correct:
 /// if A refers to B, then B < A.

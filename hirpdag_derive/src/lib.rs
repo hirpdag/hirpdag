@@ -565,7 +565,7 @@ fn expand_hirpdag_struct(
             #default_normalizer
 
             #[allow(non_snake_case)]
-            fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
+            pub fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
                 Self::new(
                     #fields_rewrite
                     )
@@ -815,7 +815,7 @@ fn expand_hirpdag_enum(
 
         impl #name {
             #[allow(non_snake_case)]
-            fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
+            pub fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
                 use #name::*;
                 match self {
                     #variants_rewrite
