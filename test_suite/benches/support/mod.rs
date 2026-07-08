@@ -45,9 +45,3 @@ macro_rules! bench_each_config {
         bench_each_config!(@one $group, $params, $function, tlc_hash_linear, "TlcHashLinear");
     };
 }
-
-use criterion::{measurement::WallTime, AxisScale, BenchmarkGroup, PlotConfiguration};
-
-pub fn configure_log_scale(group: &mut BenchmarkGroup<'_, WallTime>) {
-    group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-}

@@ -98,7 +98,6 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_expr(c: &mut Criterion) {
     let mut group = c.benchmark_group("ExprSubstitution");
-    support::configure_log_scale(&mut group);
     for (depth, num_vars) in [(12usize, 4u32), (12, 16)].iter() {
         let params = BenchExprParams {
             depth: *depth,

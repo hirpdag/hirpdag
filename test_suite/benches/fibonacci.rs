@@ -58,8 +58,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_fibonacci(c: &mut Criterion) {
     let mut group = c.benchmark_group("Fibonacci");
-    support::configure_log_scale(&mut group);
-    for n in [200usize, 2000].iter() {
+    for n in [2000usize].iter() {
         let params = BenchFibParams { n: *n };
         bench_each_config!(group, params, build_fibonacci);
     }
