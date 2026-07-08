@@ -94,7 +94,7 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::Criterion;
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_expr(c: &mut Criterion) {
     let mut group = c.benchmark_group("ExprSubstitution");
@@ -109,4 +109,11 @@ fn bench_expr(c: &mut Criterion) {
     group.finish();
 }
 
-hirpdag_bench_main!(bench_expr);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .measurement_time(core::time::Duration::from_secs(15));
+    targets = bench_expr
+}
+criterion_main!(benches);

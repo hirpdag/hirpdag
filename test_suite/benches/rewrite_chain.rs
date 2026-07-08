@@ -69,7 +69,7 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::Criterion;
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_rewrite_chain(c: &mut Criterion) {
     let mut group = c.benchmark_group("RewriteChain");
@@ -84,4 +84,11 @@ fn bench_rewrite_chain(c: &mut Criterion) {
     group.finish();
 }
 
-hirpdag_bench_main!(bench_rewrite_chain);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .measurement_time(core::time::Duration::from_secs(15));
+    targets = bench_rewrite_chain
+}
+criterion_main!(benches);

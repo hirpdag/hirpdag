@@ -129,7 +129,7 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::Criterion;
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_primes(c: &mut Criterion) {
     for limit in [2000].iter() {
@@ -150,4 +150,11 @@ fn bench_primes(c: &mut Criterion) {
     }
 }
 
-hirpdag_bench_main!(bench_primes);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .measurement_time(core::time::Duration::from_secs(15));
+    targets = bench_primes
+}
+criterion_main!(benches);

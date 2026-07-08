@@ -54,7 +54,7 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::Criterion;
+use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_fibonacci(c: &mut Criterion) {
     let mut group = c.benchmark_group("Fibonacci");
@@ -66,4 +66,11 @@ fn bench_fibonacci(c: &mut Criterion) {
     group.finish();
 }
 
-hirpdag_bench_main!(bench_fibonacci);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(10)
+        .measurement_time(core::time::Duration::from_secs(15));
+    targets = bench_fibonacci
+}
+criterion_main!(benches);
