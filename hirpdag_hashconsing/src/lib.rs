@@ -30,6 +30,18 @@ mod reference_leak;
 pub use crate::reference_leak::RefLeak;
 pub use crate::reference_leak::RefLeakWeak;
 
+mod reference_sepcount;
+pub use crate::reference_sepcount::RefSep;
+pub use crate::reference_sepcount::RefSepPad;
+pub use crate::reference_sepcount::RefSepPadWeak;
+pub use crate::reference_sepcount::RefSepU32;
+pub use crate::reference_sepcount::RefSepU32Weak;
+pub use crate::reference_sepcount::RefSepWeak;
+
+mod reference_tlc;
+pub use crate::reference_tlc::RefTlc;
+pub use crate::reference_tlc::RefTlcWeak;
+
 // Hashconsing table implementations.
 
 mod table_vec_linear_weak;
@@ -169,6 +181,10 @@ mod tests {
             test_table_weak_all::<RefRc<TestData>, RefRcWeak<TestData>>();
             test_table_weak_all::<RefArc<TestData>, RefArcWeak<TestData>>();
             test_table_weak_all::<RefLeak<TestData>, RefLeakWeak<TestData>>();
+            test_table_weak_all::<RefSep<TestData>, RefSepWeak<TestData>>();
+            test_table_weak_all::<RefSepPad<TestData>, RefSepPadWeak<TestData>>();
+            test_table_weak_all::<RefSepU32<TestData>, RefSepU32Weak<TestData>>();
+            test_table_weak_all::<RefTlc<TestData>, RefTlcWeak<TestData>>();
 
             // TableTovWeakTable does not work on RefLeak
             test_tableshared_all::<
