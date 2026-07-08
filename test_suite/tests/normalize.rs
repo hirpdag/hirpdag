@@ -4,7 +4,8 @@ use hirpdag::*;
 mod datamodel {
     #[hirpdag(normalizer)]
     struct EvenNumber {
-        a: u32,
+        // pub so a rewriter defined outside the module can read this field.
+        pub a: u32,
     }
 
     #[hirpdag]
@@ -18,25 +19,28 @@ mod datamodel {
             EvenNumber::spawn(a & !1)
         }
     }
-
-    pub struct AddN {
-        n: u32,
-    }
-
-    impl AddN {
-        pub fn new(x: u32) -> HirpdagRewriteMemoized<Self> {
-            HirpdagRewriteMemoized::new(Self { n: x })
-        }
-    }
-
-    impl HirpdagRewriter for AddN {
-        fn rewrite_EvenNumber(&self, x: &EvenNumber) -> EvenNumber {
-            EvenNumber::new(x.a + self.n)
-        }
-    }
 }
 
 use datamodel::*;
+
+// A rewriter defined outside the hirpdag module, against the generated
+// public API (the HirpdagRewriter trait, HirpdagRewriteMemoized, and the
+// pub `a` field).
+struct AddN {
+    n: u32,
+}
+
+impl AddN {
+    pub fn new(x: u32) -> HirpdagRewriteMemoized<Self> {
+        HirpdagRewriteMemoized::new(Self { n: x })
+    }
+}
+
+impl HirpdagRewriter for AddN {
+    fn rewrite_EvenNumber(&self, x: &EvenNumber) -> EvenNumber {
+        EvenNumber::new(x.a + self.n)
+    }
+}
 
 #[test]
 fn round_down_test() {
