@@ -30,7 +30,8 @@ use hirpdag::*;
 mod expressions {
     #[hirpdag(normalizer)]
     struct Expr {
-        x: ExprKind,
+        // pub so a rewriter defined outside the module can read this field.
+        pub x: ExprKind,
     }
 
     #[hirpdag]
@@ -72,30 +73,33 @@ mod expressions {
             }
         }
     }
-
-    pub struct Substitute {
-        var: String,
-        s: Expr,
-    }
-
-    impl Substitute {
-        pub fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
-            HirpdagRewriteMemoized::new(Self { var: var, s: s })
-        }
-    }
-
-    impl HirpdagRewriter for Substitute {
-        fn rewrite_Expr(&self, x: &Expr) -> Expr {
-            if let ExprKind::Var(name) = &x.x {
-                if *name == self.var {
-                    return self.s.clone();
-                }
-            }
-            x.default_rewrite(self)
-        }
-    }
 }
 use expressions::*;
+
+// A rewriter defined outside the hirpdag module, against the generated
+// public API (the HirpdagRewriter trait, HirpdagRewriteMemoized,
+// default_rewrite, and the pub `x` field).
+struct Substitute {
+    var: String,
+    s: Expr,
+}
+
+impl Substitute {
+    pub fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
+        HirpdagRewriteMemoized::new(Self { var: var, s: s })
+    }
+}
+
+impl HirpdagRewriter for Substitute {
+    fn rewrite_Expr(&self, x: &Expr) -> Expr {
+        if let ExprKind::Var(name) = &x.x {
+            if *name == self.var {
+                return self.s.clone();
+            }
+        }
+        x.default_rewrite(self)
+    }
+}
 
 #[test]
 fn expr_normalizer_test() {
