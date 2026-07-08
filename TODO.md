@@ -2,14 +2,6 @@
 
 ### Hashconsing optimization experiments
 
-- ~~[P0] Optimize HirpdagRef implemetation of Ord:~~
-  - ~~Should not need to do a deep cmp.~~
-  - ~~Consider creation timestamp.~~
-  - DONE: `HirpdagStorage` now carries a `hirpdag_creation_id: u64` (assigned from a global
-    atomic counter at interning time). `HirpdagRef::cmp` uses pointer equality (O(1) fast
-    path) then falls back to comparing creation IDs (O(1)). The previous deep structural
-    comparison is still available as `hirpdag_cmp_deep()`.
-
 - [P0] Optimize rewrite code:
   - If no changes we can copy input reference instead of hashconsing to reproduce it.
   - Minimize reference count operations.
@@ -35,6 +27,42 @@
 
 - [P2] Experiment with doing deallocation work on another thread when RC==0.
 
+### More benchmarks
+
+- [P2] More benchmark programs.
+
+- [P3] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
+
+### Code cleanup
+
+- [P1] General refactoring and cleanup:
+  - Try to reduce use of generic and builders for hashconsing implementations.
+
+- [P1] Address current code duplication in benchmarks for running the same benchmark
+  with different hashconsing implementations selected.
+
+### Features
+
+- [P1] Visitor traversal code
+
+- [P2] Warning if Hirpdag is used in a probably-wrong way
+  - Adding the hirpdag attribute to struct which only contains 1 field and it is a hirpdag ref.
+
+- [P3] IPC (hirpdag objects in shared memory, used from multiple processes)
+  - Maybe special support for producer/consumer pattern? - only one process creates hirpdag objects
+
+## Completed
+
+### Hashconsing optimization experiments
+
+- ~~[P0] Optimize HirpdagRef implemetation of Ord:~~
+  - ~~Should not need to do a deep cmp.~~
+  - ~~Consider creation timestamp.~~
+  - DONE: `HirpdagStorage` now carries a `hirpdag_creation_id: u64` (assigned from a global
+    atomic counter at interning time). `HirpdagRef::cmp` uses pointer equality (O(1) fast
+    path) then falls back to comparing creation IDs (O(1)). The previous deep structural
+    comparison is still available as `hirpdag_cmp_deep()`.
+
 ### Experiment with more refcounting implementations
 
 - ~~[P1] Locate many reference counts contiguously, separate from the data.~~
@@ -59,12 +87,6 @@
     over the shared count the dropped handle held) before touching the shared atomic.
     The map is flushed after a bounded number of ops and at thread exit.
 
-### More benchmarks
-
-- [P2] More benchmark programs.
-
-- [P3] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
-
 ### Code cleanup
 
 - ~~[P0] Builder API?~~
@@ -75,13 +97,7 @@
     `node.to_builder()` to derive a modified copy of an existing node.
     Both paths go through a single `build()` call that hashcons at the end.
 
-- [P1] General refactoring and cleanup:
-  - Try to reduce use of generic and builders for hashconsing implementations.
-
-- [P1] Address current code duplication in benchmarks for running the same benchmark
-  with different hashconsing implementations selected.
-
-- [P3] Find a better solution than the `#[hirpdag_end] pub struct HirpdagEndMarker;` hack.
+- ~~[P3] Find a better solution than the `#[hirpdag_end] pub struct HirpdagEndMarker;` hack.~~
   - DONE: `#[hirpdag_module]` on the module replaces `#[hirpdag]`/`#[hirpdag_end]`
     pairs and the global registry between them. See
     docs/adr/0002-module-attribute-macro.md.
@@ -95,11 +111,3 @@
     is written exactly once into a topologically ordered node table with u64
     indices; deserialization re-interns through the hashcons table. See
     `docs/design/serialization.md` and `docs/adr/0001-serde-dag-aware-serialization.md`.
-
-- [P1] Visitor traversal code
-
-- [P2] Warning if Hirpdag is used in a probably-wrong way
-  - Adding the hirpdag attribute to struct which only contains 1 field and it is a hirpdag ref.
-
-- [P3] IPC (hirpdag objects in shared memory, used from multiple processes)
-  - Maybe special support for producer/consumer pattern? - only one process creates hirpdag objects
