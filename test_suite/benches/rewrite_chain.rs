@@ -73,7 +73,6 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_rewrite_chain(c: &mut Criterion) {
     let mut group = c.benchmark_group("RewriteChain");
-    support::configure_log_scale(&mut group);
     for (length, rewrites) in [(500usize, 20usize), (2000, 5)].iter() {
         let params = BenchRewriteChainParams {
             length: *length,

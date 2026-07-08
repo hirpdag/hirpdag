@@ -133,10 +133,9 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 fn bench_primes(c: &mut Criterion) {
     for limit in [2000].iter() {
+        let name = format!("Primes{}", *limit);
+        let mut group = c.benchmark_group(name);
         for same in [false, true].iter() {
-            let name = format!("Primes{}{}", *limit, if *same { "Same" } else { "" });
-            let mut group = c.benchmark_group(name);
-            support::configure_log_scale(&mut group);
             for threads in [1, 2, 4, 8].iter() {
                 let params = BenchPrimesParams {
                     limit: *limit,
@@ -145,8 +144,8 @@ fn bench_primes(c: &mut Criterion) {
                 };
                 bench_each_config!(group, params, populate_numbers);
             }
-            group.finish();
         }
+        group.finish();
     }
 }
 
