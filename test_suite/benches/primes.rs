@@ -135,7 +135,8 @@ fn bench_primes(c: &mut Criterion) {
     for limit in [2000].iter() {
         for same in [false, true].iter() {
             let name = format!("Primes{}{}", *limit, if *same { "Same" } else { "" });
-            let mut group = support::log_scale_group(c, &name);
+            let mut group = c.benchmark_group(name);
+            support::configure_log_scale(&mut group);
             for threads in [1, 2, 4, 8].iter() {
                 let params = BenchPrimesParams {
                     limit: *limit,

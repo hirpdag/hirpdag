@@ -57,7 +57,8 @@ hirpdag_bench_configs! {
 use criterion::Criterion;
 
 fn bench_fibonacci(c: &mut Criterion) {
-    let mut group = support::log_scale_group(c, "Fibonacci");
+    let mut group = c.benchmark_group("Fibonacci");
+    support::configure_log_scale(&mut group);
     for n in [200usize, 2000].iter() {
         let params = BenchFibParams { n: *n };
         bench_each_config!(group, params, build_fibonacci);

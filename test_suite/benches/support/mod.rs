@@ -55,10 +55,8 @@ macro_rules! hirpdag_bench_main {
     };
 }
 
-use criterion::{measurement::WallTime, AxisScale, BenchmarkGroup, Criterion, PlotConfiguration};
+use criterion::{measurement::WallTime, AxisScale, BenchmarkGroup, PlotConfiguration};
 
-pub fn log_scale_group<'a>(c: &'a mut Criterion, name: &str) -> BenchmarkGroup<'a, WallTime> {
-    let mut group = c.benchmark_group(name);
+pub fn configure_log_scale(group: &mut BenchmarkGroup<'_, WallTime>) {
     group.plot_config(PlotConfiguration::default().summary_scale(AxisScale::Logarithmic));
-    group
 }

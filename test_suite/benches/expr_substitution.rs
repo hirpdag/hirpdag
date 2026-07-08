@@ -97,7 +97,8 @@ hirpdag_bench_configs! {
 use criterion::Criterion;
 
 fn bench_expr(c: &mut Criterion) {
-    let mut group = support::log_scale_group(c, "ExprSubstitution");
+    let mut group = c.benchmark_group("ExprSubstitution");
+    support::configure_log_scale(&mut group);
     for (depth, num_vars) in [(12usize, 4u32), (12, 16)].iter() {
         let params = BenchExprParams {
             depth: *depth,
