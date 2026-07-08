@@ -42,11 +42,6 @@ mod expressions {
         Var(String),
     }
 
-    #[hirpdag]
-    struct Variables {
-        x: Expr,
-    }
-
     fn nary_expr_normalize(...) { ... } // See full code in test suite.
 
     impl Expr {
