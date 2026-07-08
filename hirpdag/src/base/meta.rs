@@ -53,14 +53,7 @@ impl HirpdagMeta {
     /// Counts are summed (saturating), height takes the maximum, flags are unioned.
     /// Used as the fold step when iterating over a node's children.
     pub fn fold(self, other: Self) -> Self {
-        let count = self.count.saturating_add(other.count);
-        let height = std::cmp::max(self.height, other.height);
-        let flags = self.flags | other.flags;
-        Self {
-            count,
-            height,
-            flags,
-        }
+        self.fold_ref(&other)
     }
 
     /// Like [`fold`](Self::fold) but borrows `other` rather than taking ownership.
