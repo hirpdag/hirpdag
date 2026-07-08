@@ -229,10 +229,12 @@ rationale.
 
 ## Benchmark Results
 
-![Primes2000](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000_violin.svg)
-![Primes2000Same](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000same_violin.svg)
+![Primes2000_p1](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000_p1_violin.svg)
+![Primes2000_p8](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000_p8_violin.svg)
+![Primes2000Same_p1](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000same_p1_violin.svg)
+![Primes2000Same_p8](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000same_p8_violin.svg)
 
-At [commit](https://github.com/hirpdag/hirpdag/commit/1a0f57d932a6344d5ad9d09c9fe98e2425363ee5) on `AMD Ryzen 9 3900X 12-Core Processor`
+At [commit](https://github.com/hirpdag/hirpdag/commit/2a1ee9da94287d118f7d91f22b5432fe41e4db04) on `AMD Ryzen 9 3900X 12-Core Processor`
 
 ## Building Documentation
 
