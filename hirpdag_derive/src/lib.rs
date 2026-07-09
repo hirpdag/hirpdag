@@ -493,7 +493,6 @@ fn expand_hirpdag_struct(
             static ref #hirpdag_table_name: HirpdagHashconsTable<
             #hirpdag_struct_name,
             ImplRef<HirpdagStorage<#hirpdag_struct_name>>,
-            ImplTable<HirpdagStorage<#hirpdag_struct_name>>,
             ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>> =
                 HirpdagHashconsTable::new(
                   ImplBuildTableShared::<HirpdagStorage::<#hirpdag_struct_name>>::default()
@@ -984,15 +983,21 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
 
     let reference_type: proc_macro2::TokenStream = config.reference_type();
     let reference_weak_type: proc_macro2::TokenStream = config.reference_weak_type();
-
-    let table_type: proc_macro2::TokenStream = config.table_type();
     let tableshared_type: proc_macro2::TokenStream = config.tableshared_type();
     let build_tableshared_type: proc_macro2::TokenStream = config.build_tableshared_type();
+    // Extra `type <name><D> = <rhs>;` helper aliases the config's shared-table
+    // strings refer to (e.g. `ImplTable`). Concurrent-collection backends, which
+    // are not generic over an inner table, declare none.
+    let helper_alias_defs: Vec<proc_macro2::TokenStream> = config
+        .helper_aliases()
+        .into_iter()
+        .map(|(name, ty)| quote! { type #name<D> = #ty; })
+        .collect();
 
     quote! {
         type ImplRef<D> = #reference_type;
         type ImplRefWeak<D> = #reference_weak_type;
-        type ImplTable<D> = #table_type;
+        #(#helper_alias_defs)*
         type ImplTableShared<D> = #tableshared_type;
         type ImplBuildTableShared<D> = #build_tableshared_type;
 

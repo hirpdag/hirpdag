@@ -48,69 +48,79 @@ const PRESETS: &[&str] = &[
 
 /// The type strings that select a hash-consing implementation.
 ///
-/// Each string is spliced into a `type Impl…<D> = …;` alias in the generated
-/// code, so they share a `D` data-type parameter and refer to each other
-/// through the generated aliases `ImplRef<D>`, `ImplRefWeak<D>` and
-/// `ImplTable<D>`. Using those aliases instead of respelling the concrete
-/// reference/table types keeps the strings short and makes the shared-table
-/// types follow whatever reference and table the config ends up with.
+/// `reference_type`, `reference_weak_type`, `tableshared_type` and
+/// `build_tableshared_type` are always emitted, as the aliases `ImplRef<D>`,
+/// `ImplRefWeak<D>`, `ImplTableShared<D>` and `ImplBuildTableShared<D>`.
+/// `ImplRef` / `ImplRefWeak` are the strong/weak reference pair — the vocabulary
+/// any table implementation draws on to name whichever reference-counting
+/// implementation it was configured with, so both are available whether or not a
+/// given table happens to use the weak side.
+///
+/// `aliases` is a list of extra `type <name><D> = <rhs>;` declarations a config
+/// emits so its shared-table strings can stay short by referring to a named
+/// helper instead of respelling a long concrete type. The lock-based backends
+/// declare `ImplTable` (they are generic over an inner table); the
+/// concurrent-collection backends store the mapping directly and declare none.
+///
+/// Every string is spliced into a `type …<D> = …;` alias, so they share a `D`
+/// data-type parameter and may refer to each other through these alias names.
 #[derive(Clone)]
 struct ConfigTypes {
     reference_type: String,
     reference_weak_type: String,
-    table_type: String,
+    aliases: Vec<(String, String)>,
     tableshared_type: String,
     build_tableshared_type: String,
 }
 
-/// The [`ConfigTypes`] for a named preset, or `None` if the name is unknown.
-///
-/// A preset only chooses a strong/weak reference pair and an inner table
-/// strategy from hirpdag_hashconsing. The shared-table types are always the
-/// sharded implementation over the configured reference (`ImplRef<D>`) and
-/// inner table (`ImplTable<D>`), so they are the same for every preset:
-/// `TableSharedSharded`'s `HB` defaults to `DefaultHasher` and is left off,
-/// while `BuildTableSharedSharded` has no default hasher so it is named.
-fn preset_types(name: &str) -> Option<ConfigTypes> {
-    // Strong/weak reference pair, named `Ref…` / `Ref…Weak`.
-    fn reference(base: &str) -> (String, String) {
-        (
-            format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
-            format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
-        )
+impl ConfigTypes {
+    /// Insert the helper alias `name` (or replace it if already present).
+    fn set_alias(&mut self, name: &str, rhs: String) {
+        match self.aliases.iter_mut().find(|(n, _)| n == name) {
+            Some(entry) => entry.1 = rhs,
+            None => self.aliases.push((name.to_string(), rhs)),
+        }
     }
+}
+
+/// The [`ConfigTypes`] for a named preset, or `None` if the name is unknown.
+fn preset_types(name: &str) -> Option<ConfigTypes> {
     // A hashmap that falls back to `inner_table` at larger sizes.
     fn hashmap_fallback(inner_table: &str) -> String {
         format!(
             "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, ImplRef<D>, ImplRefWeak<D>, hirpdag::hirpdag_hashconsing::{inner_table}<D, ImplRef<D>, ImplRefWeak<D>>>"
         )
     }
-    let (reference_base, table_type) = match name {
-        "arc_hash_linear" => ("RefArc", hashmap_fallback("TableVecLinearWeak")),
-        "arc_hash_sorted" => ("RefArc", hashmap_fallback("TableVecSortedWeak")),
-        "arc_tovweaktable" => (
-            "RefArc",
-            "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"
-                .to_string(),
-        ),
-        "leak_hash_linear" => ("RefLeak", hashmap_fallback("TableVecLinearWeak")),
+    // A `ConfigTypes` for a lock-based preset: reference `base`, generic over the
+    // given inner `Table` (exposed as the `ImplTable` alias), shared via the
+    // sharded-mutex table.
+    fn sharded(base: &str, inner_table: String) -> ConfigTypes {
+        ConfigTypes {
+            reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
+            reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
+            aliases: vec![("ImplTable".to_string(), inner_table)],
+            tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
+            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+        }
+    }
+    let tovweaktable =
+        "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"
+            .to_string();
+
+    Some(match name {
+        "arc_hash_linear" => sharded("RefArc", hashmap_fallback("TableVecLinearWeak")),
+        "arc_hash_sorted" => sharded("RefArc", hashmap_fallback("TableVecSortedWeak")),
+        "arc_tovweaktable" => sharded("RefArc", tovweaktable),
+        "leak_hash_linear" => sharded("RefLeak", hashmap_fallback("TableVecLinearWeak")),
         // Reference-counting experiments with counts stored separately from the
         // data (see hirpdag_hashconsing::reference_sepcount).
-        "sep_hash_linear" => ("RefSep", hashmap_fallback("TableVecLinearWeak")),
-        "seppad_hash_linear" => ("RefSepPad", hashmap_fallback("TableVecLinearWeak")),
-        "sepu32_hash_linear" => ("RefSepU32", hashmap_fallback("TableVecLinearWeak")),
+        "sep_hash_linear" => sharded("RefSep", hashmap_fallback("TableVecLinearWeak")),
+        "seppad_hash_linear" => sharded("RefSepPad", hashmap_fallback("TableVecLinearWeak")),
+        "sepu32_hash_linear" => sharded("RefSepU32", hashmap_fallback("TableVecLinearWeak")),
         // Thread-local deferred reference counting (see
         // hirpdag_hashconsing::reference_tlc).
-        "tlc_hash_linear" => ("RefTlc", hashmap_fallback("TableVecLinearWeak")),
+        "tlc_hash_linear" => sharded("RefTlc", hashmap_fallback("TableVecLinearWeak")),
         _ => return None,
-    };
-    let (reference_type, reference_weak_type) = reference(reference_base);
-    Some(ConfigTypes {
-        reference_type,
-        reference_weak_type,
-        table_type,
-        tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
-        build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
     })
 }
 
@@ -230,7 +240,7 @@ impl HirpdagConfig {
                 HirpdagArg::ReferenceWeakType(name) => {
                     config.types.reference_weak_type = name.clone()
                 }
-                HirpdagArg::TableType(name) => config.types.table_type = name.clone(),
+                HirpdagArg::TableType(name) => config.types.set_alias("ImplTable", name.clone()),
                 HirpdagArg::TableSharedType(name) => config.types.tableshared_type = name.clone(),
                 HirpdagArg::BuildTableSharedType(name) => {
                     config.types.build_tableshared_type = name.clone()
@@ -256,8 +266,19 @@ impl HirpdagConfig {
     pub fn reference_weak_type(&self) -> TokenStream {
         self.types.reference_weak_type.parse().unwrap()
     }
-    pub fn table_type(&self) -> TokenStream {
-        self.types.table_type.parse().unwrap()
+    /// The extra `type <name><D> = <rhs>;` helper aliases this config declares,
+    /// as `(name, rhs)` token pairs for the generated code to emit.
+    pub fn helper_aliases(&self) -> Vec<(Ident, TokenStream)> {
+        self.types
+            .aliases
+            .iter()
+            .map(|(name, rhs)| {
+                (
+                    Ident::new(name, proc_macro2::Span::call_site()),
+                    rhs.parse().unwrap(),
+                )
+            })
+            .collect()
     }
     pub fn tableshared_type(&self) -> TokenStream {
         self.types.tableshared_type.parse().unwrap()

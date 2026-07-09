@@ -81,8 +81,8 @@ The single-threaded storage unit for a hash-consing table.  Implementations diff
 
 Trait: `hirpdag_hashconsing::Table`
 
-### `TableShared<D, R, T>`
-A thread-safe wrapper around one or more `Table` instances.  Implementations choose the locking strategy.
+### `TableShared<D, R>`
+The thread-safe hash-consing interface (`get` / `get_or_insert` over `&self`).  Implementations choose their concurrency strategy: some wrap one or more inner single-threaded `Table` instances behind locks, others store the mapping directly in a concurrent collection.  Note the trait is *not* parameterized over an inner `Table` — a backend that needs one (mutex/sharded) carries it as its own generic, so backends that don't (the concurrent-collection ones) name no table at all.
 
 Trait: `hirpdag_hashconsing::TableShared`
 
