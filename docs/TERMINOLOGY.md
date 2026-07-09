@@ -108,6 +108,25 @@ Hash-sorted `Vec` of weak entries; O(log n) binary search to the hash run, then 
 
 Source: `hirpdag_hashconsing/src/tableshared_sharded.rs`
 
+### Concurrent-collection `TableShared` backends
+A family of `TableShared` implementations that store the interned mapping directly in a third-party concurrent collection instead of delegating to an inner `Table` (they are not generic over one). All store **strong** references, so unreferenced nodes are retained rather than garbage-collected, and all require a `Send + Sync` reference (they are wired to `RefArc`).  Selectable via the presets `arc_dashmap`, `arc_flurry`, `arc_skipmap`, `arc_arcswap`, `arc_evmap`.
+
+| Type | Preset | Backend | Strategy |
+| --- | --- | --- | --- |
+| `TableSharedDashMap` | `arc_dashmap` | [`dashmap`] | Bucket-striped concurrent hash map; per-shard locks. |
+| `TableSharedFlurry` | `arc_flurry` | [`flurry`] | Lock-free hash map (Java `ConcurrentHashMap` port); keys must be `Ord`. |
+| `TableSharedSkipMap` | `arc_skipmap` | [`crossbeam-skiplist`] | Lock-free ordered skip list; `O(log n)` lookup, no hasher. |
+| `TableSharedArcSwap` | `arc_arcswap` | [`arc-swap`] | RCU / copy-on-write: lock-free reads, whole-map clone per insert (`O(n)` writes). |
+| `TableSharedEvmap` | `arc_evmap` | [`evmap`] | Left-right double-buffering; values must be `Hash + Eq`. |
+
+[`dashmap`]: https://crates.io/crates/dashmap
+[`flurry`]: https://crates.io/crates/flurry
+[`crossbeam-skiplist`]: https://crates.io/crates/crossbeam-skiplist
+[`arc-swap`]: https://crates.io/crates/arc-swap
+[`evmap`]: https://crates.io/crates/evmap
+
+Source: `hirpdag_hashconsing/src/tableshared_dashmap.rs`, `tableshared_flurry.rs`, `tableshared_skipmap.rs`, `tableshared_arcswap.rs`, `tableshared_evmap.rs`
+
 ---
 
 ## Rewriting

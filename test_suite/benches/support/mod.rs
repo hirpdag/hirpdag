@@ -23,6 +23,12 @@ macro_rules! hirpdag_bench_configs {
         hirpdag_bench_configs!(@one seppad_hash_linear, "seppad_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one sepu32_hash_linear, "sepu32_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one tlc_hash_linear, "tlc_hash_linear", $($items)*);
+        // Shared tables backed by third-party concurrent collections.
+        hirpdag_bench_configs!(@one arc_dashmap, "arc_dashmap", $($items)*);
+        hirpdag_bench_configs!(@one arc_flurry, "arc_flurry", $($items)*);
+        hirpdag_bench_configs!(@one arc_skipmap, "arc_skipmap", $($items)*);
+        hirpdag_bench_configs!(@one arc_arcswap, "arc_arcswap", $($items)*);
+        hirpdag_bench_configs!(@one arc_evmap, "arc_evmap", $($items)*);
     };
 }
 
@@ -43,5 +49,10 @@ macro_rules! bench_each_config {
         bench_each_config!(@one $group, $params, $function, seppad_hash_linear, "SepPadHashLinear");
         bench_each_config!(@one $group, $params, $function, sepu32_hash_linear, "SepU32HashLinear");
         bench_each_config!(@one $group, $params, $function, tlc_hash_linear, "TlcHashLinear");
+        bench_each_config!(@one $group, $params, $function, arc_dashmap, "ArcDashMap");
+        bench_each_config!(@one $group, $params, $function, arc_flurry, "ArcFlurry");
+        bench_each_config!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
+        bench_each_config!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
+        bench_each_config!(@one $group, $params, $function, arc_evmap, "ArcEvmap");
     };
 }

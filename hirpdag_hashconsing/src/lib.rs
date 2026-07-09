@@ -64,6 +64,31 @@ mod tableshared_mutex;
 pub use crate::tableshared_mutex::BuildTableSharedMutex;
 pub use crate::tableshared_mutex::TableSharedMutex;
 
+// Thread-safe tables backed by third-party concurrent collections. Unlike the
+// mutex / sharded wrappers above, these store the interned mapping directly in
+// the concurrent structure instead of delegating to an inner single-threaded
+// `Table`.
+
+mod tableshared_dashmap;
+pub use crate::tableshared_dashmap::BuildTableSharedDashMap;
+pub use crate::tableshared_dashmap::TableSharedDashMap;
+
+mod tableshared_flurry;
+pub use crate::tableshared_flurry::BuildTableSharedFlurry;
+pub use crate::tableshared_flurry::TableSharedFlurry;
+
+mod tableshared_skipmap;
+pub use crate::tableshared_skipmap::BuildTableSharedSkipMap;
+pub use crate::tableshared_skipmap::TableSharedSkipMap;
+
+mod tableshared_arcswap;
+pub use crate::tableshared_arcswap::BuildTableSharedArcSwap;
+pub use crate::tableshared_arcswap::TableSharedArcSwap;
+
+mod tableshared_evmap;
+pub use crate::tableshared_evmap::BuildTableSharedEvmap;
+pub use crate::tableshared_evmap::TableSharedEvmap;
+
 // Internal
 
 mod weak_entry;
@@ -193,6 +218,107 @@ mod tests {
                 RefArc<TestData>,
                 TableTovWeakTable<TestData, RefArc<TestData>, RefArcWeak<TestData>>,
             >();
+        }
+    }
+
+    /// Tests for the [`TableShared`] implementations backed by third-party
+    /// concurrent collections. These are exercised with `RefArc` (the only
+    /// bundled reference that is `Send + Sync + Hash + Eq`), and include a
+    /// multi-threaded stress test verifying that all threads observe the same
+    /// interned pointer for each key (the core hash-consing guarantee).
+    mod test_concurrent {
+        use crate::test_terrible_hasher::TerribleHasher;
+        use crate::test_utils::*;
+        use crate::*;
+
+        type Data = TestData;
+        type Ref = RefArc<TestData>;
+        type DefHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
+        type BadHasher = std::hash::BuildHasherDefault<TerribleHasher>;
+
+        /// Hammer a table from several threads all interning the same key range
+        /// and assert every thread agrees on the interned pointer per key, and
+        /// that distinct keys intern to distinct pointers.
+        fn concurrent_stress<TS>(table: TS)
+        where
+            TS: TableShared<Data, Ref> + Send + Sync + 'static,
+        {
+            let table = std::sync::Arc::new(table);
+            let n = 300usize;
+            let n_threads = 8usize;
+
+            let mut handles = Vec::new();
+            for _ in 0..n_threads {
+                let t = table.clone();
+                handles.push(std::thread::spawn(move || {
+                    let mut v: Vec<Ref> = Vec::new();
+                    populate_linear(&mut v, &*t, 0..n);
+                    v
+                }));
+            }
+            let results: Vec<Vec<Ref>> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+            let first = &results[0];
+            for other in &results[1..] {
+                assert_eq!(first.len(), other.len());
+                for i in 0..n {
+                    assert!(
+                        Ref::strong_ptr_eq(&first[i], &other[i]),
+                        "threads disagree on interned pointer for key {}",
+                        i
+                    );
+                }
+            }
+            // Corresponding keys equal, non-corresponding keys distinct.
+            assert_match_and_unique(first, first);
+        }
+
+        #[test]
+        fn dashmap() {
+            let b = BuildTableSharedDashMap::<Data, Ref, DefHasher>::default();
+            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, DefHasher>, _>(b);
+
+            let b_bad =
+                BuildTableSharedDashMap::<Data, Ref, BadHasher>::with_hasher(BadHasher::default());
+            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, BadHasher>, _>(b_bad);
+
+            concurrent_stress(TableSharedDashMap::<Data, Ref, DefHasher>::default());
+        }
+
+        #[test]
+        fn flurry() {
+            let b = BuildTableSharedFlurry::<Data, Ref, DefHasher>::default();
+            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, DefHasher>, _>(b);
+
+            let b_bad =
+                BuildTableSharedFlurry::<Data, Ref, BadHasher>::with_hasher(BadHasher::default());
+            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, BadHasher>, _>(b_bad);
+
+            concurrent_stress(TableSharedFlurry::<Data, Ref, DefHasher>::default());
+        }
+
+        #[test]
+        fn skipmap() {
+            let b = BuildTableSharedSkipMap::<Data, Ref>::default();
+            test_tableshared::<Ref, TableSharedSkipMap<Data, Ref>, _>(b);
+
+            concurrent_stress(TableSharedSkipMap::<Data, Ref>::default());
+        }
+
+        #[test]
+        fn arcswap() {
+            let b = BuildTableSharedArcSwap::<Data, Ref, DefHasher>::default();
+            test_tableshared::<Ref, TableSharedArcSwap<Data, Ref, DefHasher>, _>(b);
+
+            concurrent_stress(TableSharedArcSwap::<Data, Ref, DefHasher>::default());
+        }
+
+        #[test]
+        fn evmap() {
+            let b = BuildTableSharedEvmap::<Data, Ref>::default();
+            test_tableshared::<Ref, TableSharedEvmap<Data, Ref>, _>(b);
+
+            concurrent_stress(TableSharedEvmap::<Data, Ref>::default());
         }
     }
 }

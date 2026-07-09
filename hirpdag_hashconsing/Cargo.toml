@@ -14,3 +14,10 @@ description = "Various hashconsing implementations with a common interface."
 [dependencies]
 weak-table = "0.3.2"
 array-init = "2.1.0"
+
+# Concurrent map / tree libraries wrapped by the `tableshared_*` implementations.
+dashmap = "6.2.1"
+flurry = "0.5.2"
+evmap = "11.0.0"
+arc-swap = "1.9.2"
+crossbeam-skiplist = "0.1.3"

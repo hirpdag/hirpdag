@@ -44,6 +44,12 @@ const PRESETS: &[&str] = &[
     "seppad_hash_linear",
     "sepu32_hash_linear",
     "tlc_hash_linear",
+    // Shared tables backed by third-party concurrent collections.
+    "arc_dashmap",
+    "arc_flurry",
+    "arc_skipmap",
+    "arc_arcswap",
+    "arc_evmap",
 ];
 
 /// The type strings that select a hash-consing implementation.
@@ -103,6 +109,30 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
         }
     }
+    // A `ConfigTypes` for a preset backed by a third-party concurrent collection
+    // named `TableShared{shared_base}`. These store the mapping directly and are
+    // not generic over an inner `Table`, so they declare no `ImplTable` alias.
+    // `hashed` backends take a default-hasher generic argument; ordered /
+    // self-hashing backends (skipmap, evmap) do not.
+    fn concurrent(base: &str, shared_base: &str, hashed: bool) -> ConfigTypes {
+        let hasher = if hashed {
+            ", std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>"
+        } else {
+            ""
+        };
+        ConfigTypes {
+            reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
+            reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
+            aliases: Vec::new(),
+            tableshared_type: format!(
+                "hirpdag::hirpdag_hashconsing::TableShared{shared_base}<D, ImplRef<D>>"
+            ),
+            build_tableshared_type: format!(
+                "hirpdag::hirpdag_hashconsing::BuildTableShared{shared_base}<D, ImplRef<D>{hasher}>"
+            ),
+        }
+    }
+
     let tovweaktable =
         "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"
             .to_string();
@@ -120,6 +150,15 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         // Thread-local deferred reference counting (see
         // hirpdag_hashconsing::reference_tlc).
         "tlc_hash_linear" => sharded("RefTlc", hashmap_fallback("TableVecLinearWeak")),
+        // Shared tables backed by third-party concurrent collections. They store
+        // strong references directly (no weak-reference GC); `RefArc` is used
+        // because these backends require a `Send + Sync` reference. See the
+        // `tableshared_*` modules.
+        "arc_dashmap" => concurrent("RefArc", "DashMap", true),
+        "arc_flurry" => concurrent("RefArc", "Flurry", true),
+        "arc_skipmap" => concurrent("RefArc", "SkipMap", false),
+        "arc_arcswap" => concurrent("RefArc", "ArcSwap", true),
+        "arc_evmap" => concurrent("RefArc", "Evmap", false),
         _ => return None,
     })
 }
