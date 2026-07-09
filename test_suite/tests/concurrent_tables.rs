@@ -8,6 +8,10 @@
 //   * hash-consing dedup: two structurally equal nodes are pointer-equal;
 //   * structural sharing survives across a small DAG;
 //   * concurrent interning from many threads agrees on one pointer per node.
+//
+// These backends live behind the `third-party-tables` feature, so the whole
+// file compiles only when it is enabled (e.g. `cargo test --all-features`).
+#![cfg(feature = "third-party-tables")]
 
 use hirpdag::*;
 

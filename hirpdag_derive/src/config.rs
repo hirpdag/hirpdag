@@ -38,13 +38,14 @@ const DEFAULT_PRESET: &str = "arc_hash_linear";
 const PRESETS: &[&str] = &[
     "arc_hash_linear",
     "arc_hash_sorted",
-    "arc_tovweaktable",
     "leak_hash_linear",
     "sep_hash_linear",
     "seppad_hash_linear",
     "sepu32_hash_linear",
     "tlc_hash_linear",
-    // Shared tables backed by third-party concurrent collections.
+    // Tables backed by third-party collection crates (behind the
+    // `third-party-tables` feature).
+    "arc_tovweaktable",
     "arc_dashmap",
     "arc_flurry",
     "arc_skipmap",
@@ -140,7 +141,6 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
     Some(match name {
         "arc_hash_linear" => sharded("RefArc", hashmap_fallback("TableVecLinearWeak")),
         "arc_hash_sorted" => sharded("RefArc", hashmap_fallback("TableVecSortedWeak")),
-        "arc_tovweaktable" => sharded("RefArc", tovweaktable),
         "leak_hash_linear" => sharded("RefLeak", hashmap_fallback("TableVecLinearWeak")),
         // Reference-counting experiments with counts stored separately from the
         // data (see hirpdag_hashconsing::reference_sepcount).
@@ -150,10 +150,14 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         // Thread-local deferred reference counting (see
         // hirpdag_hashconsing::reference_tlc).
         "tlc_hash_linear" => sharded("RefTlc", hashmap_fallback("TableVecLinearWeak")),
-        // Shared tables backed by third-party concurrent collections. They store
-        // strong references directly (no weak-reference GC); `RefArc` is used
-        // because these backends require a `Send + Sync` reference. See the
-        // `tableshared_*` modules.
+        // Tables backed by third-party collection crates (behind the
+        // `third-party-tables` feature). `arc_tovweaktable` wraps the weak-table
+        // crate's `WeakHashSet` as an inner `Table` behind the sharded shared
+        // table; the rest store the mapping directly in a concurrent collection
+        // (strong references, no weak-reference GC) via `TableShared*`. `RefArc`
+        // is used because the concurrent backends require a `Send + Sync`
+        // reference. See the `tableshared_*` / `table_tov_weak_table` modules.
+        "arc_tovweaktable" => sharded("RefArc", tovweaktable),
         "arc_dashmap" => concurrent("RefArc", "DashMap", true),
         "arc_flurry" => concurrent("RefArc", "Flurry", true),
         "arc_skipmap" => concurrent("RefArc", "SkipMap", false),
