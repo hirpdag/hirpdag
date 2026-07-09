@@ -48,7 +48,7 @@ fn make_hash<K: std::hash::Hash + ?Sized>(
     hash_builder.hash_one(val)
 }
 
-impl<D, R, T, HB> TableShared<D, R, T> for TableSharedSharded<D, R, T, HB>
+impl<D, R, T, HB> TableShared<D, R> for TableSharedSharded<D, R, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -144,7 +144,7 @@ where
     }
 }
 
-impl<D, R, T, TB, HB> BuildTableShared<D, R, T> for BuildTableSharedSharded<D, R, T, TB, HB>
+impl<D, R, T, TB, HB> BuildTableShared<D, R> for BuildTableSharedSharded<D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,

@@ -6,7 +6,6 @@ use crate::base::meta::HirpdagMetaFlagType;
 use hirpdag_hashconsing;
 use hirpdag_hashconsing::BuildTableShared;
 use hirpdag_hashconsing::Reference;
-use hirpdag_hashconsing::Table;
 use hirpdag_hashconsing::TableShared;
 
 /// A hash-consed, reference-counted pointer to an interned DAG node.
@@ -205,33 +204,29 @@ where
 pub struct HirpdagHashconsTable<
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
-    T: Table<HirpdagStorage<D>, R>,
-    TS: TableShared<HirpdagStorage<D>, R, T>,
+    TS: TableShared<HirpdagStorage<D>, R>,
 > {
     table: TS,
 
     phantom_d: std::marker::PhantomData<D>,
     phantom_r: std::marker::PhantomData<R>,
-    phantom_t: std::marker::PhantomData<T>,
 }
 
-impl<D, R, T, TS> HirpdagHashconsTable<D, R, T, TS>
+impl<D, R, TS> HirpdagHashconsTable<D, R, TS>
 where
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
-    T: Table<HirpdagStorage<D>, R>,
-    TS: TableShared<HirpdagStorage<D>, R, T>,
+    TS: TableShared<HirpdagStorage<D>, R>,
 {
     pub fn new<TSB>(tableshared_builder: TSB) -> Self
     where
-        TSB: BuildTableShared<HirpdagStorage<D>, R, T, TableSharedType = TS> + Default,
+        TSB: BuildTableShared<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
     {
         Self {
             table: tableshared_builder.build_tableshared(),
 
             phantom_d: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
         }
     }
 

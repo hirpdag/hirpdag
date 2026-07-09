@@ -16,11 +16,10 @@ impl TestData {
     }
 }
 
-pub fn test_interface_impl<R, T, TS>(tableshared: &TS, data: TestData)
+pub fn test_interface_impl<R, TS>(tableshared: &TS, data: TestData)
 where
     R: Reference<TestData>,
-    T: Table<TestData, R>,
-    TS: TableShared<TestData, R, T>,
+    TS: TableShared<TestData, R>,
 {
     let data_clone = data.clone();
     let x: R = tableshared.get_or_insert(data, |_s| {});
@@ -29,11 +28,10 @@ where
     assert!(R::strong_ptr_eq(&x, &y));
 }
 
-pub fn populate_linear<R, T, TS>(out: &mut Vec<R>, tableshared: &TS, range: std::ops::Range<usize>)
+pub fn populate_linear<R, TS>(out: &mut Vec<R>, tableshared: &TS, range: std::ops::Range<usize>)
 where
     R: Reference<TestData>,
-    T: Table<TestData, R>,
-    TS: TableShared<TestData, R, T>,
+    TS: TableShared<TestData, R>,
 {
     for k in range {
         let data1 = TestData {
@@ -69,11 +67,10 @@ where
     }
 }
 
-pub fn hashcons_two_copies<R, T, TS>(tableshared: &TS)
+pub fn hashcons_two_copies<R, TS>(tableshared: &TS)
 where
     R: Reference<TestData>,
-    T: Table<TestData, R>,
-    TS: TableShared<TestData, R, T>,
+    TS: TableShared<TestData, R>,
 {
     let n = 32usize;
     let mut v1: Vec<R> = vec![];
@@ -99,36 +96,33 @@ where
     assert_match_and_unique(&v1, &v2);
 }
 
-fn test_tableshared_interface<R, T, TS, TSB>(tableshared_builder: TSB)
+fn test_tableshared_interface<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
-    T: Table<TestData, R>,
-    TS: TableShared<TestData, R, T>,
-    TSB: BuildTableShared<TestData, R, T>,
+    TS: TableShared<TestData, R>,
+    TSB: BuildTableShared<TestData, R>,
 {
     let tableshared = tableshared_builder.build_tableshared();
     let data = TestData::new(2, 4, "6".to_string());
     test_interface_impl(&tableshared, data);
 }
 
-fn test_tableshared_deduplication_basic<R, T, TS, TSB>(tableshared_builder: TSB)
+fn test_tableshared_deduplication_basic<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
-    T: Table<TestData, R>,
-    TS: TableShared<TestData, R, T>,
-    TSB: BuildTableShared<TestData, R, T>,
+    TS: TableShared<TestData, R>,
+    TSB: BuildTableShared<TestData, R>,
 {
     let tableshared = tableshared_builder.build_tableshared();
     hashcons_two_copies(&tableshared);
 }
 
-pub fn test_tableshared<R, T, TS, TSB>(tableshared_builder: TSB)
+pub fn test_tableshared<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
-    T: Table<TestData, R>,
-    TS: TableShared<TestData, R, T>,
-    TSB: BuildTableShared<TestData, R, T> + Clone,
+    TS: TableShared<TestData, R>,
+    TSB: BuildTableShared<TestData, R> + Clone,
 {
-    test_tableshared_interface::<R, T, TS, TSB>(tableshared_builder.clone());
-    test_tableshared_deduplication_basic::<R, T, TS, TSB>(tableshared_builder);
+    test_tableshared_interface::<R, TS, TSB>(tableshared_builder.clone());
+    test_tableshared_deduplication_basic::<R, TS, TSB>(tableshared_builder);
 }

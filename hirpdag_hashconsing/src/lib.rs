@@ -98,7 +98,6 @@ mod tests {
 
             test_tableshared::<
                 R,
-                T,
                 TableSharedSharded<TestData, R, T, HB>,
                 BuildTableSharedSharded<TestData, R, T, BuildTableDefault<T>, HB>,
             >(tsb);
@@ -119,7 +118,6 @@ mod tests {
 
             test_tableshared::<
                 R,
-                T,
                 TableSharedMutex<TestData, R, T, HB>,
                 BuildTableSharedMutex<TestData, R, T, BuildTableDefault<T>, HB>,
             >(tsb);
