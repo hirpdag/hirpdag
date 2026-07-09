@@ -1,26 +1,18 @@
-// End-to-end tests for the shared-table backends that wrap third-party
-// concurrent collections (dashmap, flurry, crossbeam-skiplist, arc-swap,
-// evmap). Each is selected through a `#[hirpdag_module(preset = "...")]`
-// preset, proving the wrappers work through the full derive pipeline over real
-// `HirpdagStorage` nodes — not just the unit tests in hirpdag_hashconsing.
+// End-to-end tests exercising every configuration preset through the full
+// derive pipeline over real `HirpdagStorage` nodes — not just the unit tests in
+// hirpdag_hashconsing.
 //
-// For each backend we check:
+// For each preset we check:
 //   * hash-consing dedup: two structurally equal nodes are pointer-equal;
 //   * structural sharing survives across a small DAG;
 //   * concurrent interning from many threads agrees on one pointer per node.
 //
-// The backends live behind the `third-party-tables` feature, so each
-// `concurrent_backend_test!` instantiation is individually gated on it (e.g.
-// enable it via `cargo test --all-features`); with the feature off this file
-// still compiles, it just registers no tests.
+// The presets backed by third-party collection crates are individually gated on
+// the `third-party-tables` feature (enable it via `cargo test --all-features`);
+// the rest are always tested.
 
-// Brought into scope only where the (feature-gated) instantiations below use it.
-#[cfg(feature = "third-party-tables")]
 use hirpdag::*;
 
-// Only invoked under `third-party-tables`; keep the definition warning-free when
-// the feature is off.
-#[allow(unused_macros)]
 macro_rules! concurrent_backend_test {
     ($module:ident, $preset:literal, $test_name:ident) => {
         #[hirpdag_module(preset = $preset)]
@@ -74,6 +66,46 @@ macro_rules! concurrent_backend_test {
     };
 }
 
+// Presets available in every build.
+concurrent_backend_test!(
+    arc_hash_linear_mod,
+    "arc_hash_linear",
+    arc_hash_linear_backend
+);
+concurrent_backend_test!(
+    arc_hash_sorted_mod,
+    "arc_hash_sorted",
+    arc_hash_sorted_backend
+);
+concurrent_backend_test!(
+    leak_hash_linear_mod,
+    "leak_hash_linear",
+    leak_hash_linear_backend
+);
+concurrent_backend_test!(
+    sep_hash_linear_mod,
+    "sep_hash_linear",
+    sep_hash_linear_backend
+);
+concurrent_backend_test!(
+    seppad_hash_linear_mod,
+    "seppad_hash_linear",
+    seppad_hash_linear_backend
+);
+concurrent_backend_test!(
+    sepu32_hash_linear_mod,
+    "sepu32_hash_linear",
+    sepu32_hash_linear_backend
+);
+concurrent_backend_test!(
+    tlc_hash_linear_mod,
+    "tlc_hash_linear",
+    tlc_hash_linear_backend
+);
+
+// Presets backed by third-party collection crates (feature-gated).
+#[cfg(feature = "third-party-tables")]
+concurrent_backend_test!(tovweaktable_mod, "arc_tovweaktable", tovweaktable_backend);
 #[cfg(feature = "third-party-tables")]
 concurrent_backend_test!(dashmap_mod, "arc_dashmap", dashmap_backend);
 #[cfg(feature = "third-party-tables")]
