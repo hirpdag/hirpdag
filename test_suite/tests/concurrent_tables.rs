@@ -9,12 +9,18 @@
 //   * structural sharing survives across a small DAG;
 //   * concurrent interning from many threads agrees on one pointer per node.
 //
-// These backends live behind the `third-party-tables` feature, so the whole
-// file compiles only when it is enabled (e.g. `cargo test --all-features`).
-#![cfg(feature = "third-party-tables")]
+// The backends live behind the `third-party-tables` feature, so each
+// `concurrent_backend_test!` instantiation is individually gated on it (e.g.
+// enable it via `cargo test --all-features`); with the feature off this file
+// still compiles, it just registers no tests.
 
+// Brought into scope only where the (feature-gated) instantiations below use it.
+#[cfg(feature = "third-party-tables")]
 use hirpdag::*;
 
+// Only invoked under `third-party-tables`; keep the definition warning-free when
+// the feature is off.
+#[allow(unused_macros)]
 macro_rules! concurrent_backend_test {
     ($module:ident, $preset:literal, $test_name:ident) => {
         #[hirpdag_module(preset = $preset)]
@@ -68,8 +74,13 @@ macro_rules! concurrent_backend_test {
     };
 }
 
+#[cfg(feature = "third-party-tables")]
 concurrent_backend_test!(dashmap_mod, "arc_dashmap", dashmap_backend);
+#[cfg(feature = "third-party-tables")]
 concurrent_backend_test!(flurry_mod, "arc_flurry", flurry_backend);
+#[cfg(feature = "third-party-tables")]
 concurrent_backend_test!(skipmap_mod, "arc_skipmap", skipmap_backend);
+#[cfg(feature = "third-party-tables")]
 concurrent_backend_test!(arcswap_mod, "arc_arcswap", arcswap_backend);
+#[cfg(feature = "third-party-tables")]
 concurrent_backend_test!(evmap_mod, "arc_evmap", evmap_backend);
