@@ -9,10 +9,10 @@ mod reference;
 pub use crate::reference::Reference;
 pub use crate::reference::ReferenceWeak;
 mod table;
-pub use crate::table::BuildThreadUnsafeTable;
-pub use crate::table::BuildThreadUnsafeTableDefault;
 pub use crate::table::BuildTable;
 pub use crate::table::BuildTableDefault;
+pub use crate::table::BuildThreadUnsafeTable;
+pub use crate::table::BuildThreadUnsafeTableDefault;
 pub use crate::table::Table;
 pub use crate::table::ThreadUnsafeTable;
 
