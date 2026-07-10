@@ -26,8 +26,8 @@ where
 
 /// Factory for constructing [`ThreadUnsafeTable`] instances.
 ///
-/// Used by [`BuildTableShared`] implementations to create per-shard inner tables.
-pub trait BuildTable<D, R>
+/// Used by [`BuildTable`] implementations to create per-shard inner tables.
+pub trait BuildThreadUnsafeTable<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -37,9 +37,9 @@ where
     fn build_table(&self) -> Self::ThreadUnsafeTable;
 }
 
-pub struct BuildTableDefault<T>(std::marker::PhantomData<T>);
+pub struct BuildThreadUnsafeTableDefault<T>(std::marker::PhantomData<T>);
 
-impl<D, R, T> BuildTable<D, R> for BuildTableDefault<T>
+impl<D, R, T> BuildThreadUnsafeTable<D, R> for BuildThreadUnsafeTableDefault<T>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -52,7 +52,7 @@ where
     }
 }
 
-impl<T> Default for BuildTableDefault<T>
+impl<T> Default for BuildThreadUnsafeTableDefault<T>
 where
     T: Default,
 {
@@ -61,7 +61,7 @@ where
     }
 }
 
-impl<T> Clone for BuildTableDefault<T> {
+impl<T> Clone for BuildThreadUnsafeTableDefault<T> {
     fn clone(&self) -> Self {
         Self(std::marker::PhantomData)
     }
@@ -92,8 +92,8 @@ where
 
 /// Factory for constructing [`Table`] instances.
 ///
-/// The default implementation calls [`BuildTable`] for each shard.
-pub trait BuildTableShared<D, R>
+/// The default implementation calls [`BuildThreadUnsafeTable`] for each shard.
+pub trait BuildTable<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -103,9 +103,9 @@ where
     fn build_tableshared(&self) -> Self::TableSharedType;
 }
 
-pub struct BuildTableSharedDefault<TS>(std::marker::PhantomData<TS>);
+pub struct BuildTableDefault<TS>(std::marker::PhantomData<TS>);
 
-impl<D, R, TS> BuildTableShared<D, R> for BuildTableSharedDefault<TS>
+impl<D, R, TS> BuildTable<D, R> for BuildTableDefault<TS>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,

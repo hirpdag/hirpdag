@@ -124,7 +124,7 @@ impl<D, R> Default for BuildTableSharedEvmap<D, R> {
     }
 }
 
-impl<D, R> BuildTableShared<D, R> for BuildTableSharedEvmap<D, R>
+impl<D, R> BuildTable<D, R> for BuildTableSharedEvmap<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync + 'static,
     R: Reference<D> + std::hash::Hash + std::cmp::Eq + Clone + Send + Sync + 'static,

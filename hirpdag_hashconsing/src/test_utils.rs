@@ -100,7 +100,7 @@ fn test_tableshared_interface<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
     TS: Table<TestData, R>,
-    TSB: BuildTableShared<TestData, R>,
+    TSB: BuildTable<TestData, R>,
 {
     let tableshared = tableshared_builder.build_tableshared();
     let data = TestData::new(2, 4, "6".to_string());
@@ -111,7 +111,7 @@ fn test_tableshared_deduplication_basic<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
     TS: Table<TestData, R>,
-    TSB: BuildTableShared<TestData, R>,
+    TSB: BuildTable<TestData, R>,
 {
     let tableshared = tableshared_builder.build_tableshared();
     hashcons_two_copies(&tableshared);
@@ -121,7 +121,7 @@ pub fn test_tableshared<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
     TS: Table<TestData, R>,
-    TSB: BuildTableShared<TestData, R> + Clone,
+    TSB: BuildTable<TestData, R> + Clone,
 {
     test_tableshared_interface::<R, TS, TSB>(tableshared_builder.clone());
     test_tableshared_deduplication_basic::<R, TS, TSB>(tableshared_builder);

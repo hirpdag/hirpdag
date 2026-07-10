@@ -138,7 +138,7 @@ where
     }
 }
 
-impl<D, R, HB> BuildTableShared<D, R> for BuildTableSharedDashMap<D, R, HB>
+impl<D, R, HB> BuildTable<D, R> for BuildTableSharedDashMap<D, R, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
     R: Reference<D> + Clone + Send + Sync,

@@ -107,7 +107,7 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
             aliases: vec![("ImplTable".to_string(), inner_table)],
             tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
-            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildThreadUnsafeTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
         }
     }
     // A `ConfigTypes` for a preset backed by a third-party concurrent collection

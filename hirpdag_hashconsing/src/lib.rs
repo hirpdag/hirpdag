@@ -11,8 +11,8 @@ pub use crate::reference::ReferenceWeak;
 mod table;
 pub use crate::table::BuildTable;
 pub use crate::table::BuildTableDefault;
-pub use crate::table::BuildTableShared;
-pub use crate::table::BuildTableSharedDefault;
+pub use crate::table::BuildThreadUnsafeTable;
+pub use crate::table::BuildThreadUnsafeTableDefault;
 pub use crate::table::Table;
 pub use crate::table::ThreadUnsafeTable;
 
@@ -106,9 +106,9 @@ mod tests {
             T: ThreadUnsafeTable<TestData, R> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
-            let table_builder = BuildTableDefault::<T>::default();
+            let table_builder = BuildThreadUnsafeTableDefault::<T>::default();
             let tsb =
-                BuildTableSharedSharded::<TestData, R, T, BuildTableDefault<T>, HB>::with_builders(
+                BuildTableSharedSharded::<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>::with_builders(
                     table_builder,
                     hash_builder,
                 );
@@ -116,7 +116,7 @@ mod tests {
             test_tableshared::<
                 R,
                 TableSharedSharded<TestData, R, T, HB>,
-                BuildTableSharedSharded<TestData, R, T, BuildTableDefault<T>, HB>,
+                BuildTableSharedSharded<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>,
             >(tsb);
         }
 
@@ -126,9 +126,9 @@ mod tests {
             T: ThreadUnsafeTable<TestData, R> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
-            let table_builder = BuildTableDefault::<T>::default();
+            let table_builder = BuildThreadUnsafeTableDefault::<T>::default();
             let tsb =
-                BuildTableSharedMutex::<TestData, R, T, BuildTableDefault<T>, HB>::with_builders(
+                BuildTableSharedMutex::<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>::with_builders(
                     table_builder,
                     hash_builder,
                 );
@@ -136,7 +136,7 @@ mod tests {
             test_tableshared::<
                 R,
                 TableSharedMutex<TestData, R, T, HB>,
-                BuildTableSharedMutex<TestData, R, T, BuildTableDefault<T>, HB>,
+                BuildTableSharedMutex<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>,
             >(tsb);
         }
         fn test_tableshared_all<R, T>()

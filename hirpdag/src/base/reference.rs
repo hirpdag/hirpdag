@@ -4,7 +4,7 @@ use crate::base::meta::HirpdagComputeMeta;
 use crate::base::meta::HirpdagMeta;
 use crate::base::meta::HirpdagMetaFlagType;
 use hirpdag_hashconsing;
-use hirpdag_hashconsing::BuildTableShared;
+use hirpdag_hashconsing::BuildTable;
 use hirpdag_hashconsing::Reference;
 use hirpdag_hashconsing::Table;
 
@@ -231,12 +231,12 @@ where
     R: Reference<HirpdagStorage<D>>,
     TS: Table<HirpdagStorage<D>, R>,
 {
-    pub fn new<TSB>(tableshared_builder: TSB) -> Self
+    pub fn new<TB>(table_builder: TB) -> Self
     where
-        TSB: BuildTableShared<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
+        TB: BuildTable<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
     {
         Self {
-            table: tableshared_builder.build_tableshared(),
+            table: table_builder.build_tableshared(),
 
             phantom_d: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,
