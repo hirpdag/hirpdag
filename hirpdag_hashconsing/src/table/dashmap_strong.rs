@@ -4,7 +4,7 @@
 //! several independently locked `RwLock<HashMap>` regions, so threads touching
 //! structurally different nodes rarely contend. This wrapper stores the mapping
 //! directly in the concurrent map, so — unlike the `TableSharedMutex` /
-//! `TableSharedSharded` wrappers — it does not delegate to an inner
+//! `TableSharedShardedN` wrappers — it does not delegate to an inner
 //! single-threaded [`ThreadUnsafeTable`](crate::ThreadUnsafeTable) at all.
 //!
 //! Note on retention: entries hold a *strong* reference `R` to each interned

@@ -110,9 +110,9 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             build_tableshared_type: format!("hirpdag::hirpdag_hashconsing::BuildTableShared{kind}<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildThreadUnsafeTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"),
         }
     }
-    // The default sharded-mutex shared table.
+    // The default sharded-mutex shared table (eight shards).
     fn sharded(base: &str, inner_table: String) -> ConfigTypes {
-        locked("Sharded", base, inner_table)
+        locked("Sharded8", base, inner_table)
     }
     // A `ConfigTypes` for a preset backed by a third-party concurrent collection
     // named `TableShared{shared_base}`. These store the mapping directly and are

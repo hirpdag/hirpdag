@@ -103,8 +103,8 @@ Hash-sorted `Vec` of weak entries; O(log n) binary search to the hash run, then 
 ### `TableSharedMutex`
 `Table` implementation wrapping a single `Mutex`.  Simple; all threads serialise on one lock.  An adapter that connects a single-threaded `ThreadUnsafeTable` to the thread-safe `Table` interface.
 
-### `TableSharedSharded`
-`Table` implementation using `N_SHARDS` (= 8) independent mutexes.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)` — a bitmask because `N_SHARDS` is a power of two.  Like the mutex backend, an adapter connecting a `ThreadUnsafeTable` to the `Table` interface.
+### `TableSharedShardedN`
+`Table` implementation using `N_SHARDS` independent mutexes, where `N_SHARDS` is a const generic parameter.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)` — a bitmask, so `N_SHARDS` must be a power of two.  Like the mutex backend, an adapter connecting a `ThreadUnsafeTable` to the `Table` interface.  `TableSharedSharded8` is the eight-shard alias used by the macro presets.
 
 Source: `hirpdag_hashconsing/src/table/shared_sharded.rs`
 
@@ -113,7 +113,7 @@ Table backends built on external collection crates, behind the opt-in `third-par
 
 | Type | Preset | Backend | Strategy |
 | --- | --- | --- | --- |
-| `TableTovWeakTable` | `arc_tovweaktable` | [`weak-table`] | `WeakHashSet` inner `ThreadUnsafeTable` behind `TableSharedSharded`; weak-reference GC. |
+| `TableTovWeakTable` | `arc_tovweaktable` | [`weak-table`] | `WeakHashSet` inner `ThreadUnsafeTable` behind `TableSharedShardedN`; weak-reference GC. |
 | `TableSharedDashMap` | `arc_dashmap` | [`dashmap`] | Bucket-striped concurrent hash map; per-shard locks. |
 | `TableSharedFlurry` | `arc_flurry` | [`flurry`] | Lock-free hash map (Java `ConcurrentHashMap` port); keys must be `Ord`. |
 | `TableSharedSkipMap` | `arc_skipmap` | [`crossbeam-skiplist`] | Lock-free ordered skip list; `O(log n)` lookup, no hasher. |
@@ -185,5 +185,5 @@ The following `#[hirpdag_module(...)]` options override the default pluggable im
 | `reference_type` | `RefArc` | Strong reference (e.g. swap in `RefRc` for single-threaded use) |
 | `reference_weak_type` | `RefArcWeak` | Weak reference |
 | `table_type` | `TableVecLinearWeak` | Inner table strategy |
-| `tableshared_type` | `TableSharedSharded` | Locking strategy |
-| `build_tableshared_type` | `BuildTableSharedSharded` | Factory for the shared table |
+| `tableshared_type` | `TableSharedSharded8` | Locking strategy |
+| `build_tableshared_type` | `BuildTableSharedSharded8` | Factory for the shared table |
