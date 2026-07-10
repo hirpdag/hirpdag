@@ -7,7 +7,7 @@ pub struct TableSharedMutex<D, R, T, HB = DefaultHasher>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: Table<D, R>,
+    T: ThreadUnsafeTable<D, R>,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     inner: std::sync::Mutex<T>,
@@ -25,11 +25,11 @@ fn make_hash<K: std::hash::Hash + ?Sized>(
     hash_builder.hash_one(val)
 }
 
-impl<D, R, T, HB> TableShared<D, R> for TableSharedMutex<D, R, T, HB>
+impl<D, R, T, HB> Table<D, R> for TableSharedMutex<D, R, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: Table<D, R>,
+    T: ThreadUnsafeTable<D, R>,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     fn get(&self, data: &D) -> Option<R> {
@@ -63,8 +63,8 @@ impl<D, R, T, TB, HB> BuildTableSharedMutex<D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: Table<D, R>,
-    TB: BuildTable<D, R, Table = T> + Default + Clone,
+    T: ThreadUnsafeTable<D, R>,
+    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     pub fn with_builders(table_builder: TB, hash_builder: HB) -> Self {
@@ -83,8 +83,8 @@ impl<D, R, T, TB, HB> Clone for BuildTableSharedMutex<D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: Table<D, R>,
-    TB: BuildTable<D, R, Table = T> + Default + Clone,
+    T: ThreadUnsafeTable<D, R>,
+    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     fn clone(&self) -> Self {
@@ -103,8 +103,8 @@ impl<D, R, T, TB, HB> Default for BuildTableSharedMutex<D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: Table<D, R>,
-    TB: BuildTable<D, R, Table = T> + Default + Clone,
+    T: ThreadUnsafeTable<D, R>,
+    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     fn default() -> Self {
@@ -122,8 +122,8 @@ impl<D, R, T, TB, HB> BuildTableShared<D, R> for BuildTableSharedMutex<D, R, T, 
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: Table<D, R>,
-    TB: BuildTable<D, R, Table = T> + Default + Clone,
+    T: ThreadUnsafeTable<D, R>,
+    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     type TableSharedType = TableSharedMutex<D, R, T, HB>;

@@ -1,10 +1,10 @@
 use crate::reference::*;
 
-/// Single-threaded hash-consing table — the inner storage unit behind [`TableShared`].
+/// Single-threaded hash-consing table — the inner storage unit behind [`Table`].
 ///
 /// Implementations vary in lookup strategy (linear scan, sorted binary search, hash map) and
 /// eviction policy (weak references allow GC of unreferenced nodes).
-pub trait Table<D, R>
+pub trait ThreadUnsafeTable<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -24,7 +24,7 @@ where
         CF: FnOnce(&mut D);
 }
 
-/// Factory for constructing [`Table`] instances.
+/// Factory for constructing [`ThreadUnsafeTable`] instances.
 ///
 /// Used by [`BuildTableShared`] implementations to create per-shard inner tables.
 pub trait BuildTable<D, R>
@@ -32,9 +32,9 @@ where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
 {
-    type Table: Table<D, R>;
+    type ThreadUnsafeTable: ThreadUnsafeTable<D, R>;
 
-    fn build_table(&self) -> Self::Table;
+    fn build_table(&self) -> Self::ThreadUnsafeTable;
 }
 
 pub struct BuildTableDefault<T>(std::marker::PhantomData<T>);
@@ -43,9 +43,9 @@ impl<D, R, T> BuildTable<D, R> for BuildTableDefault<T>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: Default + Table<D, R>,
+    T: Default + ThreadUnsafeTable<D, R>,
 {
-    type Table = T;
+    type ThreadUnsafeTable = T;
 
     fn build_table(&self) -> T {
         T::default()
@@ -70,11 +70,11 @@ impl<T> Clone for BuildTableDefault<T> {
 /// Thread-safe hash-consing table.
 ///
 /// Implementations choose how to serialize concurrent access. Some wrap one or more inner
-/// single-threaded [`Table`] instances behind a locking strategy (a single mutex, sharded
+/// single-threaded [`ThreadUnsafeTable`] instances behind a locking strategy (a single mutex, sharded
 /// mutexes); others store the mapping directly in a concurrent collection (lock-free hash
 /// maps, skip lists, RCU). The `hirpdag` macro selects the implementation via
 /// `#[hirpdag(tableshared_type = "...")]`.
-pub trait TableShared<D, R>
+pub trait Table<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -90,7 +90,7 @@ where
         CF: FnOnce(&mut D);
 }
 
-/// Factory for constructing [`TableShared`] instances.
+/// Factory for constructing [`Table`] instances.
 ///
 /// The default implementation calls [`BuildTable`] for each shard.
 pub trait BuildTableShared<D, R>
@@ -98,7 +98,7 @@ where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
 {
-    type TableSharedType: TableShared<D, R>;
+    type TableSharedType: Table<D, R>;
 
     fn build_tableshared(&self) -> Self::TableSharedType;
 }
@@ -109,7 +109,7 @@ impl<D, R, TS> BuildTableShared<D, R> for BuildTableSharedDefault<TS>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    TS: TableShared<D, R> + Default,
+    TS: Table<D, R> + Default,
 {
     type TableSharedType = TS;
 

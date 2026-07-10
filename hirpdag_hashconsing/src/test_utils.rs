@@ -19,7 +19,7 @@ impl TestData {
 pub fn test_interface_impl<R, TS>(tableshared: &TS, data: TestData)
 where
     R: Reference<TestData>,
-    TS: TableShared<TestData, R>,
+    TS: Table<TestData, R>,
 {
     let data_clone = data.clone();
     let x: R = tableshared.get_or_insert(data, |_s| {});
@@ -31,7 +31,7 @@ where
 pub fn populate_linear<R, TS>(out: &mut Vec<R>, tableshared: &TS, range: std::ops::Range<usize>)
 where
     R: Reference<TestData>,
-    TS: TableShared<TestData, R>,
+    TS: Table<TestData, R>,
 {
     for k in range {
         let data1 = TestData {
@@ -70,7 +70,7 @@ where
 pub fn hashcons_two_copies<R, TS>(tableshared: &TS)
 where
     R: Reference<TestData>,
-    TS: TableShared<TestData, R>,
+    TS: Table<TestData, R>,
 {
     let n = 32usize;
     let mut v1: Vec<R> = vec![];
@@ -99,7 +99,7 @@ where
 fn test_tableshared_interface<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
-    TS: TableShared<TestData, R>,
+    TS: Table<TestData, R>,
     TSB: BuildTableShared<TestData, R>,
 {
     let tableshared = tableshared_builder.build_tableshared();
@@ -110,7 +110,7 @@ where
 fn test_tableshared_deduplication_basic<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
-    TS: TableShared<TestData, R>,
+    TS: Table<TestData, R>,
     TSB: BuildTableShared<TestData, R>,
 {
     let tableshared = tableshared_builder.build_tableshared();
@@ -120,7 +120,7 @@ where
 pub fn test_tableshared<R, TS, TSB>(tableshared_builder: TSB)
 where
     R: Reference<TestData>,
-    TS: TableShared<TestData, R>,
+    TS: Table<TestData, R>,
     TSB: BuildTableShared<TestData, R> + Clone,
 {
     test_tableshared_interface::<R, TS, TSB>(tableshared_builder.clone());

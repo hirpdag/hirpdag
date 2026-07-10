@@ -14,7 +14,7 @@ pub use crate::table::BuildTableDefault;
 pub use crate::table::BuildTableShared;
 pub use crate::table::BuildTableSharedDefault;
 pub use crate::table::Table;
-pub use crate::table::TableShared;
+pub use crate::table::ThreadUnsafeTable;
 
 // Hashconsing reference implementations.
 
@@ -44,14 +44,14 @@ pub use crate::reference_tlc::RefTlcWeak;
 
 // Hashconsing table implementations.
 
-mod table_vec_linear_weak;
-pub use crate::table_vec_linear_weak::TableVecLinearWeak;
+mod threadunsafe_table_vec_linear;
+pub use crate::threadunsafe_table_vec_linear::TableVecLinearWeak;
 
-mod table_vec_sorted_weak;
-pub use crate::table_vec_sorted_weak::TableVecSortedWeak;
+mod threadunsafe_table_vec_sorted;
+pub use crate::threadunsafe_table_vec_sorted::TableVecSortedWeak;
 
-mod table_hashmap_fallback_weak;
-pub use crate::table_hashmap_fallback_weak::TableHashmapFallbackWeak;
+mod threadunsafe_table_hashmap_fallback;
+pub use crate::threadunsafe_table_hashmap_fallback::TableHashmapFallbackWeak;
 
 mod tableshared_sharded;
 pub use crate::tableshared_sharded::BuildTableSharedSharded;
@@ -61,11 +61,11 @@ mod tableshared_mutex;
 pub use crate::tableshared_mutex::BuildTableSharedMutex;
 pub use crate::tableshared_mutex::TableSharedMutex;
 
-// Table backends built on third-party collection crates, behind the opt-in
-// `third-party-tables` feature. `TableTovWeakTable` is an inner `Table` (over
-// the `weak-table` crate); the `TableShared*` wrappers store the interned
+// ThreadUnsafeTable backends built on third-party collection crates, behind the opt-in
+// `third-party-tables` feature. `TableTovWeakTable` is an inner `ThreadUnsafeTable` (over
+// the `weak-table` crate); the `Table*` wrappers store the interned
 // mapping directly in a concurrent collection instead of delegating to an inner
-// single-threaded `Table`.
+// single-threaded `ThreadUnsafeTable`.
 
 #[cfg(feature = "third-party-tables")]
 mod table_tov_weak_table;
@@ -73,39 +73,39 @@ mod table_tov_weak_table;
 pub use crate::table_tov_weak_table::TableTovWeakTable;
 
 #[cfg(feature = "third-party-tables")]
-mod tableshared_dashmap;
+mod table_dashmap_strong;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_dashmap::BuildTableSharedDashMap;
+pub use crate::table_dashmap_strong::BuildTableSharedDashMap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_dashmap::TableSharedDashMap;
+pub use crate::table_dashmap_strong::TableSharedDashMap;
 
 #[cfg(feature = "third-party-tables")]
-mod tableshared_flurry;
+mod table_flurry_strong;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_flurry::BuildTableSharedFlurry;
+pub use crate::table_flurry_strong::BuildTableSharedFlurry;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_flurry::TableSharedFlurry;
+pub use crate::table_flurry_strong::TableSharedFlurry;
 
 #[cfg(feature = "third-party-tables")]
-mod tableshared_skipmap;
+mod table_skipmap_strong;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_skipmap::BuildTableSharedSkipMap;
+pub use crate::table_skipmap_strong::BuildTableSharedSkipMap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_skipmap::TableSharedSkipMap;
+pub use crate::table_skipmap_strong::TableSharedSkipMap;
 
 #[cfg(feature = "third-party-tables")]
-mod tableshared_arcswap;
+mod table_arcswap_strong;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_arcswap::BuildTableSharedArcSwap;
+pub use crate::table_arcswap_strong::BuildTableSharedArcSwap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_arcswap::TableSharedArcSwap;
+pub use crate::table_arcswap_strong::TableSharedArcSwap;
 
 #[cfg(feature = "third-party-tables")]
-mod tableshared_evmap;
+mod table_evmap_strong;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_evmap::BuildTableSharedEvmap;
+pub use crate::table_evmap_strong::BuildTableSharedEvmap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::tableshared_evmap::TableSharedEvmap;
+pub use crate::table_evmap_strong::TableSharedEvmap;
 
 // Internal
 
@@ -129,7 +129,7 @@ mod tests {
         fn test_tableshared_sharded<R, T, HB>(hash_builder: HB)
         where
             R: Reference<TestData>,
-            T: Table<TestData, R> + Default,
+            T: ThreadUnsafeTable<TestData, R> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
             let table_builder = BuildTableDefault::<T>::default();
@@ -149,7 +149,7 @@ mod tests {
         fn test_tableshared_mutex<R, T, HB>(hash_builder: HB)
         where
             R: Reference<TestData>,
-            T: Table<TestData, R> + Default,
+            T: ThreadUnsafeTable<TestData, R> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
             let table_builder = BuildTableDefault::<T>::default();
@@ -168,7 +168,7 @@ mod tests {
         fn test_tableshared_all<R, T>()
         where
             R: Reference<TestData>,
-            T: Table<TestData, R> + Default,
+            T: ThreadUnsafeTable<TestData, R> + Default,
         {
             let hash_builder = std::hash::BuildHasherDefault::<
                 std::collections::hash_map::DefaultHasher,
@@ -242,7 +242,7 @@ mod tests {
         }
     }
 
-    /// Tests for the [`TableShared`] implementations backed by third-party
+    /// Tests for the [`Table`] implementations backed by third-party
     /// concurrent collections. These are exercised with `RefArc` (the only
     /// bundled reference that is `Send + Sync + Hash + Eq`), and include a
     /// multi-threaded stress test verifying that all threads observe the same
@@ -263,7 +263,7 @@ mod tests {
         /// that distinct keys intern to distinct pointers.
         fn concurrent_stress<TS>(table: TS)
         where
-            TS: TableShared<Data, Ref> + Send + Sync + 'static,
+            TS: Table<Data, Ref> + Send + Sync + 'static,
         {
             let table = std::sync::Arc::new(table);
             let n = 300usize;

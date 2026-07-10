@@ -1,5 +1,5 @@
 use crate::reference::*;
-use crate::table::Table;
+use crate::table::ThreadUnsafeTable;
 use weak_table::traits::WeakElement;
 use weak_table::traits::WeakKey;
 use weak_table::WeakHashSet;
@@ -31,7 +31,7 @@ where
     }
 }
 
-impl<D, R, RW> Table<D, R> for TableTovWeakTable<D, R, RW>
+impl<D, R, RW> ThreadUnsafeTable<D, R> for TableTovWeakTable<D, R, RW>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,

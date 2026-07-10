@@ -15,7 +15,7 @@
 //! evmap's `ReadHandle` is deliberately `!Sync` (each reader thread is meant to
 //! own its own clone), and evmap 11 does not expose a public `ReadHandleFactory`
 //! accessor to hand out fresh handles from `&self`. To satisfy the
-//! [`TableShared`] contract (`&self`, shared across threads) we therefore guard
+//! [`Table`] contract (`&self`, shared across threads) we therefore guard
 //! the read handle with its own `Mutex`, separate from the writer's `Mutex`.
 //! Reads and writes still never block *each other* (distinct locks + evmap's
 //! double buffering), which preserves the essential left-right property, but
@@ -24,7 +24,7 @@
 //!
 //! As with the other concurrent wrappers, strong references are retained (no
 //! weak-reference GC) and there is no inner single-threaded
-//! [`Table`](crate::Table). The stored value type `R` must be
+//! [`ThreadUnsafeTable`](crate::ThreadUnsafeTable). The stored value type `R` must be
 //! [`Hash`](std::hash::Hash) + `Eq` because evmap keeps values in a set-like bag.
 
 use crate::reference::*;
@@ -58,7 +58,7 @@ where
     }
 }
 
-impl<D, R> TableShared<D, R> for TableSharedEvmap<D, R>
+impl<D, R> Table<D, R> for TableSharedEvmap<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync + 'static,
     R: Reference<D> + std::hash::Hash + std::cmp::Eq + Clone + Send + Sync + 'static,

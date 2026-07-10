@@ -1,5 +1,5 @@
 use crate::reference::*;
-use crate::table::Table;
+use crate::table::ThreadUnsafeTable;
 use crate::weak_entry::*;
 
 /// Hash-consing table backed by a hash-sorted `Vec` with O(log n) binary search + O(k) scan.
@@ -69,7 +69,7 @@ where
     }
 }
 
-impl<D, R, RW> Table<D, R> for TableVecSortedWeak<D, R, RW>
+impl<D, R, RW> ThreadUnsafeTable<D, R> for TableVecSortedWeak<D, R, RW>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,

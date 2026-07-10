@@ -99,7 +99,7 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         )
     }
     // A `ConfigTypes` for a lock-based preset: reference `base`, generic over the
-    // given inner `Table` (exposed as the `ImplTable` alias), shared via the
+    // given inner `ThreadUnsafeTable` (exposed as the `ImplTable` alias), shared via the
     // sharded-mutex table.
     fn sharded(base: &str, inner_table: String) -> ConfigTypes {
         ConfigTypes {
@@ -112,7 +112,7 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
     }
     // A `ConfigTypes` for a preset backed by a third-party concurrent collection
     // named `TableShared{shared_base}`. These store the mapping directly and are
-    // not generic over an inner `Table`, so they declare no `ImplTable` alias.
+    // not generic over an inner `ThreadUnsafeTable`, so they declare no `ImplTable` alias.
     // `hashed` backends take a default-hasher generic argument; ordered /
     // self-hashing backends (skipmap, evmap) do not.
     fn concurrent(base: &str, shared_base: &str, hashed: bool) -> ConfigTypes {
@@ -152,11 +152,12 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         "tlc_hash_linear" => sharded("RefTlc", hashmap_fallback("TableVecLinearWeak")),
         // Tables backed by third-party collection crates (behind the
         // `third-party-tables` feature). `arc_tovweaktable` wraps the weak-table
-        // crate's `WeakHashSet` as an inner `Table` behind the sharded shared
-        // table; the rest store the mapping directly in a concurrent collection
+        // crate's `WeakHashSet` as an inner `ThreadUnsafeTable` behind the sharded
+        // shared table; the rest store the mapping directly in a concurrent collection
         // (strong references, no weak-reference GC) via `TableShared*`. `RefArc`
         // is used because the concurrent backends require a `Send + Sync`
-        // reference. See the `tableshared_*` / `table_tov_weak_table` modules.
+        // reference. See the `table_*_strong` / `tableshared_*` / `table_tov_weak_table`
+        // modules.
         "arc_tovweaktable" => sharded("RefArc", tovweaktable),
         "arc_dashmap" => concurrent("RefArc", "DashMap", true),
         "arc_flurry" => concurrent("RefArc", "Flurry", true),

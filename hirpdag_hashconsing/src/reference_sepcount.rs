@@ -331,7 +331,7 @@ pub type RefSepU32Weak<D> = RefSepGenericWeak<D, SlotPackedU32>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::table::Table;
+    use crate::table::ThreadUnsafeTable;
     use crate::test_utils::TestData;
 
     // Dedicated slot type so this test's pool is not shared with other tests
