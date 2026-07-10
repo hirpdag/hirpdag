@@ -9,6 +9,12 @@ keywords = ["hashconsing", "persistent", "dag", "rewriting"]
 categories = ["caching", "memory-management", "data-structures"]
 description = "Library and procedural macros for Hash Consed, Immutable, Reference Counted, Persistent, Directed Acyclic Graph data structures."
 
+[features]
+# Opt in to the table backends built on third-party collection crates. Required
+# to select the `arc_tovweaktable`, `arc_dashmap`, `arc_flurry`, `arc_skipmap`,
+# `arc_arcswap` or `arc_evmap` presets (or the matching `TableShared*` types).
+third-party-tables = ["hirpdag_hashconsing/third-party-tables"]
+
 [dependencies]
 hirpdag_hashconsing = { version = "0.2.0", path = '../hirpdag_hashconsing' }
 hirpdag_derive = { version = "0.2.0", path = "../hirpdag_derive" }

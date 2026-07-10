@@ -17,12 +17,24 @@ macro_rules! hirpdag_bench_configs {
     ($($items:item)*) => {
         hirpdag_bench_configs!(@one arc_hash_linear, "arc_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one arc_hash_sorted, "arc_hash_sorted", $($items)*);
-        hirpdag_bench_configs!(@one arc_tovweaktable, "arc_tovweaktable", $($items)*);
         hirpdag_bench_configs!(@one leak_hash_linear, "leak_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one sep_hash_linear, "sep_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one seppad_hash_linear, "seppad_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one sepu32_hash_linear, "sepu32_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one tlc_hash_linear, "tlc_hash_linear", $($items)*);
+        // Tables backed by third-party collection crates (feature-gated).
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_tovweaktable, "arc_tovweaktable", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_dashmap, "arc_dashmap", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_flurry, "arc_flurry", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_skipmap, "arc_skipmap", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_arcswap, "arc_arcswap", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_evmap, "arc_evmap", $($items)*);
     };
 }
 
@@ -37,11 +49,23 @@ macro_rules! bench_each_config {
     ($group:expr, $params:expr, $function:ident) => {
         bench_each_config!(@one $group, $params, $function, arc_hash_linear, "ArcHashLinear");
         bench_each_config!(@one $group, $params, $function, arc_hash_sorted, "ArcHashSorted");
-        bench_each_config!(@one $group, $params, $function, arc_tovweaktable, "ArcTovWeakTable");
         bench_each_config!(@one $group, $params, $function, leak_hash_linear, "LeakHashLinear");
         bench_each_config!(@one $group, $params, $function, sep_hash_linear, "SepHashLinear");
         bench_each_config!(@one $group, $params, $function, seppad_hash_linear, "SepPadHashLinear");
         bench_each_config!(@one $group, $params, $function, sepu32_hash_linear, "SepU32HashLinear");
         bench_each_config!(@one $group, $params, $function, tlc_hash_linear, "TlcHashLinear");
+        // Tables backed by third-party collection crates (feature-gated).
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_tovweaktable, "ArcTovWeakTable");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_dashmap, "ArcDashMap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_flurry, "ArcFlurry");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_evmap, "ArcEvmap");
     };
 }

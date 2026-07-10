@@ -151,6 +151,19 @@ pub struct HirpdagStorage<D: HirpdagStruct> {
     hirpdag_data: D,
 }
 
+impl<D> Clone for HirpdagStorage<D>
+where
+    D: HirpdagStruct,
+{
+    fn clone(&self) -> Self {
+        Self {
+            hirpdag_meta: self.hirpdag_meta.clone(),
+            hirpdag_creation_id: self.hirpdag_creation_id,
+            hirpdag_data: self.hirpdag_data.clone(),
+        }
+    }
+}
+
 impl<D> std::hash::Hash for HirpdagStorage<D>
 where
     D: HirpdagStruct,

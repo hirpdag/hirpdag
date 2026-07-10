@@ -11,6 +11,26 @@ description = "Various hashconsing implementations with a common interface."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+# Opt in to the table backends built on third-party collection crates:
+# `TableTovWeakTable` (weak-table) plus the concurrent `TableShared*` wrappers
+# (dashmap, flurry, crossbeam-skiplist, arc-swap, evmap).
+third-party-tables = [
+    "dep:weak-table",
+    "dep:dashmap",
+    "dep:flurry",
+    "dep:evmap",
+    "dep:arc-swap",
+    "dep:crossbeam-skiplist",
+]
+
 [dependencies]
-weak-table = "0.3.2"
 array-init = "2.1.0"
+
+# Third-party collection crates behind the `third-party-tables` feature.
+weak-table = { version = "0.3.2", optional = true }
+dashmap = { version = "6.2.1", optional = true }
+flurry = { version = "0.5.2", optional = true }
+evmap = { version = "11.0.0", optional = true }
+arc-swap = { version = "1.9.2", optional = true }
+crossbeam-skiplist = { version = "0.1.3", optional = true }

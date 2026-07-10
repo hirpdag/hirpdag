@@ -3,7 +3,7 @@
 use crate::reference::*;
 use crate::table::*;
 
-#[derive(Hash, Debug, PartialEq, Eq, Clone)]
+#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct TestData {
     a: i32,
     b: i32,

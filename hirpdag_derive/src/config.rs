@@ -38,12 +38,19 @@ const DEFAULT_PRESET: &str = "arc_hash_linear";
 const PRESETS: &[&str] = &[
     "arc_hash_linear",
     "arc_hash_sorted",
-    "arc_tovweaktable",
     "leak_hash_linear",
     "sep_hash_linear",
     "seppad_hash_linear",
     "sepu32_hash_linear",
     "tlc_hash_linear",
+    // Tables backed by third-party collection crates (behind the
+    // `third-party-tables` feature).
+    "arc_tovweaktable",
+    "arc_dashmap",
+    "arc_flurry",
+    "arc_skipmap",
+    "arc_arcswap",
+    "arc_evmap",
 ];
 
 /// The type strings that select a hash-consing implementation.
@@ -103,6 +110,30 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
         }
     }
+    // A `ConfigTypes` for a preset backed by a third-party concurrent collection
+    // named `TableShared{shared_base}`. These store the mapping directly and are
+    // not generic over an inner `Table`, so they declare no `ImplTable` alias.
+    // `hashed` backends take a default-hasher generic argument; ordered /
+    // self-hashing backends (skipmap, evmap) do not.
+    fn concurrent(base: &str, shared_base: &str, hashed: bool) -> ConfigTypes {
+        let hasher = if hashed {
+            ", std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>"
+        } else {
+            ""
+        };
+        ConfigTypes {
+            reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
+            reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
+            aliases: Vec::new(),
+            tableshared_type: format!(
+                "hirpdag::hirpdag_hashconsing::TableShared{shared_base}<D, ImplRef<D>>"
+            ),
+            build_tableshared_type: format!(
+                "hirpdag::hirpdag_hashconsing::BuildTableShared{shared_base}<D, ImplRef<D>{hasher}>"
+            ),
+        }
+    }
+
     let tovweaktable =
         "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"
             .to_string();
@@ -110,7 +141,6 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
     Some(match name {
         "arc_hash_linear" => sharded("RefArc", hashmap_fallback("TableVecLinearWeak")),
         "arc_hash_sorted" => sharded("RefArc", hashmap_fallback("TableVecSortedWeak")),
-        "arc_tovweaktable" => sharded("RefArc", tovweaktable),
         "leak_hash_linear" => sharded("RefLeak", hashmap_fallback("TableVecLinearWeak")),
         // Reference-counting experiments with counts stored separately from the
         // data (see hirpdag_hashconsing::reference_sepcount).
@@ -120,6 +150,19 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         // Thread-local deferred reference counting (see
         // hirpdag_hashconsing::reference_tlc).
         "tlc_hash_linear" => sharded("RefTlc", hashmap_fallback("TableVecLinearWeak")),
+        // Tables backed by third-party collection crates (behind the
+        // `third-party-tables` feature). `arc_tovweaktable` wraps the weak-table
+        // crate's `WeakHashSet` as an inner `Table` behind the sharded shared
+        // table; the rest store the mapping directly in a concurrent collection
+        // (strong references, no weak-reference GC) via `TableShared*`. `RefArc`
+        // is used because the concurrent backends require a `Send + Sync`
+        // reference. See the `tableshared_*` / `table_tov_weak_table` modules.
+        "arc_tovweaktable" => sharded("RefArc", tovweaktable),
+        "arc_dashmap" => concurrent("RefArc", "DashMap", true),
+        "arc_flurry" => concurrent("RefArc", "Flurry", true),
+        "arc_skipmap" => concurrent("RefArc", "SkipMap", false),
+        "arc_arcswap" => concurrent("RefArc", "ArcSwap", true),
+        "arc_evmap" => concurrent("RefArc", "Evmap", false),
         _ => return None,
     })
 }
