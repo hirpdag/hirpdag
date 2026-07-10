@@ -89,7 +89,7 @@ Trait: `hirpdag_hashconsing::Table`
 ### `WeakEntry`
 The per-element storage unit inside vector-backed tables: a precomputed hash plus a weak reference.  The cached hash allows O(1) filtering before the equality check.
 
-Source: `hirpdag_hashconsing/src/weak_entry.rs`
+Source: `hirpdag_hashconsing/src/table/weak_entry.rs`
 
 ### `TableVecLinearWeak`
 Unsorted `Vec` of weak entries; O(n) linear search.  Simple, allocation-friendly, suitable for small node sets.
@@ -106,7 +106,7 @@ Hash-sorted `Vec` of weak entries; O(log n) binary search to the hash run, then 
 ### `TableSharedSharded`
 `Table` implementation using `N_SHARDS` (= 8) independent mutexes.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)` — a bitmask because `N_SHARDS` is a power of two.  Like the mutex backend, an adapter connecting a `ThreadUnsafeTable` to the `Table` interface.
 
-Source: `hirpdag_hashconsing/src/tableshared_sharded.rs`
+Source: `hirpdag_hashconsing/src/table/shared_sharded.rs`
 
 ### Third-party-collection table backends (`third-party-tables` feature)
 Table backends built on external collection crates, behind the opt-in `third-party-tables` Cargo feature (off by default; enable it on `hirpdag` to select these presets). `TableTovWeakTable` is an inner `ThreadUnsafeTable` (wrapping the [`weak-table`] crate) used behind the sharded shared table; the rest are `Table` implementations that store the interned mapping directly in a concurrent collection instead of delegating to an inner `ThreadUnsafeTable`. The concurrent ones store **strong** references (unreferenced nodes are retained, not garbage-collected) and require a `Send + Sync` reference, so they are wired to `RefArc`.
@@ -127,7 +127,7 @@ Table backends built on external collection crates, behind the opt-in `third-par
 [`arc-swap`]: https://crates.io/crates/arc-swap
 [`evmap`]: https://crates.io/crates/evmap
 
-Source: `hirpdag_hashconsing/src/table_tov_weak_table.rs`, `tableshared_dashmap.rs`, `tableshared_flurry.rs`, `tableshared_skipmap.rs`, `tableshared_arcswap.rs`, `tableshared_evmap.rs`
+Source: `hirpdag_hashconsing/src/table/tov_weak_table_threadunsafe.rs`, `dashmap_strong.rs`, `flurry_strong.rs`, `skipmap_strong.rs`, `arcswap_strong.rs`, `evmap_strong.rs`
 
 ---
 

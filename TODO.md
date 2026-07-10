@@ -71,7 +71,7 @@
   - https://users.rust-lang.org/t/why-does-arc-use-one-contiguous-allocation-for-data-and-counters/113319
   - https://ddanilov.me/shared-ptr-is-evil/
   - ~~Try padding ref counts to one (pair, strong and weak) per cacheline. Look for performance/space trade-off.~~
-  - DONE: `reference_sepcount.rs` stores (strong, weak) count slots in a contiguous global
+  - DONE: `reference/sepcount.rs` stores (strong, weak) count slots in a contiguous global
     arena (chunked, with a free list), separate from the data allocation. The handle is
     two pointers (data + slot). Three slot layouts explore the space/perf trade-off:
     `RefSep` (packed 16B slots), `RefSepPad` (one slot per 64B cacheline, no false
@@ -79,7 +79,7 @@
 
 - ~~[P3] Thread local reference counts, periodically flush back to main counter.~~
   - ~~Is this even possible? Is it good?~~
-  - DONE: `reference_tlc.rs` (`RefTlc`). Buffering *increments* thread-locally is unsound
+  - DONE: `reference/tlc.rs` (`RefTlc`). Buffering *increments* thread-locally is unsound
     (a handle whose increment is still buffered can move to another thread whose drop
     takes the shared count to zero prematurely). Buffering *decrements* is safe: it only
     delays frees. Each thread keeps a `HashMap<addr, deferred_dec_count>`; drop buffers a

@@ -36,3 +36,10 @@ where
     /// Get a weak reference handle from a strong reference handle.
     fn weak_downgrade(ptr: &R) -> Self;
 }
+
+// Reference-counting implementations.
+pub(crate) mod arc;
+pub(crate) mod leak;
+pub(crate) mod rc;
+pub(crate) mod sepcount;
+pub(crate) mod tlc;
