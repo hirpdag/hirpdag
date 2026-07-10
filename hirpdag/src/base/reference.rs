@@ -231,12 +231,12 @@ where
     R: Reference<HirpdagStorage<D>>,
     TS: Table<HirpdagStorage<D>, R>,
 {
-    pub fn new<TSB>(tableshared_builder: TSB) -> Self
+    pub fn new<TB>(table_builder: TB) -> Self
     where
-        TSB: BuildTable<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
+        TB: BuildTable<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
     {
         Self {
-            table: tableshared_builder.build_tableshared(),
+            table: table_builder.build_tableshared(),
 
             phantom_d: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,
