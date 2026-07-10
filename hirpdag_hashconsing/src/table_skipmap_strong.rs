@@ -8,7 +8,7 @@
 //!
 //! As with the other concurrent wrappers, the interned mapping is stored
 //! directly in the structure (there is no inner single-threaded
-//! [`Table`](crate::Table)), and strong references are retained (no
+//! [`ThreadUnsafeTable`](crate::ThreadUnsafeTable)), and strong references are retained (no
 //! weak-reference GC of unreferenced nodes).
 
 use crate::reference::*;
@@ -49,7 +49,7 @@ where
     }
 }
 
-impl<D, R> TableShared<D, R> for TableSharedSkipMap<D, R>
+impl<D, R> Table<D, R> for TableSharedSkipMap<D, R>
 where
     D: std::hash::Hash
         + std::cmp::Eq

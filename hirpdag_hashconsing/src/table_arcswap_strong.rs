@@ -13,7 +13,7 @@
 //!
 //! As with the other concurrent wrappers, strong references are retained (no
 //! weak-reference GC) and there is no inner single-threaded
-//! [`Table`](crate::Table).
+//! [`ThreadUnsafeTable`](crate::ThreadUnsafeTable).
 
 use crate::reference::*;
 use crate::table::*;
@@ -62,7 +62,7 @@ where
     }
 }
 
-impl<D, R, HB> TableShared<D, R> for TableSharedArcSwap<D, R, HB>
+impl<D, R, HB> Table<D, R> for TableSharedArcSwap<D, R, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
     R: Reference<D> + Clone + Send + Sync,

@@ -6,7 +6,7 @@ use crate::base::meta::HirpdagMetaFlagType;
 use hirpdag_hashconsing;
 use hirpdag_hashconsing::BuildTableShared;
 use hirpdag_hashconsing::Reference;
-use hirpdag_hashconsing::TableShared;
+use hirpdag_hashconsing::Table;
 
 /// A hash-consed, reference-counted pointer to an interned DAG node.
 ///
@@ -217,7 +217,7 @@ where
 pub struct HirpdagHashconsTable<
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
-    TS: TableShared<HirpdagStorage<D>, R>,
+    TS: Table<HirpdagStorage<D>, R>,
 > {
     table: TS,
 
@@ -229,7 +229,7 @@ impl<D, R, TS> HirpdagHashconsTable<D, R, TS>
 where
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
-    TS: TableShared<HirpdagStorage<D>, R>,
+    TS: Table<HirpdagStorage<D>, R>,
 {
     pub fn new<TSB>(tableshared_builder: TSB) -> Self
     where

@@ -76,15 +76,15 @@ Source: `hirpdag/src/base/reference.rs` — `HIRPDAG_CREATION_COUNTER`
 
 ## Tables
 
-### `Table<D, R>`
+### `ThreadUnsafeTable<D, R>`
 The single-threaded storage unit for a hash-consing table.  Implementations differ in lookup strategy and memory layout.
 
+Trait: `hirpdag_hashconsing::ThreadUnsafeTable`
+
+### `Table<D, R>`
+The thread-safe hash-consing interface (`get` / `get_or_insert` over `&self`).  Implementations choose their concurrency strategy: some wrap one or more inner single-threaded `ThreadUnsafeTable` instances behind locks, others store the mapping directly in a concurrent collection.  Note the trait is *not* parameterized over an inner `ThreadUnsafeTable` — a backend that needs one (mutex/sharded) carries it as its own generic, so backends that don't (the concurrent-collection ones) name no table at all.
+
 Trait: `hirpdag_hashconsing::Table`
-
-### `TableShared<D, R>`
-The thread-safe hash-consing interface (`get` / `get_or_insert` over `&self`).  Implementations choose their concurrency strategy: some wrap one or more inner single-threaded `Table` instances behind locks, others store the mapping directly in a concurrent collection.  Note the trait is *not* parameterized over an inner `Table` — a backend that needs one (mutex/sharded) carries it as its own generic, so backends that don't (the concurrent-collection ones) name no table at all.
-
-Trait: `hirpdag_hashconsing::TableShared`
 
 ### `WeakEntry`
 The per-element storage unit inside vector-backed tables: a precomputed hash plus a weak reference.  The cached hash allows O(1) filtering before the equality check.
@@ -101,19 +101,19 @@ Hash-sorted `Vec` of weak entries; O(log n) binary search to the hash run, then 
 `HashMap`-based table with a fallback to an alternate table for small sizes.  O(1) average lookup; the fallback handles the cold start efficiently.
 
 ### `TableSharedMutex`
-`TableShared` implementation wrapping a single `Mutex`.  Simple; all threads serialise on one lock.
+`Table` implementation wrapping a single `Mutex`.  Simple; all threads serialise on one lock.  An adapter that connects a single-threaded `ThreadUnsafeTable` to the thread-safe `Table` interface.
 
 ### `TableSharedSharded`
-`TableShared` implementation using `N_SHARDS` (= 8) independent mutexes.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)` — a bitmask because `N_SHARDS` is a power of two.
+`Table` implementation using `N_SHARDS` (= 8) independent mutexes.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)` — a bitmask because `N_SHARDS` is a power of two.  Like the mutex backend, an adapter connecting a `ThreadUnsafeTable` to the `Table` interface.
 
 Source: `hirpdag_hashconsing/src/tableshared_sharded.rs`
 
 ### Third-party-collection table backends (`third-party-tables` feature)
-Table backends built on external collection crates, behind the opt-in `third-party-tables` Cargo feature (off by default; enable it on `hirpdag` to select these presets). `TableTovWeakTable` is an inner `Table` (wrapping the [`weak-table`] crate) used behind the sharded shared table; the rest are `TableShared` implementations that store the interned mapping directly in a concurrent collection instead of delegating to an inner `Table`. The concurrent ones store **strong** references (unreferenced nodes are retained, not garbage-collected) and require a `Send + Sync` reference, so they are wired to `RefArc`.
+Table backends built on external collection crates, behind the opt-in `third-party-tables` Cargo feature (off by default; enable it on `hirpdag` to select these presets). `TableTovWeakTable` is an inner `ThreadUnsafeTable` (wrapping the [`weak-table`] crate) used behind the sharded shared table; the rest are `Table` implementations that store the interned mapping directly in a concurrent collection instead of delegating to an inner `ThreadUnsafeTable`. The concurrent ones store **strong** references (unreferenced nodes are retained, not garbage-collected) and require a `Send + Sync` reference, so they are wired to `RefArc`.
 
 | Type | Preset | Backend | Strategy |
 | --- | --- | --- | --- |
-| `TableTovWeakTable` | `arc_tovweaktable` | [`weak-table`] | `WeakHashSet` inner `Table` behind `TableSharedSharded`; weak-reference GC. |
+| `TableTovWeakTable` | `arc_tovweaktable` | [`weak-table`] | `WeakHashSet` inner `ThreadUnsafeTable` behind `TableSharedSharded`; weak-reference GC. |
 | `TableSharedDashMap` | `arc_dashmap` | [`dashmap`] | Bucket-striped concurrent hash map; per-shard locks. |
 | `TableSharedFlurry` | `arc_flurry` | [`flurry`] | Lock-free hash map (Java `ConcurrentHashMap` port); keys must be `Ord`. |
 | `TableSharedSkipMap` | `arc_skipmap` | [`crossbeam-skiplist`] | Lock-free ordered skip list; `O(log n)` lookup, no hasher. |

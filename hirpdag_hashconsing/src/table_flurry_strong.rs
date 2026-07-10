@@ -6,7 +6,7 @@
 //! single bin they touch.
 //!
 //! Like the other concurrent wrappers here, the interned mapping is stored
-//! directly in the map (there is no inner single-threaded [`Table`](crate::Table)),
+//! directly in the map (there is no inner single-threaded [`ThreadUnsafeTable`](crate::ThreadUnsafeTable)),
 //! and strong references are retained (no weak-reference GC of unreferenced
 //! nodes).
 //!
@@ -73,7 +73,7 @@ where
     }
 }
 
-impl<D, R, HB> TableShared<D, R> for TableSharedFlurry<D, R, HB>
+impl<D, R, HB> Table<D, R> for TableSharedFlurry<D, R, HB>
 where
     D: std::hash::Hash
         + std::cmp::Eq

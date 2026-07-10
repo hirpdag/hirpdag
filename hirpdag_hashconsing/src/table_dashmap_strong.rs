@@ -5,7 +5,7 @@
 //! structurally different nodes rarely contend. This wrapper stores the mapping
 //! directly in the concurrent map, so — unlike the `TableSharedMutex` /
 //! `TableSharedSharded` wrappers — it does not delegate to an inner
-//! single-threaded [`Table`](crate::Table) at all.
+//! single-threaded [`ThreadUnsafeTable`](crate::ThreadUnsafeTable) at all.
 //!
 //! Note on retention: entries hold a *strong* reference `R` to each interned
 //! node, so nodes are retained for the lifetime of the table (no weak-reference
@@ -53,7 +53,7 @@ where
     }
 }
 
-impl<D, R, HB> TableShared<D, R> for TableSharedDashMap<D, R, HB>
+impl<D, R, HB> Table<D, R> for TableSharedDashMap<D, R, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
     R: Reference<D> + Clone + Send + Sync,
