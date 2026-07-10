@@ -110,7 +110,7 @@ impl<D, R> Default for BuildTableSharedSkipMap<D, R> {
     }
 }
 
-impl<D, R> BuildTableShared<D, R> for BuildTableSharedSkipMap<D, R>
+impl<D, R> BuildTable<D, R> for BuildTableSharedSkipMap<D, R>
 where
     D: std::hash::Hash
         + std::cmp::Eq

@@ -26,8 +26,8 @@ where
 
 /// Factory for constructing [`ThreadUnsafeTable`] instances.
 ///
-/// Used by [`BuildTableShared`] implementations to create per-shard inner tables.
-pub trait BuildTable<D, R>
+/// Used by [`BuildTable`] implementations to create per-shard inner tables.
+pub trait BuildThreadUnsafeTable<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -39,7 +39,7 @@ where
 
 pub struct BuildTableDefault<T>(std::marker::PhantomData<T>);
 
-impl<D, R, T> BuildTable<D, R> for BuildTableDefault<T>
+impl<D, R, T> BuildThreadUnsafeTable<D, R> for BuildTableDefault<T>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -92,8 +92,8 @@ where
 
 /// Factory for constructing [`Table`] instances.
 ///
-/// The default implementation calls [`BuildTable`] for each shard.
-pub trait BuildTableShared<D, R>
+/// The default implementation calls [`BuildThreadUnsafeTable`] for each shard.
+pub trait BuildTable<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -105,7 +105,7 @@ where
 
 pub struct BuildTableSharedDefault<TS>(std::marker::PhantomData<TS>);
 
-impl<D, R, TS> BuildTableShared<D, R> for BuildTableSharedDefault<TS>
+impl<D, R, TS> BuildTable<D, R> for BuildTableSharedDefault<TS>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,

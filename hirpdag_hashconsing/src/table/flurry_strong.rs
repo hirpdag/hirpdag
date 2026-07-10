@@ -161,7 +161,7 @@ where
     }
 }
 
-impl<D, R, HB> BuildTableShared<D, R> for BuildTableSharedFlurry<D, R, HB>
+impl<D, R, HB> BuildTable<D, R> for BuildTableSharedFlurry<D, R, HB>
 where
     D: std::hash::Hash
         + std::cmp::Eq

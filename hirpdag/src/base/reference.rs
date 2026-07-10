@@ -4,7 +4,7 @@ use crate::base::meta::HirpdagComputeMeta;
 use crate::base::meta::HirpdagMeta;
 use crate::base::meta::HirpdagMetaFlagType;
 use hirpdag_hashconsing;
-use hirpdag_hashconsing::BuildTableShared;
+use hirpdag_hashconsing::BuildTable;
 use hirpdag_hashconsing::Reference;
 use hirpdag_hashconsing::Table;
 
@@ -233,7 +233,7 @@ where
 {
     pub fn new<TSB>(tableshared_builder: TSB) -> Self
     where
-        TSB: BuildTableShared<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
+        TSB: BuildTable<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
     {
         Self {
             table: tableshared_builder.build_tableshared(),

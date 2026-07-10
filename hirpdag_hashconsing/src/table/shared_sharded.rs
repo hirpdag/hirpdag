@@ -89,7 +89,7 @@ where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     T: ThreadUnsafeTable<D, R>,
-    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
+    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     pub fn with_builders(table_builder: TB, hash_builder: HB) -> Self {
@@ -109,7 +109,7 @@ where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     T: ThreadUnsafeTable<D, R>,
-    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
+    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     fn clone(&self) -> Self {
@@ -129,7 +129,7 @@ where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     T: ThreadUnsafeTable<D, R>,
-    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
+    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     fn default() -> Self {
@@ -144,12 +144,12 @@ where
     }
 }
 
-impl<D, R, T, TB, HB> BuildTableShared<D, R> for BuildTableSharedSharded<D, R, T, TB, HB>
+impl<D, R, T, TB, HB> BuildTable<D, R> for BuildTableSharedSharded<D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     T: ThreadUnsafeTable<D, R>,
-    TB: BuildTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
+    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     type TableSharedType = TableSharedSharded<D, R, T, HB>;
