@@ -1,6 +1,6 @@
 use crate::reference::*;
+use crate::table::weak_entry::*;
 use crate::table::ThreadUnsafeTable;
-use crate::weak_entry::*;
 
 /// Hash-consing table backed by an unsorted `Vec` of weak entries with O(n) linear search.
 ///

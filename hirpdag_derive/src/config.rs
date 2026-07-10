@@ -143,12 +143,12 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         "arc_hash_sorted" => sharded("RefArc", hashmap_fallback("TableVecSortedWeak")),
         "leak_hash_linear" => sharded("RefLeak", hashmap_fallback("TableVecLinearWeak")),
         // Reference-counting experiments with counts stored separately from the
-        // data (see hirpdag_hashconsing::reference_sepcount).
+        // data (see hirpdag_hashconsing::reference::sepcount).
         "sep_hash_linear" => sharded("RefSep", hashmap_fallback("TableVecLinearWeak")),
         "seppad_hash_linear" => sharded("RefSepPad", hashmap_fallback("TableVecLinearWeak")),
         "sepu32_hash_linear" => sharded("RefSepU32", hashmap_fallback("TableVecLinearWeak")),
         // Thread-local deferred reference counting (see
-        // hirpdag_hashconsing::reference_tlc).
+        // hirpdag_hashconsing::reference::tlc).
         "tlc_hash_linear" => sharded("RefTlc", hashmap_fallback("TableVecLinearWeak")),
         // Tables backed by third-party collection crates (behind the
         // `third-party-tables` feature). `arc_tovweaktable` wraps the weak-table
@@ -156,8 +156,8 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         // shared table; the rest store the mapping directly in a concurrent collection
         // (strong references, no weak-reference GC) via `TableShared*`. `RefArc`
         // is used because the concurrent backends require a `Send + Sync`
-        // reference. See the `table_*_strong` / `tableshared_*` / `table_tov_weak_table`
-        // modules.
+        // reference. See the `table::*_strong` / `table::shared_*` /
+        // `table::tov_weak_table_threadunsafe` modules.
         "arc_tovweaktable" => sharded("RefArc", tovweaktable),
         "arc_dashmap" => concurrent("RefArc", "DashMap", true),
         "arc_flurry" => concurrent("RefArc", "Flurry", true),

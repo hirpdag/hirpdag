@@ -16,100 +16,74 @@ pub use crate::table::BuildTableSharedDefault;
 pub use crate::table::Table;
 pub use crate::table::ThreadUnsafeTable;
 
-// Hashconsing reference implementations.
+// Hashconsing reference implementations (see the `reference` module).
 
-mod reference_arc;
-pub use crate::reference_arc::RefArc;
-pub use crate::reference_arc::RefArcWeak;
+pub use crate::reference::arc::RefArc;
+pub use crate::reference::arc::RefArcWeak;
 
-mod reference_rc;
-pub use crate::reference_rc::RefRc;
-pub use crate::reference_rc::RefRcWeak;
+pub use crate::reference::rc::RefRc;
+pub use crate::reference::rc::RefRcWeak;
 
-mod reference_leak;
-pub use crate::reference_leak::RefLeak;
-pub use crate::reference_leak::RefLeakWeak;
+pub use crate::reference::leak::RefLeak;
+pub use crate::reference::leak::RefLeakWeak;
 
-mod reference_sepcount;
-pub use crate::reference_sepcount::RefSep;
-pub use crate::reference_sepcount::RefSepPad;
-pub use crate::reference_sepcount::RefSepPadWeak;
-pub use crate::reference_sepcount::RefSepU32;
-pub use crate::reference_sepcount::RefSepU32Weak;
-pub use crate::reference_sepcount::RefSepWeak;
+pub use crate::reference::sepcount::RefSep;
+pub use crate::reference::sepcount::RefSepPad;
+pub use crate::reference::sepcount::RefSepPadWeak;
+pub use crate::reference::sepcount::RefSepU32;
+pub use crate::reference::sepcount::RefSepU32Weak;
+pub use crate::reference::sepcount::RefSepWeak;
 
-mod reference_tlc;
-pub use crate::reference_tlc::RefTlc;
-pub use crate::reference_tlc::RefTlcWeak;
+pub use crate::reference::tlc::RefTlc;
+pub use crate::reference::tlc::RefTlcWeak;
 
-// Hashconsing table implementations.
+// Hashconsing table implementations (see the `table` module).
 
-mod threadunsafe_table_vec_linear;
-pub use crate::threadunsafe_table_vec_linear::TableVecLinearWeak;
+pub use crate::table::vec_linear_threadunsafe::TableVecLinearWeak;
 
-mod threadunsafe_table_vec_sorted;
-pub use crate::threadunsafe_table_vec_sorted::TableVecSortedWeak;
+pub use crate::table::vec_sorted_threadunsafe::TableVecSortedWeak;
 
-mod threadunsafe_table_hashmap_fallback;
-pub use crate::threadunsafe_table_hashmap_fallback::TableHashmapFallbackWeak;
+pub use crate::table::hashmap_fallback_threadunsafe::TableHashmapFallbackWeak;
 
-mod tableshared_sharded;
-pub use crate::tableshared_sharded::BuildTableSharedSharded;
-pub use crate::tableshared_sharded::TableSharedSharded;
+pub use crate::table::shared_sharded::BuildTableSharedSharded;
+pub use crate::table::shared_sharded::TableSharedSharded;
 
-mod tableshared_mutex;
-pub use crate::tableshared_mutex::BuildTableSharedMutex;
-pub use crate::tableshared_mutex::TableSharedMutex;
+pub use crate::table::shared_mutex::BuildTableSharedMutex;
+pub use crate::table::shared_mutex::TableSharedMutex;
 
-// ThreadUnsafeTable backends built on third-party collection crates, behind the opt-in
-// `third-party-tables` feature. `TableTovWeakTable` is an inner `ThreadUnsafeTable` (over
-// the `weak-table` crate); the `Table*` wrappers store the interned
+// Table backends built on third-party collection crates, behind the opt-in
+// `third-party-tables` feature. `TableTovWeakTable` is an inner `ThreadUnsafeTable`
+// (over the `weak-table` crate); the `*_strong` backends store the interned
 // mapping directly in a concurrent collection instead of delegating to an inner
 // single-threaded `ThreadUnsafeTable`.
 
 #[cfg(feature = "third-party-tables")]
-mod table_tov_weak_table;
-#[cfg(feature = "third-party-tables")]
-pub use crate::table_tov_weak_table::TableTovWeakTable;
+pub use crate::table::tov_weak_table_threadunsafe::TableTovWeakTable;
 
 #[cfg(feature = "third-party-tables")]
-mod table_dashmap_strong;
+pub use crate::table::dashmap_strong::BuildTableSharedDashMap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::table_dashmap_strong::BuildTableSharedDashMap;
-#[cfg(feature = "third-party-tables")]
-pub use crate::table_dashmap_strong::TableSharedDashMap;
+pub use crate::table::dashmap_strong::TableSharedDashMap;
 
 #[cfg(feature = "third-party-tables")]
-mod table_flurry_strong;
+pub use crate::table::flurry_strong::BuildTableSharedFlurry;
 #[cfg(feature = "third-party-tables")]
-pub use crate::table_flurry_strong::BuildTableSharedFlurry;
-#[cfg(feature = "third-party-tables")]
-pub use crate::table_flurry_strong::TableSharedFlurry;
+pub use crate::table::flurry_strong::TableSharedFlurry;
 
 #[cfg(feature = "third-party-tables")]
-mod table_skipmap_strong;
+pub use crate::table::skipmap_strong::BuildTableSharedSkipMap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::table_skipmap_strong::BuildTableSharedSkipMap;
-#[cfg(feature = "third-party-tables")]
-pub use crate::table_skipmap_strong::TableSharedSkipMap;
+pub use crate::table::skipmap_strong::TableSharedSkipMap;
 
 #[cfg(feature = "third-party-tables")]
-mod table_arcswap_strong;
+pub use crate::table::arcswap_strong::BuildTableSharedArcSwap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::table_arcswap_strong::BuildTableSharedArcSwap;
-#[cfg(feature = "third-party-tables")]
-pub use crate::table_arcswap_strong::TableSharedArcSwap;
+pub use crate::table::arcswap_strong::TableSharedArcSwap;
 
 #[cfg(feature = "third-party-tables")]
-mod table_evmap_strong;
+pub use crate::table::evmap_strong::BuildTableSharedEvmap;
 #[cfg(feature = "third-party-tables")]
-pub use crate::table_evmap_strong::BuildTableSharedEvmap;
-#[cfg(feature = "third-party-tables")]
-pub use crate::table_evmap_strong::TableSharedEvmap;
-
-// Internal
-
-mod weak_entry;
+pub use crate::table::evmap_strong::TableSharedEvmap;
 
 #[cfg(test)]
 mod test_utils;
