@@ -105,8 +105,8 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
             reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
             aliases: vec![("ImplTable".to_string(), inner_table)],
-            tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
-            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildThreadUnsafeTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+            tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplRefWeak<D>, ImplTable<D>>".to_string(),
+            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplRefWeak<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildThreadUnsafeTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
         }
     }
     // A `ConfigTypes` for a preset backed by a third-party concurrent collection
@@ -128,7 +128,7 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
                 "hirpdag::hirpdag_hashconsing::TableShared{shared_base}<D, ImplRef<D>>"
             ),
             build_tableshared_type: format!(
-                "hirpdag::hirpdag_hashconsing::BuildTableShared{shared_base}<D, ImplRef<D>{hasher}>"
+                "hirpdag::hirpdag_hashconsing::BuildTable{shared_base}<D, ImplRef<D>{hasher}>"
             ),
         }
     }

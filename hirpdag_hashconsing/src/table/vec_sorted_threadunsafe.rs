@@ -69,7 +69,7 @@ where
     }
 }
 
-impl<D, R, RW> ThreadUnsafeTable<D, R> for TableVecSortedWeak<D, R, RW>
+impl<D, R, RW> ThreadUnsafeTable<D, R, RW> for TableVecSortedWeak<D, R, RW>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
