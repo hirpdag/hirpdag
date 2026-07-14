@@ -188,8 +188,8 @@ criterion_group! {
         .with_measurement(support::AllocBytes)
         .without_plots()
         .sample_size(10)
-        .warm_up_time(core::time::Duration::from_millis(1))
-        .measurement_time(core::time::Duration::from_millis(1));
+        .warm_up_time(core::time::Duration::from_nanos(1))
+        .measurement_time(core::time::Duration::from_nanos(1));
     targets = bench_primes_mem
 }
 

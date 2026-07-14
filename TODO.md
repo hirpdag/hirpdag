@@ -85,6 +85,22 @@
     over the shared count the dropped handle held) before touching the shared atomic.
     The map is flushed after a bounded number of ops and at thread exit.
 
+### More benchmarks
+
+- ~~[P0] Benchmarks capture memory usage~~
+  - ~~See https://gist.github.com/DerSaidin/af295f89c047a049e4fc3193f520f12c~~
+  - ~~Should only need 1 or 2 runs because allocation sizes should be deterministic (compared to the jittery latency Criterion is designed to handle)~~
+  - DONE: Each benchmark now has a `*Mem` criterion group measuring peak heap
+    usage (high-water mark of live = allocated − freed bytes) via a custom
+    `AllocBytes` criterion measurement over a tracking global allocator. The
+    opt-in `reset-tables` feature empties each type's interning table between
+    runs — in place, through the table's existing lock, so the timing benchmarks
+    are unaffected — so every measured build starts from empty. This gives
+    deterministic from-empty peaks even for the non-freeing `leak_*` presets.
+    The memory groups use flat sampling with a minimal warm-up/measurement
+    window (criterion's floor is 10 samples) since allocation sizes do not need
+    the many samples that jittery latency does.
+
 ### Code cleanup
 
 - ~~[P0] Builder API?~~
