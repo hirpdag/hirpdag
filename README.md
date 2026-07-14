@@ -242,6 +242,8 @@ $ mdbook build book
 
 ## License
 
+Copyright 2021 Andrew Browne
+
 Licensed under either of [MIT License][licensemit] or [Apache License 2.0][licenseapache] at your option.
 
 [licensemit]: LICENSE-MIT
