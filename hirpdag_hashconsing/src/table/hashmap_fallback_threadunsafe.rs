@@ -112,6 +112,13 @@ where
             self.fallback.get_or_insert(hash, data, creation_meta)
         }
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&mut self) {
+        self.m.clear();
+        self.fallback.reset();
+        self.purge_at_len = PURGE_LEN_MIN;
+    }
 }
 
 #[cfg(test)]

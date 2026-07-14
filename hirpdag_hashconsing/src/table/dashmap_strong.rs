@@ -85,6 +85,11 @@ where
             }
         }
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        self.map.clear();
+    }
 }
 
 pub struct BuildTableSharedDashMap<D, R, HB> {

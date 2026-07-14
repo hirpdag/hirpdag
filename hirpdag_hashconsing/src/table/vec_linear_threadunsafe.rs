@@ -49,4 +49,9 @@ where
 
         obj
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&mut self) {
+        self.v.clear();
+    }
 }

@@ -73,6 +73,13 @@ where
         let mut guard = shard.lock().unwrap();
         guard.get_or_insert(hash, data, creation_meta)
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        for shard in &self.inner {
+            shard.lock().unwrap().reset();
+        }
+    }
 }
 
 pub struct BuildTableSharedSharded<D, R, T, TB, HB> {

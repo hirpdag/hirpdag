@@ -53,4 +53,9 @@ where
         self.m.insert(R::strong_clone(&obj));
         obj
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
 }

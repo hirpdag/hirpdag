@@ -12,6 +12,14 @@ description = "Various hashconsing implementations with a common interface."
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+# Opt in to a `reset()` method on the table traits that empties a table in
+# place (through its existing interior mutability, so the read path is
+# unchanged). Intended for benchmarks and tests that reuse the process-global
+# tables across runs and need each run to start from an empty table. Resetting a
+# table invalidates the hash-consing invariant for any references interned
+# before the reset, so this is off by default.
+reset-tables = []
+
 # Opt in to the table backends built on third-party collection crates:
 # `TableTovWeakTable` (weak-table) plus the concurrent `TableShared*` wrappers
 # (dashmap, flurry, crossbeam-skiplist, arc-swap, evmap).

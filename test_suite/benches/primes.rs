@@ -129,9 +129,9 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn bench_primes(c: &mut Criterion) {
+fn bench_primes_time(c: &mut Criterion) {
     for limit in [2000].iter() {
         let name = format!("Primes{}", *limit);
         let mut group = c.benchmark_group(name);
@@ -149,11 +149,48 @@ fn bench_primes(c: &mut Criterion) {
     }
 }
 
+fn bench_primes_mem(c: &mut Criterion<support::AllocBytes>) {
+    for limit in [2000].iter() {
+        let name = format!("Primes{}Mem", *limit);
+        let mut group = c.benchmark_group(name);
+        group.sampling_mode(SamplingMode::Flat);
+        for same in [false, true].iter() {
+            for threads in [1, 2, 4, 8].iter() {
+                let params = BenchPrimesParams {
+                    limit: *limit,
+                    threads: *threads,
+                    threads_same: *same,
+                };
+                bench_each_config_mem!(group, params, populate_numbers);
+            }
+        }
+        group.finish();
+    }
+}
+
 criterion_group! {
-    name = benches;
+    name = benches_time;
     config = Criterion::default()
         .sample_size(10)
         .measurement_time(core::time::Duration::from_secs(15));
-    targets = bench_primes
+    targets = bench_primes_time
 }
-criterion_main!(benches);
+
+// Memory (peak-heap) benchmark. `bench_each_config_mem!` resets the interning
+// table before each measured build, so every run starts from empty. Peak-heap
+// sizes are deterministic, so this is configured for the minimum number of runs
+// criterion allows (flat sampling with a tiny warm-up and measurement window,
+// making each of the ten samples a single invocation) and `without_plots()`
+// because criterion cannot render a distribution from zero-variance samples.
+criterion_group! {
+    name = benches_mem;
+    config = Criterion::default()
+        .with_measurement(support::AllocBytes)
+        .without_plots()
+        .sample_size(10)
+        .warm_up_time(core::time::Duration::from_nanos(1))
+        .measurement_time(core::time::Duration::from_nanos(1));
+    targets = bench_primes_mem
+}
+
+criterion_main!(benches_time, benches_mem);
