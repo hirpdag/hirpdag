@@ -22,6 +22,14 @@ where
     fn get_or_insert<CF>(&mut self, hash: u64, data: D, creation_meta: CF) -> R
     where
         CF: FnOnce(&mut D);
+
+    /// Empty the table, discarding all interned entries.
+    ///
+    /// The default implementation is a no-op; backends that can cheaply drop
+    /// their storage override it. See [`Table::reset`] for the semantics and
+    /// caveats.
+    #[cfg(feature = "reset-tables")]
+    fn reset(&mut self) {}
 }
 
 /// Factory for constructing [`ThreadUnsafeTable`] instances.
@@ -88,6 +96,24 @@ where
     fn get_or_insert<CF>(&self, data: D, creation_meta: CF) -> R
     where
         CF: FnOnce(&mut D);
+
+    /// Empty the table, discarding all interned entries, so that subsequent
+    /// lookups behave as if nothing had ever been interned.
+    ///
+    /// This is done in place through the table's existing interior mutability,
+    /// so the lookup/insert hot path is unaffected. The default implementation
+    /// is a no-op; backends override it where they can cheaply drop their
+    /// storage.
+    ///
+    /// # Caveat
+    ///
+    /// Resetting breaks the hash-consing invariant for any references interned
+    /// *before* the reset: a structurally equal value interned afterwards will
+    /// be a distinct allocation and will not compare pointer-equal to the old
+    /// one. Only safe to call when such references are not relied upon (e.g.
+    /// between benchmark iterations that have dropped all their nodes).
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {}
 }
 
 /// Factory for constructing [`Table`] instances.

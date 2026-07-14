@@ -943,6 +943,20 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         .map(|entry| (entry.name.clone(), entry.is_root))
         .collect();
 
+    // A call to reset each struct type's global interning table. Emitted into
+    // the module-level `hirpdag_reset_tables()` below (gated on the downstream
+    // crate's `reset-tables` feature).
+    let reset_table_calls: proc_macro2::TokenStream = struct_types
+        .iter()
+        .map(|(name, _)| {
+            let table_ident = Ident::new(
+                &format!("HIRPDAG_TABLE_{}", name.to_ascii_uppercase()),
+                Span::call_site(),
+            );
+            quote! { #table_ident.reset(); }
+        })
+        .collect();
+
     // Schema fingerprint: a stable hash of every type definition in the
     // module, in declaration order (declaration order is part of the binary
     // wire format), plus a human-readable name for debuggable mismatch
@@ -1025,6 +1039,17 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
 
         impl<Rewriter: HirpdagRewriter> HirpdagRewriter for HirpdagRewriteMemoized<Rewriter> {
             #cache_methods
+        }
+
+        /// Empty every hash-consing table in this module, so later construction
+        /// starts as if nothing had been interned. Gated on the `reset-tables`
+        /// feature of the crate this module is compiled in. Intended for
+        /// benchmarks and tests; invalidates the hash-consing invariant for
+        /// references interned before the call.
+        #[cfg(feature = "reset-tables")]
+        #[allow(dead_code)]
+        pub fn hirpdag_reset_tables() {
+            #reset_table_calls
         }
 
         #serialization_items

@@ -257,3 +257,51 @@ macro_rules! bench_each_config {
         bench_each_config!(@one $group, $params, $function, arc_evmap, "ArcEvmap");
     };
 }
+
+/// Like [`bench_each_config!`], but for the memory (peak-heap) measurement.
+///
+/// Each measured invocation is preceded by `hirpdag_reset_tables()` in an
+/// `iter_batched` setup step (run *outside* the measurement) with
+/// `BatchSize::PerIteration`, so every build starts from an empty interning
+/// table. Without this, presets that retain nodes across runs (`leak_*`) would
+/// find them already interned from a previous invocation and appear to allocate
+/// almost nothing.
+macro_rules! bench_each_config_mem {
+    (@one $group:expr, $params:expr, $function:ident, $module:ident, $label:literal) => {
+        $group.bench_with_input(
+            criterion::BenchmarkId::new($label, $params),
+            &$params,
+            |b, params| {
+                b.iter_batched(
+                    || crate::$module::hirpdag_reset_tables(),
+                    |_| crate::$module::$function(std::hint::black_box(params)),
+                    criterion::BatchSize::PerIteration,
+                )
+            },
+        );
+    };
+    ($group:expr, $params:expr, $function:ident) => {
+        bench_each_config_mem!(@one $group, $params, $function, arc_hash_linear, "ArcHashLinear");
+        bench_each_config_mem!(@one $group, $params, $function, arc_hash_sorted, "ArcHashSorted");
+        bench_each_config_mem!(@one $group, $params, $function, leak_hash_linear, "LeakHashLinear");
+        bench_each_config_mem!(@one $group, $params, $function, sep_hash_linear, "SepHashLinear");
+        bench_each_config_mem!(@one $group, $params, $function, seppad_hash_linear, "SepPadHashLinear");
+        bench_each_config_mem!(@one $group, $params, $function, sepu32_hash_linear, "SepU32HashLinear");
+        bench_each_config_mem!(@one $group, $params, $function, tlc_hash_linear, "TlcHashLinear");
+        // Tables backed by third-party collection crates (feature-gated). These
+        // backends do not yet implement table reset, so their memory figures
+        // reflect incremental (not from-empty) allocation.
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_tovweaktable, "ArcTovWeakTable");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_dashmap, "ArcDashMap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_flurry, "ArcFlurry");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_evmap, "ArcEvmap");
+    };
+}

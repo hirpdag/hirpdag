@@ -69,18 +69,10 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::measurement::Measurement;
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn rewrite_chain_group<M: Measurement>(
-    c: &mut Criterion<M>,
-    name: &str,
-    sampling: Option<SamplingMode>,
-) {
-    let mut group = c.benchmark_group(name);
-    if let Some(mode) = sampling {
-        group.sampling_mode(mode);
-    }
+fn bench_rewrite_chain_time(c: &mut Criterion) {
+    let mut group = c.benchmark_group("RewriteChain");
     for (length, rewrites) in [(500usize, 20usize), (2000, 5)].iter() {
         let params = BenchRewriteChainParams {
             length: *length,
@@ -91,12 +83,17 @@ fn rewrite_chain_group<M: Measurement>(
     group.finish();
 }
 
-fn bench_rewrite_chain_time(c: &mut Criterion) {
-    rewrite_chain_group(c, "RewriteChain", None);
-}
-
 fn bench_rewrite_chain_mem(c: &mut Criterion<support::AllocBytes>) {
-    rewrite_chain_group(c, "RewriteChainMem", Some(SamplingMode::Flat));
+    let mut group = c.benchmark_group("RewriteChainMem");
+    group.sampling_mode(SamplingMode::Flat);
+    for (length, rewrites) in [(500usize, 20usize), (2000, 5)].iter() {
+        let params = BenchRewriteChainParams {
+            length: *length,
+            rewrites: *rewrites,
+        };
+        bench_each_config_mem!(group, params, bench_rewrite_chain);
+    }
+    group.finish();
 }
 
 criterion_group! {
@@ -107,14 +104,17 @@ criterion_group! {
     targets = bench_rewrite_chain_time
 }
 
-// Memory (bytes-allocated) benchmark. Allocation sizes are deterministic, so
-// this is configured for the minimum number of runs criterion allows: flat
-// sampling with a tiny warm-up and measurement window makes each of the ten
-// samples a single invocation.
+// Memory (peak-heap) benchmark. `bench_each_config_mem!` resets the interning
+// table before each measured build, so every run starts from empty. Peak-heap
+// sizes are deterministic, so this is configured for the minimum number of runs
+// criterion allows (flat sampling with a tiny warm-up and measurement window,
+// making each of the ten samples a single invocation) and `without_plots()`
+// because criterion cannot render a distribution from zero-variance samples.
 criterion_group! {
     name = benches_mem;
     config = Criterion::default()
         .with_measurement(support::AllocBytes)
+        .without_plots()
         .sample_size(10)
         .warm_up_time(core::time::Duration::from_millis(1))
         .measurement_time(core::time::Duration::from_millis(1));

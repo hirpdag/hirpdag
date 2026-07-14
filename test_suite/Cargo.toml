@@ -7,9 +7,16 @@ publish = false
 license = "MIT OR Apache-2.0"
 
 [features]
+default = ["reset-tables"]
+
 # Enables the concurrent-collection preset tests/benches; forwards to hirpdag's
 # opt-in feature. Enabled in CI via `--all-features`.
 third-party-tables = ["hirpdag/third-party-tables"]
+
+# Gives each memory-benchmark run a fresh interning table (see the `memory`
+# bench groups). Forwards to hirpdag's opt-in feature. On by default so
+# `cargo bench` measures memory correctly out of the box.
+reset-tables = ["hirpdag/reset-tables"]
 
 [dependencies]
 hirpdag = {path = '../hirpdag'}

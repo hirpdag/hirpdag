@@ -263,6 +263,18 @@ where
             std::marker::PhantomData,
         )
     }
+
+    /// Empty this type's global interning table so that later construction
+    /// behaves as if nothing had ever been interned.
+    ///
+    /// Intended for benchmarks and tests that reuse the process-global tables
+    /// across runs and want each run to start cold. Resetting invalidates the
+    /// hash-consing invariant for any `HirpdagRef`s created before the reset —
+    /// see [`hirpdag_hashconsing::Table::reset`].
+    #[cfg(feature = "reset-tables")]
+    pub fn reset(&self) {
+        self.table.reset();
+    }
 }
 
 /// This trait is implemented by generated structures containing the

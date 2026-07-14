@@ -48,6 +48,11 @@ where
         let mut guard = self.inner.lock().unwrap();
         guard.get_or_insert(hash, data, creation_meta)
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        self.inner.lock().unwrap().reset();
+    }
 }
 
 pub struct BuildTableSharedMutex<D, R, T, TB, HB> {
