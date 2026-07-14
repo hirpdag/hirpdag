@@ -110,6 +110,12 @@ where
             Err(e) => R::strong_clone(e.current),
         }
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        let guard = self.map.guard();
+        self.map.clear(&guard);
+    }
 }
 
 pub struct BuildTableSharedFlurry<D, R, HB> {

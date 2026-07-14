@@ -288,9 +288,7 @@ macro_rules! bench_each_config_mem {
         bench_each_config_mem!(@one $group, $params, $function, seppad_hash_linear, "SepPadHashLinear");
         bench_each_config_mem!(@one $group, $params, $function, sepu32_hash_linear, "SepU32HashLinear");
         bench_each_config_mem!(@one $group, $params, $function, tlc_hash_linear, "TlcHashLinear");
-        // Tables backed by third-party collection crates (feature-gated). These
-        // backends do not yet implement table reset, so their memory figures
-        // reflect incremental (not from-empty) allocation.
+        // Tables backed by third-party collection crates (feature-gated).
         #[cfg(feature = "third-party-tables")]
         bench_each_config_mem!(@one $group, $params, $function, arc_tovweaktable, "ArcTovWeakTable");
         #[cfg(feature = "third-party-tables")]

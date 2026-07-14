@@ -95,6 +95,13 @@ where
         self.map.store(Arc::new(new_map));
         obj
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        let _wguard = self.write_lock.lock().unwrap();
+        self.map
+            .store(Arc::new(HashMap::with_hasher(HB::default())));
+    }
 }
 
 pub struct BuildTableSharedArcSwap<D, R, HB> {

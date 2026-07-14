@@ -96,6 +96,20 @@ where
         write.publish();
         obj
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        // evmap double-buffers: an op is applied to the second map only on the
+        // *next* publish. A single purge+publish leaves the write-side buffer
+        // populated, and the writer fast path (`write.get_one`) would still find
+        // those entries and dedup against them. Cycle twice so both buffers are
+        // emptied.
+        let mut write = self.write.lock().unwrap();
+        write.purge();
+        write.publish();
+        write.purge();
+        write.publish();
+    }
 }
 
 pub struct BuildTableSharedEvmap<D, R> {

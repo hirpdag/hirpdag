@@ -82,6 +82,15 @@ where
         });
         R::strong_clone(entry.value())
     }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        // Logically empties the map. Note: crossbeam-skiplist reclaims removed
+        // nodes lazily via crossbeam-epoch, so the memory is not necessarily
+        // freed synchronously here; a peak-heap memory benchmark of this backend
+        // will therefore be noisier than one of a promptly-freeing table.
+        self.map.clear();
+    }
 }
 
 pub struct BuildTableSharedSkipMap<D, R> {
