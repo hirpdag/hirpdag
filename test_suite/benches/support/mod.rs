@@ -75,7 +75,8 @@ unsafe impl GlobalAlloc for TrackingAllocator {
         if !new_ptr.is_null() {
             let old_size = layout.size();
             if new_size >= old_size {
-                let live = LIVE.fetch_add(new_size - old_size, Ordering::Relaxed) + (new_size - old_size);
+                let live =
+                    LIVE.fetch_add(new_size - old_size, Ordering::Relaxed) + (new_size - old_size);
                 observe_peak(live);
             } else {
                 LIVE.fetch_sub(old_size - new_size, Ordering::Relaxed);
