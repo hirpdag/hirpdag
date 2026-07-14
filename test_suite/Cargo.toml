@@ -33,3 +33,7 @@ harness = false
 [[bench]]
 name = "expr_substitution"
 harness = false
+
+[[bench]]
+name = "large_nodes"
+harness = false
