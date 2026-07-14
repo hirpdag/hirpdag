@@ -18,51 +18,68 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 // Allocation tracking
 // -----------------------------------------------------------------------------
 
-/// Total number of bytes handed out by the allocator since the process
-/// started. Monotonically increasing: deallocations do not decrement it, so
-/// the difference between two reads is the number of bytes *allocated* in
-/// between (allocation traffic), independent of how much was freed again.
-static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
+/// Bytes currently live (allocated but not yet freed): every allocation adds
+/// its size, every deallocation subtracts it. This is the running heap size.
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+/// High-water mark of [`LIVE`] since it was last reset (see
+/// [`AllocBytes::start`]). This is what the memory benchmark reports: the peak
+/// heap size reached while a workload ran.
+static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+/// Update `PEAK` to be at least `live`. `fetch_max` makes this correct even
+/// when several worker threads allocate concurrently.
+#[inline]
+fn observe_peak(live: usize) {
+    PEAK.fetch_max(live, Ordering::Relaxed);
+}
 
 /// A `GlobalAlloc` that forwards every request to the system allocator while
-/// accumulating the number of bytes allocated into `ALLOCATED`.
+/// tracking the live heap size and its peak.
 ///
-/// The counter is updated with `Relaxed` ordering: we only ever need the
-/// running total to be eventually visible on the thread that reads it around a
-/// measurement, and the benchmarks join all worker threads before ending a
-/// measurement, so no stronger ordering is required. Forwarding straight to
-/// `System` (including for `realloc`) keeps the overhead to a single relaxed
-/// atomic add per allocation, which is negligible for the wall-clock
-/// benchmarks that share this binary.
+/// Allocations add to `LIVE` and push `PEAK` up; deallocations subtract from
+/// `LIVE`. The counters use `Relaxed` ordering: the benchmarks join all worker
+/// threads before ending a measurement, so the peak is fully visible to the
+/// reader by then, and no stronger ordering is required. Forwarding straight to
+/// `System` (including for `realloc`) keeps the overhead to a couple of relaxed
+/// atomics per allocation, negligible for the wall-clock benchmarks that share
+/// this binary.
 pub struct TrackingAllocator;
 
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = System.alloc(layout);
         if !ptr.is_null() {
-            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
+            let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+            observe_peak(live);
         }
         ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         System.dealloc(ptr, layout);
+        LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = System.alloc_zeroed(layout);
         if !ptr.is_null() {
-            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
+            let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+            observe_peak(live);
         }
         ptr
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let new_ptr = System.realloc(ptr, layout, new_size);
-        // Only count growth as freshly allocated bytes; shrinking a block does
-        // not allocate.
-        if !new_ptr.is_null() && new_size > layout.size() {
-            ALLOCATED.fetch_add(new_size - layout.size(), Ordering::Relaxed);
+        if !new_ptr.is_null() {
+            let old_size = layout.size();
+            if new_size >= old_size {
+                let live = LIVE.fetch_add(new_size - old_size, Ordering::Relaxed) + (new_size - old_size);
+                observe_peak(live);
+            } else {
+                LIVE.fetch_sub(old_size - new_size, Ordering::Relaxed);
+            }
         }
         new_ptr
     }
@@ -80,7 +97,8 @@ static GLOBAL: TrackingAllocator = TrackingAllocator;
 // -----------------------------------------------------------------------------
 
 /// A criterion [`Measurement`](criterion::measurement::Measurement) that
-/// records how many bytes were allocated while a benchmark routine ran,
+/// records the *peak heap size* reached while a benchmark routine ran (the
+/// high-water mark of live bytes = sum of allocations minus deallocations),
 /// instead of how long it took.
 ///
 /// Allocation sizes are deterministic for a given workload, so — unlike the
@@ -90,14 +108,13 @@ static GLOBAL: TrackingAllocator = TrackingAllocator;
 /// measurement window, so each of criterion's ten samples is a single
 /// invocation).
 ///
-/// Note on interned/leaking presets: because hash-consing tables are process
-/// globals, the *first* time a workload builds a given DAG it allocates the
-/// nodes, but a preset that never frees them (e.g. the `leak_*` presets) will
-/// find them already interned on later invocations and allocate far less. The
-/// reported figure is thus "bytes allocated per invocation in steady state":
-/// the full construction cost for reference-counted presets that free between
-/// runs, and only the incremental/transient cost for presets that retain every
-/// node.
+/// The reported figure is the peak *increase* in live heap during the run,
+/// relative to the heap size at [`start`](Self::start). For this to equal the
+/// cost of building the DAG from scratch, the run must start from an empty
+/// hash-consing table — otherwise a preset that retains nodes across runs
+/// (e.g. the `leak_*` presets) finds them already interned and allocates
+/// little. See [`crate::support`] docs / the bench setup for how each measured
+/// run is given a fresh table.
 pub struct AllocBytes;
 
 impl criterion::measurement::Measurement for AllocBytes {
@@ -105,11 +122,16 @@ impl criterion::measurement::Measurement for AllocBytes {
     type Value = usize;
 
     fn start(&self) -> Self::Intermediate {
-        ALLOCATED.load(Ordering::Relaxed)
+        // Reset the peak to the current live size so the measurement captures
+        // only the growth caused by this run. Criterion runs measurements
+        // sequentially, so there is no concurrent measurement to race with.
+        let base = LIVE.load(Ordering::Relaxed);
+        PEAK.store(base, Ordering::Relaxed);
+        base
     }
 
     fn end(&self, start: Self::Intermediate) -> Self::Value {
-        ALLOCATED.load(Ordering::Relaxed).saturating_sub(start)
+        PEAK.load(Ordering::Relaxed).saturating_sub(start)
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {
