@@ -29,10 +29,6 @@
 
 ### More benchmarks
 
-- [P0] Benchmarks capture memory usage
-  - See https://gist.github.com/DerSaidin/af295f89c047a049e4fc3193f520f12c
-  - Should only need 1 or 2 runs because allocation sizes should be deterministic (compared to the jittery latency Criterion is designed to handle)
-
 - [P1] More benchmark programs.
   - Benchmarks where node data is pretty large
 

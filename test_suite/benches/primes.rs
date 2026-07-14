@@ -129,12 +129,16 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::measurement::Measurement;
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn bench_primes(c: &mut Criterion) {
+fn primes_group<M: Measurement>(c: &mut Criterion<M>, suffix: &str, sampling: Option<SamplingMode>) {
     for limit in [2000].iter() {
-        let name = format!("Primes{}", *limit);
+        let name = format!("Primes{}{}", *limit, suffix);
         let mut group = c.benchmark_group(name);
+        if let Some(mode) = sampling {
+            group.sampling_mode(mode);
+        }
         for same in [false, true].iter() {
             for threads in [1, 2, 4, 8].iter() {
                 let params = BenchPrimesParams {
@@ -149,11 +153,34 @@ fn bench_primes(c: &mut Criterion) {
     }
 }
 
+fn bench_primes_time(c: &mut Criterion) {
+    primes_group(c, "", None);
+}
+
+fn bench_primes_mem(c: &mut Criterion<support::AllocBytes>) {
+    primes_group(c, "Mem", Some(SamplingMode::Flat));
+}
+
 criterion_group! {
-    name = benches;
+    name = benches_time;
     config = Criterion::default()
         .sample_size(10)
         .measurement_time(core::time::Duration::from_secs(15));
-    targets = bench_primes
+    targets = bench_primes_time
 }
-criterion_main!(benches);
+
+// Memory (bytes-allocated) benchmark. Allocation sizes are deterministic, so
+// this is configured for the minimum number of runs criterion allows: flat
+// sampling with a tiny warm-up and measurement window makes each of the ten
+// samples a single invocation.
+criterion_group! {
+    name = benches_mem;
+    config = Criterion::default()
+        .with_measurement(support::AllocBytes)
+        .sample_size(10)
+        .warm_up_time(core::time::Duration::from_millis(1))
+        .measurement_time(core::time::Duration::from_millis(1));
+    targets = bench_primes_mem
+}
+
+criterion_main!(benches_time, benches_mem);

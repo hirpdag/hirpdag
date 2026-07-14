@@ -69,10 +69,18 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::measurement::Measurement;
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn bench_rewrite_chain(c: &mut Criterion) {
-    let mut group = c.benchmark_group("RewriteChain");
+fn rewrite_chain_group<M: Measurement>(
+    c: &mut Criterion<M>,
+    name: &str,
+    sampling: Option<SamplingMode>,
+) {
+    let mut group = c.benchmark_group(name);
+    if let Some(mode) = sampling {
+        group.sampling_mode(mode);
+    }
     for (length, rewrites) in [(500usize, 20usize), (2000, 5)].iter() {
         let params = BenchRewriteChainParams {
             length: *length,
@@ -83,11 +91,34 @@ fn bench_rewrite_chain(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_rewrite_chain_time(c: &mut Criterion) {
+    rewrite_chain_group(c, "RewriteChain", None);
+}
+
+fn bench_rewrite_chain_mem(c: &mut Criterion<support::AllocBytes>) {
+    rewrite_chain_group(c, "RewriteChainMem", Some(SamplingMode::Flat));
+}
+
 criterion_group! {
-    name = benches;
+    name = benches_time;
     config = Criterion::default()
         .sample_size(10)
         .measurement_time(core::time::Duration::from_secs(15));
-    targets = bench_rewrite_chain
+    targets = bench_rewrite_chain_time
 }
-criterion_main!(benches);
+
+// Memory (bytes-allocated) benchmark. Allocation sizes are deterministic, so
+// this is configured for the minimum number of runs criterion allows: flat
+// sampling with a tiny warm-up and measurement window makes each of the ten
+// samples a single invocation.
+criterion_group! {
+    name = benches_mem;
+    config = Criterion::default()
+        .with_measurement(support::AllocBytes)
+        .sample_size(10)
+        .warm_up_time(core::time::Duration::from_millis(1))
+        .measurement_time(core::time::Duration::from_millis(1));
+    targets = bench_rewrite_chain_mem
+}
+
+criterion_main!(benches_time, benches_mem);
