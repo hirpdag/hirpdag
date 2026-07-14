@@ -5,41 +5,43 @@
 - [P0] Optimize rewrite code:
   - If no changes we can copy input reference instead of hashconsing to reproduce it.
   - Minimize reference count operations.
-
-- [P0] Make memory allocation for hirpdag objects contiguous.
-  - Can this be done by using https://github.com/rkyv/rkyv to help serialization?
-
-- [P1] Optimize for small objects:
-  - Just pack data into the handle type if less than 128bytes.
-  - Warning if Hirpdag attribute is added to a struct which seems too small to benefit.
-
-- [P1] Make hirpdag objects use read-only optimized datastructures.
-  - e.g. If object contains a hashmap make it use perfect hashing (e.g https://lib.rs/crates/phf)
-  - Use flat datastructures
-  - Should Hirpdag automatically change a field to a more optimized type for you? Or just warn or something?
-
+ 
 - [P1] Experiment with a single std::any::Any based map for Hashconsing and Rewrite caches.
   - Currently generate a separate map for each type, because this was the easiest thing to do.
   - Hash tables need some free space overhead to operate efficiently.
     Combining all of these hash tables into one may need less overall empty space overhead.
 
-- [P2] Caching for `ref.hirpdag_compute_meta()`. e.g. `ref.hirpdag_compute_meta(meta_cache)`.
+- [P1] Experiment with doing deallocation work on another thread when RC==0.
 
-- [P2] Experiment with doing deallocation work on another thread when RC==0.
+- [P2] Make memory allocation for hirpdag objects contiguous.
+  - Can this be done by using https://github.com/rkyv/rkyv to help serialization?
+
+- [P2] Optimize for small objects:
+  - Just pack data into the handle type if less than 128bytes.
+  - Warning if Hirpdag attribute is added to a struct which seems too small to benefit.
+
+- [P2] Make hirpdag objects use read-only optimized datastructures.
+  - e.g. If object contains a hashmap make it use perfect hashing (e.g https://lib.rs/crates/phf)
+  - Use flat datastructures
+  - Should Hirpdag automatically change a field to a more optimized type for you? Or just warn or something?
+
+- [P2] Caching for `ref.hirpdag_compute_meta()`. e.g. `ref.hirpdag_compute_meta(meta_cache)`.
 
 ### More benchmarks
 
-- [P2] More benchmark programs.
+- [P0] Benchmarks capture memory usage
+  - See https://gist.github.com/DerSaidin/af295f89c047a049e4fc3193f520f12c
+  - Should only need 1 or 2 runs because allocation sizes should be deterministic (compared to the jittery latency Criterion is designed to handle)
 
-- [P3] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
+- [P1] More benchmark programs.
+  - Benchmarks where node data is pretty large
+
+- [P1] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
 
 ### Code cleanup
 
 - [P1] General refactoring and cleanup:
   - Try to reduce use of generic and builders for hashconsing implementations.
-
-- [P1] Address current code duplication in benchmarks for running the same benchmark
-  with different hashconsing implementations selected.
 
 ### Features
 
@@ -97,6 +99,8 @@
     `node.to_builder()` to derive a modified copy of an existing node.
     Both paths go through a single `build()` call that hashcons at the end.
 
+- ~~[P1] Address current code duplication in benchmarks for running the same benchmark with different hashconsing implementations selected.~~
+  
 - ~~[P3] Find a better solution than the `#[hirpdag_end] pub struct HirpdagEndMarker;` hack.~~
   - DONE: `#[hirpdag_module]` on the module replaces `#[hirpdag]`/`#[hirpdag_end]`
     pairs and the global registry between them. See
