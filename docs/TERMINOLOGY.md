@@ -118,16 +118,14 @@ Table backends built on external collection crates, behind the opt-in `third-par
 | `TableSharedFlurry` | `arc_flurry` | [`flurry`] | Lock-free hash map (Java `ConcurrentHashMap` port); keys must be `Ord`. |
 | `TableSharedSkipMap` | `arc_skipmap` | [`crossbeam-skiplist`] | Lock-free ordered skip list; `O(log n)` lookup, no hasher. |
 | `TableSharedArcSwap` | `arc_arcswap` | [`arc-swap`] | RCU / copy-on-write: lock-free reads, whole-map clone per insert (`O(n)` writes). |
-| `TableSharedEvmap` | `arc_evmap` | [`evmap`] | Left-right double-buffering; values must be `Hash + Eq`. |
 
 [`weak-table`]: https://crates.io/crates/weak-table
 [`dashmap`]: https://crates.io/crates/dashmap
 [`flurry`]: https://crates.io/crates/flurry
 [`crossbeam-skiplist`]: https://crates.io/crates/crossbeam-skiplist
 [`arc-swap`]: https://crates.io/crates/arc-swap
-[`evmap`]: https://crates.io/crates/evmap
 
-Source: `hirpdag_hashconsing/src/table/tov_weak_table_threadunsafe.rs`, `dashmap_strong.rs`, `flurry_strong.rs`, `skipmap_strong.rs`, `arcswap_strong.rs`, `evmap_strong.rs`
+Source: `hirpdag_hashconsing/src/table/tov_weak_table_threadunsafe.rs`, `dashmap_strong.rs`, `flurry_strong.rs`, `skipmap_strong.rs`, `arcswap_strong.rs`
 
 ---
 

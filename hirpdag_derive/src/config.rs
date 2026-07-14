@@ -50,7 +50,6 @@ const PRESETS: &[&str] = &[
     "arc_flurry",
     "arc_skipmap",
     "arc_arcswap",
-    "arc_evmap",
 ];
 
 /// The type strings that select a hash-consing implementation.
@@ -114,7 +113,7 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
     // named `TableShared{shared_base}`. These store the mapping directly and are
     // not generic over an inner `ThreadUnsafeTable`, so they declare no `ImplTable` alias.
     // `hashed` backends take a default-hasher generic argument; ordered /
-    // self-hashing backends (skipmap, evmap) do not.
+    // self-hashing backends (skipmap) do not.
     fn concurrent(base: &str, shared_base: &str, hashed: bool) -> ConfigTypes {
         let hasher = if hashed {
             ", std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>"
@@ -163,7 +162,6 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         "arc_flurry" => concurrent("RefArc", "Flurry", true),
         "arc_skipmap" => concurrent("RefArc", "SkipMap", false),
         "arc_arcswap" => concurrent("RefArc", "ArcSwap", true),
-        "arc_evmap" => concurrent("RefArc", "Evmap", false),
         _ => return None,
     })
 }

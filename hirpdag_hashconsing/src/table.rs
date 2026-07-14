@@ -165,8 +165,6 @@ pub(crate) mod arcswap_strong;
 #[cfg(feature = "third-party-tables")]
 pub(crate) mod dashmap_strong;
 #[cfg(feature = "third-party-tables")]
-pub(crate) mod evmap_strong;
-#[cfg(feature = "third-party-tables")]
 pub(crate) mod flurry_strong;
 #[cfg(feature = "third-party-tables")]
 pub(crate) mod skipmap_strong;

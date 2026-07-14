@@ -17,7 +17,7 @@ reset-tables = ["hirpdag_hashconsing/reset-tables"]
 
 # Opt in to the table backends built on third-party collection crates. Required
 # to select the `arc_tovweaktable`, `arc_dashmap`, `arc_flurry`, `arc_skipmap`,
-# `arc_arcswap` or `arc_evmap` presets (or the matching `TableShared*` types).
+# `arc_arcswap` presets (or the matching `TableShared*` types).
 third-party-tables = ["hirpdag_hashconsing/third-party-tables"]
 
 [dependencies]

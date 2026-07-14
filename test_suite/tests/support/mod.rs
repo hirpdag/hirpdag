@@ -36,7 +36,5 @@ macro_rules! hirpdag_test_configs {
         hirpdag_test_configs!(@one arc_skipmap, "arc_skipmap", $($items)*);
         #[cfg(feature = "third-party-tables")]
         hirpdag_test_configs!(@one arc_arcswap, "arc_arcswap", $($items)*);
-        #[cfg(feature = "third-party-tables")]
-        hirpdag_test_configs!(@one arc_evmap, "arc_evmap", $($items)*);
     };
 }

@@ -80,11 +80,6 @@ pub use crate::table::arcswap_strong::BuildTableSharedArcSwap;
 #[cfg(feature = "third-party-tables")]
 pub use crate::table::arcswap_strong::TableSharedArcSwap;
 
-#[cfg(feature = "third-party-tables")]
-pub use crate::table::evmap_strong::BuildTableSharedEvmap;
-#[cfg(feature = "third-party-tables")]
-pub use crate::table::evmap_strong::TableSharedEvmap;
-
 #[cfg(test)]
 mod test_utils;
 
@@ -307,14 +302,6 @@ mod tests {
             test_tableshared::<Ref, TableSharedArcSwap<Data, Ref, DefHasher>, _>(b);
 
             concurrent_stress(TableSharedArcSwap::<Data, Ref, DefHasher>::default());
-        }
-
-        #[test]
-        fn evmap() {
-            let b = BuildTableSharedEvmap::<Data, Ref>::default();
-            test_tableshared::<Ref, TableSharedEvmap<Data, Ref>, _>(b);
-
-            concurrent_stress(TableSharedEvmap::<Data, Ref>::default());
         }
     }
 }

@@ -221,8 +221,6 @@ macro_rules! hirpdag_bench_configs {
         hirpdag_bench_configs!(@one arc_skipmap, "arc_skipmap", $($items)*);
         #[cfg(feature = "third-party-tables")]
         hirpdag_bench_configs!(@one arc_arcswap, "arc_arcswap", $($items)*);
-        #[cfg(feature = "third-party-tables")]
-        hirpdag_bench_configs!(@one arc_evmap, "arc_evmap", $($items)*);
     };
 }
 
@@ -253,8 +251,6 @@ macro_rules! bench_each_config {
         bench_each_config!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
         #[cfg(feature = "third-party-tables")]
         bench_each_config!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config!(@one $group, $params, $function, arc_evmap, "ArcEvmap");
     };
 }
 
@@ -299,7 +295,5 @@ macro_rules! bench_each_config_mem {
         bench_each_config_mem!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
         #[cfg(feature = "third-party-tables")]
         bench_each_config_mem!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config_mem!(@one $group, $params, $function, arc_evmap, "ArcEvmap");
     };
 }
