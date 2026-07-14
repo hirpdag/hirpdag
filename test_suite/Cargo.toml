@@ -37,3 +37,15 @@ harness = false
 [[bench]]
 name = "large_nodes"
 harness = false
+
+[[bench]]
+name = "churn"
+harness = false
+
+[[bench]]
+name = "builder_edits"
+harness = false
+
+[[bench]]
+name = "serde_roundtrip"
+harness = false
