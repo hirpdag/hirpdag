@@ -132,7 +132,11 @@ hirpdag_bench_configs! {
 use criterion::measurement::Measurement;
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn primes_group<M: Measurement>(c: &mut Criterion<M>, suffix: &str, sampling: Option<SamplingMode>) {
+fn primes_group<M: Measurement>(
+    c: &mut Criterion<M>,
+    suffix: &str,
+    sampling: Option<SamplingMode>,
+) {
     for limit in [2000].iter() {
         let name = format!("Primes{}{}", *limit, suffix);
         let mut group = c.benchmark_group(name);
