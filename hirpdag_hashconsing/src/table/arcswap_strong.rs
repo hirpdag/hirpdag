@@ -16,6 +16,7 @@
 //! [`ThreadUnsafeTable`](crate::ThreadUnsafeTable).
 
 use crate::reference::*;
+use crate::table::weak_holder::WeakEntryStrong;
 use crate::table::*;
 use arc_swap::ArcSwap;
 use std::collections::HashMap;
@@ -24,22 +25,22 @@ use std::sync::Mutex;
 
 type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
 
-pub struct TableSharedArcSwap<D, R, HB = DefaultHasher>
+pub struct TableSharedArcSwap<D, V, HB = DefaultHasher>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
-    R: Reference<D> + Clone + Send + Sync,
+    V: Clone + Send + Sync,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
-    map: ArcSwap<HashMap<D, R, HB>>,
+    map: ArcSwap<HashMap<D, V, HB>>,
     /// Serializes writers so concurrent copy-update-swap cycles do not clobber
     /// each other. Readers never take this lock.
     write_lock: Mutex<()>,
 }
 
-impl<D, R, HB> Default for TableSharedArcSwap<D, R, HB>
+impl<D, V, HB> Default for TableSharedArcSwap<D, V, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
-    R: Reference<D> + Clone + Send + Sync,
+    V: Clone + Send + Sync,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     fn default() -> Self {
@@ -47,10 +48,10 @@ where
     }
 }
 
-impl<D, R, HB> TableSharedArcSwap<D, R, HB>
+impl<D, V, HB> TableSharedArcSwap<D, V, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
-    R: Reference<D> + Clone + Send + Sync,
+    V: Clone + Send + Sync,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     pub fn with_hasher(hash_builder: HB) -> Self {
@@ -62,14 +63,43 @@ where
     }
 }
 
-impl<D, R, HB> Table<D, R> for TableSharedArcSwap<D, R, HB>
+/// Private map plumbing, shared by the strong ([`Table`]) and weak
+/// ([`NonPurgingTable`]) views so the raw copy-on-write calls live in one place.
+impl<D, V, HB> TableSharedArcSwap<D, V, HB>
+where
+    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+    HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
+{
+    fn map_get(&self, data: &D) -> Option<V> {
+        self.map.load().get(data).cloned()
+    }
+
+    fn map_retain<F>(&self, mut keep: F)
+    where
+        F: FnMut(&V) -> bool,
+    {
+        let _wguard = self.write_lock.lock().unwrap();
+        let current = self.map.load();
+        let mut new_map: HashMap<D, V, HB> = (**current).clone();
+        new_map.retain(|_k, v| keep(v));
+        self.map.store(Arc::new(new_map));
+    }
+
+    fn map_len(&self) -> usize {
+        self.map.load().len()
+    }
+}
+
+impl<D, R, WR, HB> Table<D, R, WR> for TableSharedArcSwap<D, R, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
     R: Reference<D> + Clone + Send + Sync,
+    WR: ReferenceWeak<D, R>,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     fn get(&self, data: &D) -> Option<R> {
-        self.map.load().get(data).map(R::strong_clone)
+        self.map_get(data)
     }
 
     fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
@@ -101,6 +131,56 @@ where
         let _wguard = self.write_lock.lock().unwrap();
         self.map
             .store(Arc::new(HashMap::with_hasher(HB::default())));
+    }
+}
+
+/// Weak-reference (non-purging) view: stores weak handles; the purge adapter
+/// drives eviction.
+impl<D, R, WR, HB> NonPurgingTable<D, R, WR>
+    for TableSharedArcSwap<D, WeakEntryStrong<D, R, WR>, HB>
+where
+    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
+    R: Reference<D>,
+    WR: ReferenceWeak<D, R> + Send + Sync,
+    HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
+{
+    fn get(&self, data: &D) -> Option<R> {
+        self.map_get(data).and_then(|entry| entry.upgrade())
+    }
+
+    fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
+    where
+        CF: FnOnce(&mut D),
+    {
+        // Lock-free fast path.
+        if let Some(existing) = self.map_get(&data).and_then(|entry| entry.upgrade()) {
+            return existing;
+        }
+        // The RCU write lock (inherent to arc-swap, not added by the purge
+        // adapter) serializes copy-update-swap cycles; re-check under it.
+        let _wguard = self.write_lock.lock().unwrap();
+        let current = self.map.load();
+        if let Some(existing) = current.get(&data).and_then(|entry| entry.upgrade()) {
+            return existing;
+        }
+        creation_meta(&mut data);
+        let obj = R::new(data);
+        let mut new_map: HashMap<D, WeakEntryStrong<D, R, WR>, HB> = (**current).clone();
+        // `insert` overwrites any dead entry left under this key.
+        new_map.insert(
+            R::strong_deref(&obj).clone(),
+            WeakEntryStrong::downgrade(&obj),
+        );
+        self.map.store(Arc::new(new_map));
+        obj
+    }
+
+    fn retain_alive(&self) {
+        self.map_retain(|entry| entry.is_alive());
+    }
+
+    fn len(&self) -> usize {
+        self.map_len()
     }
 }
 
@@ -153,10 +233,11 @@ where
     }
 }
 
-impl<D, R, HB> BuildTable<D, R> for BuildTableSharedArcSwap<D, R, HB>
+impl<D, R, WR, HB> BuildTable<D, R, WR> for BuildTableSharedArcSwap<D, R, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
     R: Reference<D> + Clone + Send + Sync,
+    WR: ReferenceWeak<D, R>,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     type TableSharedType = TableSharedArcSwap<D, R, HB>;

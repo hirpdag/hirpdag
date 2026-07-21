@@ -31,10 +31,18 @@ macro_rules! hirpdag_test_configs {
         #[cfg(feature = "third-party-tables")]
         hirpdag_test_configs!(@one arc_dashmap, "arc_dashmap", $($items)*);
         #[cfg(feature = "third-party-tables")]
+        hirpdag_test_configs!(@one arc_dashmap_strong, "arc_dashmap_strong", $($items)*);
+        #[cfg(feature = "third-party-tables")]
         hirpdag_test_configs!(@one arc_flurry, "arc_flurry", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_test_configs!(@one arc_flurry_strong, "arc_flurry_strong", $($items)*);
         #[cfg(feature = "third-party-tables")]
         hirpdag_test_configs!(@one arc_skipmap, "arc_skipmap", $($items)*);
         #[cfg(feature = "third-party-tables")]
+        hirpdag_test_configs!(@one arc_skipmap_strong, "arc_skipmap_strong", $($items)*);
+        #[cfg(feature = "third-party-tables")]
         hirpdag_test_configs!(@one arc_arcswap, "arc_arcswap", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_test_configs!(@one arc_arcswap_strong, "arc_arcswap_strong", $($items)*);
     };
 }

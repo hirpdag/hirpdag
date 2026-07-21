@@ -55,4 +55,12 @@ where
     fn weak_downgrade(ptr: &RefLeak<D>) -> Self {
         duplicate(ptr)
     }
+
+    fn weak_clone(ptr: &Self) -> Self {
+        duplicate(ptr)
+    }
+
+    fn weak_ptr_id(ptr: &Self) -> usize {
+        get_raw_pointer(ptr) as usize
+    }
 }

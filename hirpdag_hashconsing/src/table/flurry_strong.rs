@@ -14,12 +14,13 @@
 //! key type must be [`Ord`] in addition to [`Hash`](std::hash::Hash) + `Eq`.
 
 use crate::reference::*;
+use crate::table::weak_holder::WeakEntryStrong;
 use crate::table::*;
 use flurry::HashMap;
 
 type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
 
-pub struct TableSharedFlurry<D, R, HB = DefaultHasher>
+pub struct TableSharedFlurry<D, V, HB = DefaultHasher>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -29,13 +30,13 @@ where
         + Send
         + Sync
         + 'static,
-    R: Reference<D> + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
-    map: HashMap<D, R, HB>,
+    map: HashMap<D, V, HB>,
 }
 
-impl<D, R, HB> Default for TableSharedFlurry<D, R, HB>
+impl<D, V, HB> Default for TableSharedFlurry<D, V, HB>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -45,7 +46,7 @@ where
         + Send
         + Sync
         + 'static,
-    R: Reference<D> + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     fn default() -> Self {
@@ -53,7 +54,7 @@ where
     }
 }
 
-impl<D, R, HB> TableSharedFlurry<D, R, HB>
+impl<D, V, HB> TableSharedFlurry<D, V, HB>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -63,7 +64,7 @@ where
         + Send
         + Sync
         + 'static,
-    R: Reference<D> + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     pub fn with_hasher(hash_builder: HB) -> Self {
@@ -73,7 +74,40 @@ where
     }
 }
 
-impl<D, R, HB> Table<D, R> for TableSharedFlurry<D, R, HB>
+/// Private map plumbing, shared by the strong ([`Table`]) and weak
+/// ([`NonPurgingTable`]) views so the raw `flurry` calls live in one place.
+impl<D, V, HB> TableSharedFlurry<D, V, HB>
+where
+    D: std::hash::Hash
+        + std::cmp::Eq
+        + std::cmp::Ord
+        + std::fmt::Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    V: Clone + Send + Sync + 'static,
+    HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
+{
+    fn map_get(&self, data: &D) -> Option<V> {
+        let guard = self.map.guard();
+        self.map.get(data, &guard).cloned()
+    }
+
+    fn map_retain<F>(&self, mut keep: F)
+    where
+        F: FnMut(&V) -> bool,
+    {
+        let guard = self.map.guard();
+        self.map.retain(|_k, v| keep(v), &guard);
+    }
+
+    fn map_len(&self) -> usize {
+        self.map.len()
+    }
+}
+
+impl<D, R, WR, HB> Table<D, R, WR> for TableSharedFlurry<D, R, HB>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -84,11 +118,11 @@ where
         + Sync
         + 'static,
     R: Reference<D> + Clone + Send + Sync + 'static,
+    WR: ReferenceWeak<D, R>,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     fn get(&self, data: &D) -> Option<R> {
-        let guard = self.map.guard();
-        self.map.get(data, &guard).map(R::strong_clone)
+        self.map_get(data)
     }
 
     fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
@@ -115,6 +149,70 @@ where
     fn reset(&self) {
         let guard = self.map.guard();
         self.map.clear(&guard);
+    }
+}
+
+/// Weak-reference (non-purging) view: stores weak handles; the purge adapter
+/// drives eviction.
+impl<D, R, WR, HB> NonPurgingTable<D, R, WR> for TableSharedFlurry<D, WeakEntryStrong<D, R, WR>, HB>
+where
+    D: std::hash::Hash
+        + std::cmp::Eq
+        + std::cmp::Ord
+        + std::fmt::Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    R: Reference<D>,
+    WR: ReferenceWeak<D, R> + Send + Sync + 'static,
+    HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
+{
+    fn get(&self, data: &D) -> Option<R> {
+        self.map_get(data).and_then(|entry| entry.upgrade())
+    }
+
+    fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
+    where
+        CF: FnOnce(&mut D),
+    {
+        let guard = self.map.guard();
+        if let Some(existing) = self.map.get(&data, &guard).and_then(|e| e.upgrade()) {
+            return existing;
+        }
+        creation_meta(&mut data);
+        let obj = R::new(data);
+        let key = R::strong_deref(&obj).clone();
+        loop {
+            match self
+                .map
+                .try_insert(key.clone(), WeakEntryStrong::downgrade(&obj), &guard)
+            {
+                // We installed our weak into a vacant slot: our node is canonical.
+                Ok(_) => return obj,
+                Err(e) => {
+                    if let Some(existing) = e.current.upgrade() {
+                        return existing;
+                    }
+                    // The slot holds a dead entry. `compute_if_present` runs
+                    // under the bin lock, so removing it only if it is *still*
+                    // dead is atomic; then retry the insert.
+                    self.map.compute_if_present(
+                        &key,
+                        |_k, v| if v.is_alive() { Some(v.clone()) } else { None },
+                        &guard,
+                    );
+                }
+            }
+        }
+    }
+
+    fn retain_alive(&self) {
+        self.map_retain(|entry| entry.is_alive());
+    }
+
+    fn len(&self) -> usize {
+        self.map_len()
     }
 }
 
@@ -167,7 +265,7 @@ where
     }
 }
 
-impl<D, R, HB> BuildTable<D, R> for BuildTableSharedFlurry<D, R, HB>
+impl<D, R, WR, HB> BuildTable<D, R, WR> for BuildTableSharedFlurry<D, R, HB>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -178,6 +276,7 @@ where
         + Sync
         + 'static,
     R: Reference<D> + Clone + Send + Sync + 'static,
+    WR: ReferenceWeak<D, R>,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     type TableSharedType = TableSharedFlurry<D, R, HB>;

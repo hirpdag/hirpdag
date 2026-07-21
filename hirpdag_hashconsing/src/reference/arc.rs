@@ -40,4 +40,12 @@ where
     fn weak_downgrade(ptr: &RefArc<D>) -> Self {
         std::sync::Arc::<D>::downgrade(ptr)
     }
+
+    fn weak_clone(ptr: &Self) -> Self {
+        ptr.clone()
+    }
+
+    fn weak_ptr_id(ptr: &Self) -> usize {
+        std::sync::Weak::<D>::as_ptr(ptr) as *const () as usize
+    }
 }
