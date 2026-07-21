@@ -181,6 +181,58 @@ fn foobar3() {
     eprintln!("t(b)\n{:?}", tb);
 }
 
+// A rewriter that changes nothing: every node falls through to the default
+// rewrite. This exercises the "no changes" fast path in default_rewrite, which
+// should return the input reference rather than reconstructing/re-hashconsing an
+// identical node.
+struct Identity;
+
+impl Identity {
+    fn new() -> HirpdagRewriteMemoized<Self> {
+        HirpdagRewriteMemoized::new(Identity)
+    }
+}
+
+impl HirpdagRewriter for Identity {
+    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+        x.default_rewrite(self)
+    }
+}
+
+#[test]
+fn identity_rewrite_preserves_nodes() {
+    let leaf: MessageA = MessageA::new(11, "leaf".to_string(), None, 22);
+    let root: MessageA = MessageA::new(33, "root".to_string(), Some(leaf.clone()), 44);
+
+    let t = Identity::new();
+    let rewritten = t.rewrite(&root);
+
+    // An identity rewrite must reproduce the same interned node.
+    assert_eq!(rewritten, root);
+    // The untouched child subtree is preserved as well.
+    assert_eq!(rewritten.c, Some(leaf));
+}
+
+#[test]
+fn partial_rewrite_preserves_untouched_subtree() {
+    // Only leaves (c.is_none()) are extended by MessageAExtendLeaf; a node that
+    // already has a child is rebuilt only if one of its rewritten fields
+    // actually changed.
+    let untouched: MessageA = MessageA::new(1, "keep".to_string(), None, 2);
+    // A parent whose leaf child *does* get extended, so the parent changes.
+    let parent: MessageA = MessageA::new(3, "parent".to_string(), Some(untouched.clone()), 4);
+
+    let t = MessageAExtendLeaf::new();
+    let rewritten = t.rewrite(&parent);
+
+    // The parent changed (its leaf child was extended)...
+    assert_ne!(rewritten, parent);
+    // ...but the rewritten child is the extended version of the original leaf,
+    // which is itself unchanged apart from gaining the extension.
+    let extended_leaf = t.rewrite(&untouched);
+    assert_eq!(rewritten.c, Some(extended_leaf));
+}
+
 #[test]
 fn foobar4() {
     println!("========");
