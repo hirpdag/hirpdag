@@ -2,10 +2,6 @@
 
 ### Hashconsing optimization experiments
 
-- [P0] Optimize rewrite code:
-  - If no changes we can copy input reference instead of hashconsing to reproduce it.
-  - Minimize reference count operations.
- 
 - [P1] Experiment with a single std::any::Any based map for Hashconsing and Rewrite caches.
   - Currently generate a separate map for each type, because this was the easiest thing to do.
   - Hash tables need some free space overhead to operate efficiently.
@@ -52,6 +48,23 @@
 ## Completed
 
 ### Hashconsing optimization experiments
+
+- ~~[P0] Optimize rewrite code:~~
+  - ~~If no changes we can copy input reference instead of hashconsing to reproduce it.~~
+  - ~~Minimize reference count operations.~~
+  - DONE: The macro-generated `default_rewrite` now rewrites each field into a
+    local, compares the results against the originals (child `HirpdagRef` fields
+    compare by pointer, leaf fields by value) and, when nothing changed, returns
+    `self.clone()` — a single reference-count bump on the already-interned node.
+    Previously every rewrite reconstructed the struct and went through
+    `Self::new` (normalization + a hash-cons table lookup) even when the result
+    was identical. On the unchanged fast path this replaces the rebuild — which
+    clones every child field into a temporary struct (N ref-count increments),
+    interns it, then drops the temporary (N decrements) — with one increment, so
+    identity/partial rewrites that leave subtrees untouched no longer touch the
+    hash-cons table or churn child reference counts. See
+    `tests/base.rs::identity_rewrite_preserves_nodes` and
+    `partial_rewrite_preserves_untouched_subtree`.
 
 - ~~[P0] Optimize HirpdagRef implemetation of Ord:~~
   - ~~Should not need to do a deep cmp.~~

@@ -254,18 +254,70 @@ fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
         .collect()
 }
 
-fn get_fields_rewrite(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let fields_rewrite = quote! {
-    //    rewriter.rewrite(&self.a),
-    //    rewriter.rewrite(&self.b),
-    //    rewriter.rewrite(&self.c),
+/// Body of a struct's `default_rewrite`.
+///
+/// Each field is rewritten into a local, then the rewritten values are compared
+/// against the originals. If every field is unchanged, the input reference is
+/// cloned (a single reference-count bump on the already-interned node) instead
+/// of reconstructing and re-hashconsing a structurally identical node. Only when
+/// something actually changed do we pay for `Self::new` (normalization + a
+/// hash-cons table lookup).
+///
+/// Equality is cheap for the common cases: child `HirpdagRef` fields compare by
+/// pointer, and leaf fields compare by value.
+fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
+    //let body = quote! {
+    //    let hirpdag_rw_a = rewriter.rewrite(&self.a);
+    //    let hirpdag_rw_b = rewriter.rewrite(&self.b);
+    //    let hirpdag_rw_c = rewriter.rewrite(&self.c);
+    //    if hirpdag_rw_a == self.a && hirpdag_rw_b == self.b && hirpdag_rw_c == self.c {
+    //        self.clone()
+    //    } else {
+    //        Self::new(hirpdag_rw_a, hirpdag_rw_b, hirpdag_rw_c)
+    //    }
     //};
-    fields_named
+    let field_names: Vec<&syn::Ident> = fields_named
         .named
         .iter()
         .map(|t| t.ident.as_ref().unwrap())
-        .map(|field_name| quote! { rewriter.rewrite(&self.#field_name), })
-        .collect()
+        .collect();
+
+    // A struct with no fields has nothing to rewrite and is a fixpoint; just
+    // clone the input reference.
+    if field_names.is_empty() {
+        return quote! { self.clone() };
+    }
+
+    // Prefixed locals so a field literally named `rewriter` or `self` cannot
+    // shadow the parameters used to rewrite the remaining fields.
+    let locals: Vec<syn::Ident> = field_names
+        .iter()
+        .map(|field_name| Ident::new(&format!("hirpdag_rw_{}", field_name), Span::call_site()))
+        .collect();
+
+    let lets: proc_macro2::TokenStream = field_names
+        .iter()
+        .zip(locals.iter())
+        .map(|(field_name, local)| quote! { let #local = rewriter.rewrite(&self.#field_name); })
+        .collect();
+
+    let unchanged = field_names
+        .iter()
+        .zip(locals.iter())
+        .map(|(field_name, local)| quote! { #local == self.#field_name });
+    let unchanged = quote! { #(#unchanged)&&* };
+
+    let new_args: proc_macro2::TokenStream =
+        locals.iter().map(|local| quote! { #local, }).collect();
+
+    quote! {
+        #lets
+        if #unchanged {
+            self.clone()
+        } else {
+            Self::new(#new_args)
+        }
+    }
 }
 
 fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
@@ -434,7 +486,7 @@ fn expand_hirpdag_struct(
     let fields_parameters = get_fields_parameters(fields_named);
     let fields_list = get_fields_list(fields_named);
     let fields_compute_meta = get_fields_compute_meta(fields_named);
-    let fields_rewrite = get_fields_rewrite(fields_named);
+    let default_rewrite_body = get_default_rewrite_body(fields_named);
     let fields_collect = get_fields_collect(fields_named);
 
     let msg_outside_ser_session = format!(
@@ -554,9 +606,7 @@ fn expand_hirpdag_struct(
 
             #[allow(non_snake_case)]
             pub fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
-                Self::new(
-                    #fields_rewrite
-                    )
+                #default_rewrite_body
             }
 
             pub fn builder() -> #hirpdag_builder_name {
