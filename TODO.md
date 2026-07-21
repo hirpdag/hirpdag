@@ -25,9 +25,6 @@
 
 ### More benchmarks
 
-- [P1] More benchmark programs.
-  - Benchmarks where node data is pretty large
-
 - [P1] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
 
 ### Code cleanup
@@ -113,6 +110,24 @@
     The memory groups use flat sampling with a minimal warm-up/measurement
     window (criterion's floor is 10 samples) since allocation sizes do not need
     the many samples that jittery latency does.
+
+- ~~[P1] More benchmark programs.~~
+  - ~~Benchmarks where node data is pretty large~~
+  - DONE: Four new benchmark programs added, each broadening a dimension the
+    existing suite did not cover (see `test_suite/benches/README.md` for the
+    full coverage table across topology / node size / sharing / operation /
+    concurrency / RC churn):
+    * `large_nodes` — nodes carry large `Vec<u8>` payloads (a content-addressed
+      blob tree), so interning cost is dominated by hashing/comparing big data
+      rather than reference counting; sweeps payload size and sharing ratio.
+    * `churn` — continuously creates and drops unique units through a rolling
+      live-window, stressing reference-count decrements, `RC == 0` frees, and
+      weak-table eviction (the destruction half of the lifecycle the
+      build-and-hold benchmarks never reach; `leak_*` presets separate clearly).
+    * `builder_edits` — persistent single-leaf edits via `to_builder()`,
+      path-copying one root-to-leaf path per edit while retaining every version.
+    * `serde_roundtrip` — build → serialize → deserialize round trip over a
+      highly shared Fibonacci DAG, in both postcard binary and JSON.
 
 ### Code cleanup
 
