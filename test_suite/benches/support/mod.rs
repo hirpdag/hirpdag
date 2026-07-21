@@ -204,6 +204,7 @@ macro_rules! hirpdag_bench_configs {
     };
     ($($items:item)*) => {
         hirpdag_bench_configs!(@one arc_hash_linear, "arc_hash_linear", $($items)*);
+        hirpdag_bench_configs!(@one arc_hash_linear_mutex, "arc_hash_linear_mutex", $($items)*);
         hirpdag_bench_configs!(@one arc_hash_sorted, "arc_hash_sorted", $($items)*);
         hirpdag_bench_configs!(@one leak_hash_linear, "leak_hash_linear", $($items)*);
         hirpdag_bench_configs!(@one sep_hash_linear, "sep_hash_linear", $($items)*);
@@ -234,6 +235,7 @@ macro_rules! bench_each_config {
     };
     ($group:expr, $params:expr, $function:ident) => {
         bench_each_config!(@one $group, $params, $function, arc_hash_linear, "ArcHashLinear");
+        bench_each_config!(@one $group, $params, $function, arc_hash_linear_mutex, "ArcHashLinearMutex");
         bench_each_config!(@one $group, $params, $function, arc_hash_sorted, "ArcHashSorted");
         bench_each_config!(@one $group, $params, $function, leak_hash_linear, "LeakHashLinear");
         bench_each_config!(@one $group, $params, $function, sep_hash_linear, "SepHashLinear");

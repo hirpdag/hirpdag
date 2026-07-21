@@ -37,6 +37,7 @@ const DEFAULT_PRESET: &str = "arc_hash_linear";
 /// `#[hirpdag_module(preset = "name")]`.
 const PRESETS: &[&str] = &[
     "arc_hash_linear",
+    "arc_hash_linear_mutex",
     "arc_hash_sorted",
     "leak_hash_linear",
     "sep_hash_linear",
@@ -98,16 +99,20 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         )
     }
     // A `ConfigTypes` for a lock-based preset: reference `base`, generic over the
-    // given inner `ThreadUnsafeTable` (exposed as the `ImplTable` alias), shared via the
-    // sharded-mutex table.
-    fn sharded(base: &str, inner_table: String) -> ConfigTypes {
+    // given inner `ThreadUnsafeTable` (exposed as the `ImplTable` alias), shared
+    // via the `kind` shared-table strategy (`Sharded`, `Mutex`, …).
+    fn locked(kind: &str, base: &str, inner_table: String) -> ConfigTypes {
         ConfigTypes {
             reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
             reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
             aliases: vec![("ImplTable".to_string(), inner_table)],
-            tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
-            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildThreadUnsafeTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+            tableshared_type: format!("hirpdag::hirpdag_hashconsing::TableShared{kind}<D, ImplRef<D>, ImplTable<D>>"),
+            build_tableshared_type: format!("hirpdag::hirpdag_hashconsing::BuildTableShared{kind}<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildThreadUnsafeTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>"),
         }
+    }
+    // The default sharded-mutex shared table (eight shards).
+    fn sharded(base: &str, inner_table: String) -> ConfigTypes {
+        locked("Sharded8", base, inner_table)
     }
     // A `ConfigTypes` for a preset backed by a third-party concurrent collection
     // named `TableShared{shared_base}`. These store the mapping directly and are
@@ -139,6 +144,9 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
 
     Some(match name {
         "arc_hash_linear" => sharded("RefArc", hashmap_fallback("TableVecLinearWeak")),
+        // Same as arc_hash_linear but with a single mutex guarding the whole
+        // table instead of sharded locks.
+        "arc_hash_linear_mutex" => locked("Mutex", "RefArc", hashmap_fallback("TableVecLinearWeak")),
         "arc_hash_sorted" => sharded("RefArc", hashmap_fallback("TableVecSortedWeak")),
         "leak_hash_linear" => sharded("RefLeak", hashmap_fallback("TableVecLinearWeak")),
         // Reference-counting experiments with counts stored separately from the
