@@ -21,6 +21,7 @@ whether nodes are destroyed (**RC churn**) rather than just built and held.
 | [`primes`](primes.rs) | factor graph (variable fanout) | small | high | build + memoized rewrite | yes | no |
 | [`rewrite_chain`](rewrite_chain.rs) | linear chain | small | none across passes | repeated full-graph rewrite (K passes) | no | no |
 | [`expr_substitution`](expr_substitution.rs) | balanced binary tree | small | high (cycling vars) | memoized rewrite | no | no |
+| [`sparse_rewrite`](sparse_rewrite.rs) | balanced binary tree (`Option` children) | small | none (unique ids) | **mostly-unchanged** rewrite (swept change fraction, K passes) | no | no |
 | [`large_nodes`](large_nodes.rs) | balanced blob tree | **large** (`Vec<u8>` payloads) | swept (unique-blob pool) | build + rewrite | no | no |
 | [`churn`](churn.rs) | forest of small unique units | small | none (units share nothing) | build + **drop** | no | **yes** |
 | [`builder_edits`](builder_edits.rs) | balanced tree | small | high (persistent versions) | builder / persistent path-copy edit | no | no |
@@ -46,6 +47,17 @@ whether nodes are destroyed (**RC churn**) rather than just built and held.
   deduplicate identical subtrees, then a memoized substitution rewrite
   visits each unique node exactly once. Demonstrates both structural
   sharing and memoization benefit.
+
+- **`sparse_rewrite`** — the counterpart to the full-graph rewrites above
+  (`rewrite_chain`, `primes`, `large_nodes`, `expr_substitution` all change
+  *every* node). Here a rewrite touches only a fraction of the nodes, so most
+  subtrees are structurally unchanged. Because the tree's children are
+  `Option<TreeNode>` (no `Vec`), an unchanged subtree hits the `default_rewrite`
+  fast path — the input reference is cloned instead of being rebuilt and
+  re-interned — with no allocation and no table lookup. The `change_period`
+  parameter sweeps from a full-graph rewrite (`1`, every node changes) through a
+  sparse one (`16`) to a pure no-op (`0`, nothing changes); the cost drops
+  sharply as fewer nodes change, isolating the value of reusing input references.
 
 - **`large_nodes`** — moves the cost into large inline payloads: leaf nodes
   carry `Vec<u8>` blobs, so interning is dominated by hashing and comparing

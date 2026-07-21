@@ -46,6 +46,10 @@ name = "large_nodes"
 harness = false
 
 [[bench]]
+name = "sparse_rewrite"
+harness = false
+
+[[bench]]
 name = "churn"
 harness = false
 
