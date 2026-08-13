@@ -48,8 +48,8 @@ hirpdag_bench_configs! {
     }
 
     impl HirpdagRewriter for BumpV {
-        fn rewrite_ChainLink<R: HirpdagRewriter>(&self, x: &ChainLink, rec: &R) -> ChainLink {
-            ChainLink::new(x.n, rec.rewrite(&x.next), x.v + 1)
+        fn rewrite_ChainLink(&self, x: &ChainLink) -> ChainLink {
+            ChainLink::new(x.n, self.rewrite(&x.next), x.v + 1)
         }
     }
 

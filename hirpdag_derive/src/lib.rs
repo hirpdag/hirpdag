@@ -478,6 +478,9 @@ fn expand_hirpdag_struct(
     let hirpdag_rewrite_method_name =
         Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
 
+    let hirpdag_cache_member_name_str = format!("cache_{}", name_str);
+    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+
     let hirpdag_builder_name_str = format!("{}Builder", name_str);
     let hirpdag_builder_name = Ident::new(&hirpdag_builder_name_str, Span::call_site());
 
@@ -651,7 +654,31 @@ fn expand_hirpdag_struct(
 
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #hirpdag_ref_name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self, rewriter)
+                // If a memoized rewrite is in progress, serve/record this node
+                // through its cache; otherwise just apply the rewriter directly.
+                // This is the single place recursion consults the cache, so it
+                // works whether `rewriter` is a `HirpdagRewriteMemoized` or the
+                // inner rewriter it wraps.
+                match hirpdag_current_rewrite_cache() {
+                    Some(hirpdag_cache) => {
+                        if let Some(hirpdag_cached) = hirpdag_cache
+                            .#hirpdag_cache_member_name
+                            .lock()
+                            .unwrap()
+                            .get(self)
+                        {
+                            return hirpdag_cached.clone();
+                        }
+                        let hirpdag_result = rewriter.#hirpdag_rewrite_method_name(self);
+                        hirpdag_cache
+                            .#hirpdag_cache_member_name
+                            .lock()
+                            .unwrap()
+                            .insert(self.clone(), hirpdag_result.clone());
+                        hirpdag_result
+                    }
+                    None => rewriter.#hirpdag_rewrite_method_name(self),
+                }
             }
         }
 
@@ -859,7 +886,7 @@ fn expand_hirpdag_enum(
 
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self, rewriter)
+                rewriter.#hirpdag_rewrite_method_name(self)
             }
         }
 
@@ -895,12 +922,8 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
     quote! {
 
         #[allow(non_snake_case)]
-        fn #hirpdag_rewrite_method_name<HirpdagRec: HirpdagRewriter>(
-            &self,
-            x: &#hirpdag_ref_name,
-            rec: &HirpdagRec,
-        ) -> #hirpdag_ref_name {
-            #hirpdag_ref_name::default_rewrite::<HirpdagRec>(x, rec)
+        fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
+            #hirpdag_ref_name::default_rewrite::<Self>(x, self)
         }
 
     }
@@ -908,8 +931,13 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
 
 fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     //let cache_member = quote! {
-    //    cache_MessageA: std::cell::RefCell<std::collections::HashMap<MessageA, MessageA>>,
+    //    cache_MessageA: std::sync::Mutex<std::collections::HashMap<MessageA, MessageA>>,
     //};
+    //
+    // One field per hashconsed struct type on the module's `HirpdagRewriteCache`.
+    // Interior-mutable and thread-safe, so a shared `&HirpdagRewriteMemoized` can
+    // populate it during a rewrite and, if the rewriter is `Send + Sync`, be
+    // driven from several threads at once.
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
@@ -917,46 +945,38 @@ fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
 
     quote! {
         #hirpdag_cache_member_name:
-            std::cell::RefCell<std::collections::HashMap<#hirpdag_ref_name, #hirpdag_ref_name>>,
+            std::sync::Mutex<std::collections::HashMap<#hirpdag_ref_name, #hirpdag_ref_name>>,
     }
 }
 
 fn get_cache_member_new(name: &str) -> proc_macro2::TokenStream {
     //let cache_member_new = quote! {
-    //    cache_MessageA: std::cell::RefCell::new(std::collections::HashMap::new()),
+    //    cache_MessageA: std::sync::Mutex::new(std::collections::HashMap::new()),
     //};
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     quote! {
-        #hirpdag_cache_member_name: std::cell::RefCell::new(std::collections::HashMap::new()),
+        #hirpdag_cache_member_name: std::sync::Mutex::new(std::collections::HashMap::new()),
     }
 }
 
 fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     //let cache_rewrite = quote! {
     //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
-    //        if let Some(cached) = self.cache_MessageA.borrow().get(x) {
-    //            return cached.clone();
-    //        }
-    //        let result = self.rewriter.rewrite_MessageA(x, rec);
-    //        self.cache_MessageA.borrow_mut().insert(x.clone(), result.clone());
-    //        result
+    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+    //        self.rewriter.rewrite_MessageA(x)
     //    }
     //};
     //
-    // The memoized wrapper is threaded through the recursion as `rec`, so that
-    // when a node's `default_rewrite` recurses into its children the recursion
-    // re-enters this cache. Because nodes are hash-consed, a shared subtree
-    // reached through multiple parents is rewritten once and served from the
-    // cache thereafter. The inner rewriter still supplies the node-local
-    // transform; we only intercept it to memoize and to keep recursion pointed
-    // at the wrapper (`rec`) rather than the bare inner rewriter.
+    // The memoizing wrapper implements `HirpdagRewriter` by forwarding each
+    // node-local transform to the inner rewriter. The caching itself lives in
+    // the generated `hirpdag_rewrite` (which consults the cache the wrapper
+    // installs for the duration of a rewrite), so that recursion re-enters the
+    // cache no matter whether the current rewriter is the wrapper or the inner
+    // rewriter. A node reached by several paths in a hash-consed DAG is thus
+    // rewritten once and served from the cache thereafter.
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
-
-    let hirpdag_cache_member_name_str = format!("cache_{}", name);
-    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
     let hirpdag_rewrite_method_name =
@@ -965,19 +985,8 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     quote! {
 
         #[allow(non_snake_case)]
-        fn #hirpdag_rewrite_method_name<HirpdagRec: HirpdagRewriter>(
-            &self,
-            x: &#hirpdag_ref_name,
-            rec: &HirpdagRec,
-        ) -> #hirpdag_ref_name {
-            if let Some(cached) = self.#hirpdag_cache_member_name.borrow().get(x) {
-                return cached.clone();
-            }
-            let result = self.rewriter.#hirpdag_rewrite_method_name(x, rec);
-            self.#hirpdag_cache_member_name
-                .borrow_mut()
-                .insert(x.clone(), result.clone());
-            result
+        fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
+            self.rewriter.#hirpdag_rewrite_method_name(x)
         }
 
     }
@@ -993,16 +1002,23 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         .map(|entry| get_rewrite_datatype(&entry.name))
         .collect();
 
+    // Only hashconsed struct types are memoized: they are the shared nodes a
+    // DAG reaches by multiple paths. Enums are inline payload within their
+    // parent node, so they get no cache field.
     let cache_members: proc_macro2::TokenStream = types
         .iter()
+        .filter(|entry| entry.is_struct)
         .map(|entry| get_cache_member(&entry.name))
         .collect();
 
     let cache_members_new: proc_macro2::TokenStream = types
         .iter()
+        .filter(|entry| entry.is_struct)
         .map(|entry| get_cache_member_new(&entry.name))
         .collect();
 
+    // The memoizing wrapper still forwards every `rewrite_*` method (structs
+    // and enums alike) to the inner rewriter.
     let cache_methods: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_cache_rewrite(&entry.name))
@@ -1095,22 +1111,104 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
             }
         }
 
-        pub struct HirpdagRewriteMemoized<Rewriter: HirpdagRewriter> {
+        /// Per-type memoization tables shared by a `HirpdagRewriteMemoized`.
+        ///
+        /// Each field maps an input node to its rewritten result. The maps are
+        /// behind `Mutex`es so the cache is thread-safe: a `HirpdagRewriteMemoized`
+        /// that wraps a `Send + Sync` rewriter can be shared across threads and
+        /// each thread's rewrite consults and fills the same tables.
+        pub struct HirpdagRewriteCache {
             #cache_members
+        }
+
+        impl HirpdagRewriteCache {
+            pub fn new() -> Self {
+                Self {
+                    #cache_members_new
+                }
+            }
+        }
+
+        impl std::default::Default for HirpdagRewriteCache {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        thread_local! {
+            // The cache in force for the current thread while a memoized rewrite
+            // is running. `HirpdagRewriteMemoized::rewrite` installs its cache
+            // here for the duration of the call; the generated `hirpdag_rewrite`
+            // for each node type consults it. This is what lets recursion
+            // re-enter the memoizer without threading it through every call.
+            static HIRPDAG_REWRITE_CACHE:
+                std::cell::RefCell<Option<std::sync::Arc<HirpdagRewriteCache>>> =
+                std::cell::RefCell::new(None);
+        }
+
+        /// The memoization cache installed for the current thread, if a memoized
+        /// rewrite is in progress.
+        #[allow(dead_code)]
+        fn hirpdag_current_rewrite_cache() -> Option<std::sync::Arc<HirpdagRewriteCache>> {
+            HIRPDAG_REWRITE_CACHE.with(|slot| slot.borrow().clone())
+        }
+
+        /// Installs a cache as the current thread's memoization cache and
+        /// restores the previous one on drop, so nested memoized rewrites and
+        /// unwinding are handled correctly.
+        struct HirpdagRewriteCacheGuard {
+            prev: Option<std::sync::Arc<HirpdagRewriteCache>>,
+        }
+
+        impl HirpdagRewriteCacheGuard {
+            fn install(cache: std::sync::Arc<HirpdagRewriteCache>) -> Self {
+                let prev =
+                    HIRPDAG_REWRITE_CACHE.with(|slot| slot.borrow_mut().replace(cache));
+                HirpdagRewriteCacheGuard { prev }
+            }
+        }
+
+        impl std::ops::Drop for HirpdagRewriteCacheGuard {
+            fn drop(&mut self) {
+                HIRPDAG_REWRITE_CACHE.with(|slot| {
+                    *slot.borrow_mut() = self.prev.take();
+                });
+            }
+        }
+
+        /// Wraps any `HirpdagRewriter` and memoizes the result of each
+        /// `rewrite_*` call in a shared, thread-safe cache. Because nodes are
+        /// hash-consed, a node reached by several paths in a DAG is rewritten
+        /// once and served from the cache on every later encounter — within a
+        /// single traversal and across repeated `rewrite` calls (the cache
+        /// persists for the lifetime of the wrapper).
+        pub struct HirpdagRewriteMemoized<Rewriter: HirpdagRewriter> {
+            hirpdag_cache: std::sync::Arc<HirpdagRewriteCache>,
             rewriter: Rewriter,
         }
 
         impl<Rewriter: HirpdagRewriter> HirpdagRewriteMemoized<Rewriter> {
             pub fn new(rewriter: Rewriter) -> Self {
                 Self {
-                    #cache_members_new
+                    hirpdag_cache: std::sync::Arc::new(HirpdagRewriteCache::new()),
                     rewriter: rewriter,
                 }
             }
         }
 
         impl<Rewriter: HirpdagRewriter> HirpdagRewriter for HirpdagRewriteMemoized<Rewriter> {
+            // Node-local transforms delegate to the inner rewriter.
             #cache_methods
+
+            // Install this wrapper's cache for the duration of the rewrite. The
+            // inner rewriter recurses through the ordinary `self`/`default_rewrite`
+            // path; because the generated `hirpdag_rewrite` consults the installed
+            // cache, that recursion re-enters this memoizer's tables.
+            fn rewrite<T: HirpdagRewritable<Self>>(&self, x: &T) -> T {
+                let _hirpdag_guard =
+                    HirpdagRewriteCacheGuard::install(self.hirpdag_cache.clone());
+                x.hirpdag_rewrite(self)
+            }
         }
 
         /// Empty every hash-consing table in this module, so later construction

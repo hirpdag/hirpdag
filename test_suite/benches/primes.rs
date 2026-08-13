@@ -71,11 +71,11 @@ hirpdag_bench_configs! {
     }
 
     impl HirpdagRewriter for IncrementVBy {
-        fn rewrite_Number<R: HirpdagRewriter>(&self, x: &Number, rec: &R) -> Number {
+        fn rewrite_Number(&self, x: &Number) -> Number {
             Number::new(
                 x.n,
-                rec.rewrite(&x.prime_factors),
-                rec.rewrite(&x.last_prime),
+                self.rewrite(&x.prime_factors),
+                self.rewrite(&x.last_prime),
                 x.v + self.inc,
             )
         }

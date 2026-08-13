@@ -42,17 +42,15 @@ impl MessageAExtendLeaf {
 }
 
 impl HirpdagRewriter for MessageAExtendLeaf {
-    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
+    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
         if x.c.is_none() {
             return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
 
         // In the case where we don't want to make changes to extend the leaf,
         // we want to apply the default rewrite which will apply the rewrite
-        // transitively to all applicable members. Recurse through `rec` (the
-        // memoizing wrapper when one is in play) rather than `self`, so shared
-        // subtrees are rewritten once and served from the cache thereafter.
-        x.default_rewrite(rec)
+        // transitively to all applicable members.
+        x.default_rewrite(self)
     }
 }
 
@@ -196,8 +194,8 @@ impl Identity {
 }
 
 impl HirpdagRewriter for Identity {
-    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
-        x.default_rewrite(rec)
+    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+        x.default_rewrite(self)
     }
 }
 
@@ -258,9 +256,9 @@ struct CountingIdentity {
 }
 
 impl HirpdagRewriter for CountingIdentity {
-    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
+    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
         self.calls.set(self.calls.get() + 1);
-        x.default_rewrite(rec)
+        x.default_rewrite(self)
     }
 }
 
@@ -298,4 +296,51 @@ fn memoization_caches_rewrites() {
         3,
         "rewriting a cached subtree adds no transforms"
     );
+}
+
+// A rewriter that appends a fixed suffix to every MessageA's string, so the
+// transform is observable and non-trivial. `Send + Sync` so the memoizer can be
+// shared across threads.
+struct AppendTag {
+    tag: String,
+}
+
+impl HirpdagRewriter for AppendTag {
+    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+        let recursed = x.default_rewrite(self);
+        MessageA::new(
+            recursed.a,
+            format!("{}{}", recursed.b, self.tag),
+            recursed.c.clone(),
+            recursed.d,
+        )
+    }
+}
+
+// The cache is thread-safe: a single memoizer, shared by reference, can drive
+// rewrites from several threads at once. Each thread installs the shared cache
+// on its own stack (via a thread-local), and the per-type `Mutex` maps guard
+// concurrent access. All threads must agree on the result.
+#[test]
+fn memoization_cache_is_thread_safe() {
+    let leaf: MessageA = MessageA::new(7, "ts_leaf".to_string(), None, 7);
+    let root: MessageA = MessageA::new(8, "ts_root".to_string(), Some(leaf), 8);
+
+    let t = HirpdagRewriteMemoized::new(AppendTag {
+        tag: "_x".to_string(),
+    });
+    let expected = t.rewrite(&root);
+
+    std::thread::scope(|scope| {
+        let t = &t;
+        let root = &root;
+        let expected = &expected;
+        for _ in 0..8 {
+            scope.spawn(move || {
+                for _ in 0..1000 {
+                    assert_eq!(&t.rewrite(root), expected);
+                }
+            });
+        }
+    });
 }
