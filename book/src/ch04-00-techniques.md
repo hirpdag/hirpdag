@@ -10,6 +10,37 @@ Hirpdag objects should generally be designed to have referential transparency.
 
 Objects which are identical should not have different meanings in a different context/environment.
 
+## No Interior Mutability
+
+Interior mutability (`Cell`, `RefCell`, `Mutex`, `RwLock`, `AtomicUsize`, or any other type that allows mutation through a shared reference) is **forbidden** inside Hirpdag data nodes.
+
+This is not a stylistic preference — it is fundamental. A Hirpdag node's contents *are* its identity:
+
+* **Hash consing keys on content.** A node is interned by hashing and comparing its fields. Mutating a field through interior mutability would silently change the node's hash and equality *after* it has been placed in the hash-consing table, corrupting the table's invariants. The node would be filed under a key that no longer describes it, breaking future lookups and deduplication.
+* **Pointer equality depends on it.** Two nodes are equal iff they share an allocation, precisely because identical content is guaranteed to intern to one allocation. Mutable interior state would allow two "equal" pointers to diverge in meaning, defeating the core `O(1)` comparison.
+* **Cached metadata would go stale.** `count`, `height`, and `flags` are computed once, bottom-up, at intern time. Mutating a node's contents afterward would invalidate this metadata with no mechanism to recompute it.
+* **Memoization would return wrong answers.** Rewrite and analysis results are cached against a node's identity. If the underlying content could change, those cache entries would become incorrect — reintroducing exactly the cache-invalidation problem immutability was chosen to avoid.
+* **Referential transparency would be lost.** A node whose observable value can change over time no longer means the same thing in every context.
+
+In short: identity-defining data is fundamentally incompatible with interior mutability. Everything a Hirpdag node participates in — interning, equality, ordering, metadata, memoization — assumes its contents are fixed for its lifetime.
+
+### Alternative: a side-table keyed by node reference
+
+When you genuinely need mutable state associated with a node — annotations, analysis results, scratch state, external bookkeeping — keep that state *outside* the node in a side-table keyed by the node's reference:
+
+```rust
+// The node stays immutable; mutable data lives beside it.
+let mut annotations: HashMap<MyNode, Annotation> = HashMap::new();
+annotations.insert(node.clone(), Annotation::new());
+```
+
+Because nodes are hash-consed, a `HirpdagRef` is a stable, cheap, `O(1)`-hashable/comparable key (its creation ID gives a total order as well), which makes it an excellent map key. This pattern cleanly separates the two concerns:
+
+* The node keeps its identity, hashing, deduplication, and cacheability intact.
+* The mutable data has an explicit, owned lifetime that you control, rather than being smuggled inside a value that the rest of the system assumes is frozen.
+
+If the state should itself participate in hash consing (i.e. it is part of the value's identity), it does not belong in a side-table — model it as additional immutable fields and construct a new node instead.
+
 ## Common Normalization
 
 Hirpdag objects should apply normalization to increase the effectiveness of hashconsing.
