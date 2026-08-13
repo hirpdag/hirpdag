@@ -86,13 +86,15 @@ impl Substitute {
 }
 
 impl HirpdagRewriter for Substitute {
-    fn rewrite_Expr(&self, x: &Expr) -> Expr {
+    // `rec` is the recursion driver: rewrite children through it so a memoizing
+    // wrapper (HirpdagRewriteMemoized) can cache every node, not just the root.
+    fn rewrite_Expr(&self, rec: &impl HirpdagRewriter, x: &Expr) -> Expr {
         if let ExprKind::Var(name) = &x.x {
             if *name == self.var {
                 return self.s.clone();
             }
         }
-        x.default_rewrite(self)
+        x.default_rewrite(rec)
     }
 }
 

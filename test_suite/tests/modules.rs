@@ -41,7 +41,7 @@ impl FooExtendLeaf {
 }
 
 impl foo::HirpdagRewriter for FooExtendLeaf {
-    fn rewrite_Data(&self, x: &foo::Data) -> foo::Data {
+    fn rewrite_Data(&self, rec: &impl foo::HirpdagRewriter, x: &foo::Data) -> foo::Data {
         if x.c.is_none() {
             return foo::Data::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
@@ -49,7 +49,7 @@ impl foo::HirpdagRewriter for FooExtendLeaf {
         // In the case where we don't want to make changes to extend the leaf,
         // we want to apply the default rewrite which will apply the rewrite
         // transitively to all applicable members.
-        x.default_rewrite(self)
+        x.default_rewrite(rec)
     }
 }
 
@@ -66,12 +66,12 @@ impl BarExtendLeaf {
 }
 
 impl bar::HirpdagRewriter for BarExtendLeaf {
-    fn rewrite_Data(&self, x: &bar::Data) -> bar::Data {
+    fn rewrite_Data(&self, rec: &impl bar::HirpdagRewriter, x: &bar::Data) -> bar::Data {
         if x.c.is_none() {
             return bar::Data::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
 
-        x.default_rewrite(self)
+        x.default_rewrite(rec)
     }
 }
 

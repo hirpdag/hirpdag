@@ -121,7 +121,7 @@ hirpdag_bench_configs! {
     }
 
     impl HirpdagRewriter for BumpBlobs {
-        fn rewrite_DocNode(&self, x: &DocNode) -> DocNode {
+        fn rewrite_DocNode(&self, rec: &impl HirpdagRewriter, x: &DocNode) -> DocNode {
             if let DocKind::Blob(data) = &x.kind {
                 let mut nd = data.clone();
                 if let Some(b) = nd.first_mut() {
@@ -129,7 +129,7 @@ hirpdag_bench_configs! {
                 }
                 return DocNode::new(DocKind::Blob(nd));
             }
-            x.default_rewrite(self)
+            x.default_rewrite(rec)
         }
     }
 

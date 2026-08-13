@@ -10,6 +10,24 @@ Hirpdag objects should generally be designed to have referential transparency.
 
 Objects which are identical should not have different meanings in a different context/environment.
 
+## Interior Mutability
+
+Hirpdag nodes are frozen once interned: a node's data *is* its identity (the
+hash-cons table, pointer equality, creation-ID order, cached metadata, and
+serialization all assume it never changes). So a `#[hirpdag]` struct field must
+never be an interior-mutable type (`Cell`, `RefCell`, `Mutex`, atomics) that
+affects the node's value — mutating it after interning corrupts the table, the
+same way mutating a key already inside a `HashSet` does. "Modifying" a node is
+always building a new one (`to_builder().field(v).build()`).
+
+Interior mutability *is* the right tool for data that is a pure function of a
+frozen node and never observed through equality or serialization — cached
+derived results. Keep such caches beside the nodes, not inside them: a
+side-table keyed by the node (as `HirpdagRewriteMemoized` does, with a
+`RefCell<HashMap>`), or a per-node slot excluded from identity and made
+thread-safe with `OnceLock` (nodes are shared across threads via `RefArc`). See
+`docs/adr/0003-interior-mutability.md`.
+
 ## Common Normalization
 
 Hirpdag objects should apply normalization to increase the effectiveness of hashconsing.

@@ -42,15 +42,16 @@ impl MessageAExtendLeaf {
 }
 
 impl HirpdagRewriter for MessageAExtendLeaf {
-    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+    fn rewrite_MessageA(&self, rec: &impl HirpdagRewriter, x: &MessageA) -> MessageA {
         if x.c.is_none() {
             return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
 
         // In the case where we don't want to make changes to extend the leaf,
         // we want to apply the default rewrite which will apply the rewrite
-        // transitively to all applicable members.
-        x.default_rewrite(self)
+        // transitively to all applicable members. Recurse through `rec` so a
+        // memoizing driver reaches the children.
+        x.default_rewrite(rec)
     }
 }
 
@@ -194,8 +195,8 @@ impl Identity {
 }
 
 impl HirpdagRewriter for Identity {
-    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-        x.default_rewrite(self)
+    fn rewrite_MessageA(&self, rec: &impl HirpdagRewriter, x: &MessageA) -> MessageA {
+        x.default_rewrite(rec)
     }
 }
 

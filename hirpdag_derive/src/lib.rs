@@ -651,7 +651,9 @@ fn expand_hirpdag_struct(
 
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #hirpdag_ref_name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self)
+                // `rewriter` is both the rule holder and the recursion driver at
+                // this entry point, so pass it as `rec` too.
+                rewriter.#hirpdag_rewrite_method_name(rewriter, self)
             }
         }
 
@@ -859,7 +861,9 @@ fn expand_hirpdag_enum(
 
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self)
+                // `rewriter` is both the rule holder and the recursion driver at
+                // this entry point, so pass it as `rec` too.
+                rewriter.#hirpdag_rewrite_method_name(rewriter, self)
             }
         }
 
@@ -882,10 +886,18 @@ fn expand_hirpdag_enum(
 fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
     //let rewrite_datatype = quote! {
     //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        MessageA::default_rewrite<Self>(x, self)
+    //    fn rewrite_MessageA(&self, rec: &impl HirpdagRewriter, x: &MessageA) -> MessageA {
+    //        x.default_rewrite(rec)
     //    }
     //};
+    //
+    // `rec` is the *recursion driver*: the rewriter that child nodes must be
+    // rewritten through. For a plain rewriter it is just `self`, so recursion
+    // behaves as before. For `HirpdagRewriteMemoized` it is the memoizing
+    // wrapper, so every child re-enters the wrapper's cache (see
+    // `get_cache_rewrite`). Separating the recursion driver from `self` (the
+    // object holding the per-type rule) is what lets memoization intercept the
+    // whole traversal, not only the outermost node.
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
     let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
@@ -895,8 +907,12 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
     quote! {
 
         #[allow(non_snake_case)]
-        fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
-            #hirpdag_ref_name::default_rewrite::<Self>(x, self)
+        fn #hirpdag_rewrite_method_name(
+            &self,
+            hirpdag_rec: &impl HirpdagRewriter,
+            x: &#hirpdag_ref_name,
+        ) -> #hirpdag_ref_name {
+            x.default_rewrite(hirpdag_rec)
         }
 
     }
@@ -912,7 +928,13 @@ fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     quote! {
-        #hirpdag_cache_member_name: std::collections::HashMap<#hirpdag_ref_name, #hirpdag_ref_name>,
+        // Interior mutability: the `HirpdagRewriter` methods take `&self`, so the
+        // memo table must be a `RefCell` to be populated during a traversal. A
+        // rewrite traversal runs on a single thread and each memoizer is owned by
+        // its caller, so `RefCell` (zero-lock) is sufficient; a memoizer shared
+        // across threads would instead need a `Mutex`/sharded map.
+        #hirpdag_cache_member_name:
+            std::cell::RefCell<std::collections::HashMap<#hirpdag_ref_name, #hirpdag_ref_name>>,
     }
 }
 
@@ -924,19 +946,28 @@ fn get_cache_member_new(name: &str) -> proc_macro2::TokenStream {
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     quote! {
-        #hirpdag_cache_member_name: std::collections::HashMap::new(),
+        #hirpdag_cache_member_name: std::cell::RefCell::new(std::collections::HashMap::new()),
     }
 }
 
 fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     //let cache_rewrite = quote! {
     //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        cache_MessageA.get(x).unwrap_or_else(|x| {
-    //          MessageA::default_rewrite<Self>(x, self)
-    //        };
+    //    fn rewrite_MessageA(&self, rec: &impl HirpdagRewriter, x: &MessageA) -> MessageA {
+    //        if let Some(hit) = cache_MessageA.borrow().get(x).cloned() { return hit; }
+    //        let out = self.rewriter.rewrite_MessageA(rec, x);
+    //        cache_MessageA.borrow_mut().insert(x.clone(), out.clone());
+    //        out
     //    }
     //};
+    //
+    // The memoizing wrapper is threaded through the whole traversal as the
+    // recursion driver `rec` (see `get_rewrite_datatype`), so children re-enter
+    // this method and hit the cache. On a miss we run the *inner* rewriter's
+    // per-type rule but still pass `rec` (this wrapper) as its recursion driver,
+    // then record the result. A rewrite is a pure function of its input node, so
+    // memoizing input -> output is always correct; on a DAG with shared subtrees
+    // this collapses repeated work to O(unique nodes).
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
@@ -949,13 +980,22 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     quote! {
 
         #[allow(non_snake_case)]
-        fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
+        fn #hirpdag_rewrite_method_name(
+            &self,
+            hirpdag_rec: &impl HirpdagRewriter,
+            x: &#hirpdag_ref_name,
+        ) -> #hirpdag_ref_name {
+            // Clone out of the borrow so it is released before recursing (the
+            // recursion below re-enters this same cache).
+            let hirpdag_cached = self.#hirpdag_cache_member_name.borrow().get(x).cloned();
+            if let Some(hirpdag_hit) = hirpdag_cached {
+                return hirpdag_hit;
+            }
+            let hirpdag_out = self.rewriter.#hirpdag_rewrite_method_name(hirpdag_rec, x);
             self.#hirpdag_cache_member_name
-                .get(x)
-                .cloned()
-                .unwrap_or_else(|| {
-                    self.rewriter.rewrite(x)
-                })
+                .borrow_mut()
+                .insert(x.clone(), hirpdag_out.clone());
+            hirpdag_out
         }
 
     }

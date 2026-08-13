@@ -74,10 +74,10 @@ hirpdag_bench_configs! {
     }
 
     impl HirpdagRewriter for BumpSome {
-        fn rewrite_TreeNode(&self, x: &TreeNode) -> TreeNode {
+        fn rewrite_TreeNode(&self, rec: &impl HirpdagRewriter, x: &TreeNode) -> TreeNode {
             // Rewrite the children first. Unchanged subtrees are cloned via the
             // default_rewrite fast path (no allocation, no table lookup).
-            let rewritten = x.default_rewrite(self);
+            let rewritten = x.default_rewrite(rec);
             if self.change_period != 0 && x.id % self.change_period == 0 {
                 // This node is a change seed: bump its version, producing a fresh node.
                 return TreeNode::new(
