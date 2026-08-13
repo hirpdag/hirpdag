@@ -42,15 +42,17 @@ impl MessageAExtendLeaf {
 }
 
 impl HirpdagRewriter for MessageAExtendLeaf {
-    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
         if x.c.is_none() {
             return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
 
         // In the case where we don't want to make changes to extend the leaf,
         // we want to apply the default rewrite which will apply the rewrite
-        // transitively to all applicable members.
-        x.default_rewrite(self)
+        // transitively to all applicable members. Recurse through `rec` (the
+        // memoizing wrapper when one is in play) rather than `self`, so shared
+        // subtrees are rewritten once and served from the cache thereafter.
+        x.default_rewrite(rec)
     }
 }
 
@@ -194,8 +196,8 @@ impl Identity {
 }
 
 impl HirpdagRewriter for Identity {
-    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-        x.default_rewrite(self)
+    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
+        x.default_rewrite(rec)
     }
 }
 
@@ -245,4 +247,55 @@ fn foobar4() {
     let t = MessageAExtendLeaf::new();
     let tc = t.rewrite(&c);
     eprintln!("t(c)\n{:?}", tc);
+}
+
+// A rewriter that counts how many times its node-local transform actually runs
+// (i.e. how many cache misses occur). The counter is shared via `Rc` so the
+// test can read it after the rewriter has been moved into the memoizing wrapper
+// (whose `rewriter` field is private to the generated module).
+struct CountingIdentity {
+    calls: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl HirpdagRewriter for CountingIdentity {
+    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
+        self.calls.set(self.calls.get() + 1);
+        x.default_rewrite(rec)
+    }
+}
+
+// The memoization cache must actually be populated and consulted: each distinct
+// node is transformed once, and repeated encounters (within a traversal or
+// across separate `rewrite` calls) are served from the cache without re-running
+// the node-local transform.
+#[test]
+fn memoization_caches_rewrites() {
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    let t = HirpdagRewriteMemoized::new(CountingIdentity {
+        calls: calls.clone(),
+    });
+
+    // A three-node chain: root -> mid -> leaf.
+    let leaf: MessageA = MessageA::new(1, "memo_leaf".to_string(), None, 1);
+    let mid: MessageA = MessageA::new(2, "memo_mid".to_string(), Some(leaf.clone()), 2);
+    let root: MessageA = MessageA::new(3, "memo_root".to_string(), Some(mid.clone()), 3);
+
+    // First rewrite visits each of the three nodes exactly once.
+    let r1 = t.rewrite(&root);
+    assert_eq!(r1, root, "identity rewrite reproduces the same interned node");
+    assert_eq!(calls.get(), 3, "first rewrite transforms each node once");
+
+    // Rewriting the same root again is a full cache hit: no extra work.
+    let r2 = t.rewrite(&root);
+    assert_eq!(r2, root);
+    assert_eq!(calls.get(), 3, "second rewrite of the same root hits the cache");
+
+    // Rewriting an already-seen subtree is likewise served from the cache.
+    let r_mid = t.rewrite(&mid);
+    assert_eq!(r_mid, mid);
+    assert_eq!(
+        calls.get(),
+        3,
+        "rewriting a cached subtree adds no transforms"
+    );
 }
