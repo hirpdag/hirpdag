@@ -37,7 +37,7 @@ impl AddN {
 }
 
 impl HirpdagRewriter for AddN {
-    fn rewrite_EvenNumber<R: HirpdagRewriter>(&self, x: &EvenNumber, _rec: &R) -> EvenNumber {
+    fn rewrite_EvenNumber(&self, x: &EvenNumber) -> EvenNumber {
         EvenNumber::new(x.a + self.n)
     }
 }
