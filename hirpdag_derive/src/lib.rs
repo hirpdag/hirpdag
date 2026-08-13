@@ -651,7 +651,7 @@ fn expand_hirpdag_struct(
 
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #hirpdag_ref_name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self)
+                rewriter.#hirpdag_rewrite_method_name(self, rewriter)
             }
         }
 
@@ -859,7 +859,7 @@ fn expand_hirpdag_enum(
 
         impl<T: HirpdagRewriter> HirpdagRewritable<T> for #name {
             fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self)
+                rewriter.#hirpdag_rewrite_method_name(self, rewriter)
             }
         }
 
@@ -895,8 +895,12 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
     quote! {
 
         #[allow(non_snake_case)]
-        fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
-            #hirpdag_ref_name::default_rewrite::<Self>(x, self)
+        fn #hirpdag_rewrite_method_name<HirpdagRec: HirpdagRewriter>(
+            &self,
+            x: &#hirpdag_ref_name,
+            rec: &HirpdagRec,
+        ) -> #hirpdag_ref_name {
+            #hirpdag_ref_name::default_rewrite::<HirpdagRec>(x, rec)
         }
 
     }
@@ -904,7 +908,7 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
 
 fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     //let cache_member = quote! {
-    //    cache_MessageA: std::collections::HashMap<MessageA, MessageA>,
+    //    cache_MessageA: std::cell::RefCell<std::collections::HashMap<MessageA, MessageA>>,
     //};
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
@@ -912,31 +916,43 @@ fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     quote! {
-        #hirpdag_cache_member_name: std::collections::HashMap<#hirpdag_ref_name, #hirpdag_ref_name>,
+        #hirpdag_cache_member_name:
+            std::cell::RefCell<std::collections::HashMap<#hirpdag_ref_name, #hirpdag_ref_name>>,
     }
 }
 
 fn get_cache_member_new(name: &str) -> proc_macro2::TokenStream {
     //let cache_member_new = quote! {
-    //    cache_MessageA: std::collections::HashMap::new(),
+    //    cache_MessageA: std::cell::RefCell::new(std::collections::HashMap::new()),
     //};
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     quote! {
-        #hirpdag_cache_member_name: std::collections::HashMap::new(),
+        #hirpdag_cache_member_name: std::cell::RefCell::new(std::collections::HashMap::new()),
     }
 }
 
 fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     //let cache_rewrite = quote! {
     //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        cache_MessageA.get(x).unwrap_or_else(|x| {
-    //          MessageA::default_rewrite<Self>(x, self)
-    //        };
+    //    fn rewrite_MessageA<R: HirpdagRewriter>(&self, x: &MessageA, rec: &R) -> MessageA {
+    //        if let Some(cached) = self.cache_MessageA.borrow().get(x) {
+    //            return cached.clone();
+    //        }
+    //        let result = self.rewriter.rewrite_MessageA(x, rec);
+    //        self.cache_MessageA.borrow_mut().insert(x.clone(), result.clone());
+    //        result
     //    }
     //};
+    //
+    // The memoized wrapper is threaded through the recursion as `rec`, so that
+    // when a node's `default_rewrite` recurses into its children the recursion
+    // re-enters this cache. Because nodes are hash-consed, a shared subtree
+    // reached through multiple parents is rewritten once and served from the
+    // cache thereafter. The inner rewriter still supplies the node-local
+    // transform; we only intercept it to memoize and to keep recursion pointed
+    // at the wrapper (`rec`) rather than the bare inner rewriter.
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
@@ -949,13 +965,19 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     quote! {
 
         #[allow(non_snake_case)]
-        fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
+        fn #hirpdag_rewrite_method_name<HirpdagRec: HirpdagRewriter>(
+            &self,
+            x: &#hirpdag_ref_name,
+            rec: &HirpdagRec,
+        ) -> #hirpdag_ref_name {
+            if let Some(cached) = self.#hirpdag_cache_member_name.borrow().get(x) {
+                return cached.clone();
+            }
+            let result = self.rewriter.#hirpdag_rewrite_method_name(x, rec);
             self.#hirpdag_cache_member_name
-                .get(x)
-                .cloned()
-                .unwrap_or_else(|| {
-                    self.rewriter.rewrite(x)
-                })
+                .borrow_mut()
+                .insert(x.clone(), result.clone());
+            result
         }
 
     }

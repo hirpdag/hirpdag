@@ -86,13 +86,17 @@ impl Substitute {
 }
 
 impl HirpdagRewriter for Substitute {
-    fn rewrite_Expr(&self, x: &Expr) -> Expr {
+    // `rec` is the rewriter to recurse through. Pass it (not `self`) to
+    // `default_rewrite` so that when this rewriter is wrapped in
+    // `HirpdagRewriteMemoized`, the recursion re-enters the cache and shared
+    // subtrees are rewritten only once.
+    fn rewrite_Expr<R: HirpdagRewriter>(&self, x: &Expr, rec: &R) -> Expr {
         if let ExprKind::Var(name) = &x.x {
             if *name == self.var {
                 return self.s.clone();
             }
         }
-        x.default_rewrite(self)
+        x.default_rewrite(rec)
     }
 }
 
