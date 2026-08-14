@@ -90,7 +90,7 @@ This makes the graph better for persistence.
 
 An [adjacency list](https://en.m.wikipedia.org/wiki/Adjacency_list) or [edge list](https://en.m.wikipedia.org/wiki/Edge_list) can encode the graph structure itself.
 
-```
+```rust
 type NodeIndex = u32;
 
 struct Node {
@@ -103,3 +103,19 @@ struct Graph {
 }
 ```
 
+
+## No Interior Mutability
+
+Identity-defining data is fundamentally incompatible with interior mutability.
+
+Everything a Hirpdag node does (hash consing, equality, metadata, memoization, ...) assumes its contents are permanently immutable.
+
+### Alternative: a side-table keyed by node reference
+
+Mutable state associated with a node can be kept *outside* the node in a side-table keyed by the node's reference.
+
+```rust
+// The node stays immutable; mutable data lives beside it.
+let mut annotations: HashMap<MyNode, Annotation> = HashMap::new();
+annotations.insert(node.clone(), Annotation::new());
+```
