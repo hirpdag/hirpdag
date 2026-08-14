@@ -30,6 +30,11 @@ The ability to create a modified version of a node without mutating the original
 ### Referential Transparency
 Nodes with identical structure always have identical meaning and share the same interned pointer.  Programs can compare, cache, or substitute any two equal nodes freely.
 
+### Immutability / No Interior Mutability
+A node's contents are fixed for its lifetime — they *are* its identity.  Interior mutability (`Cell`, `RefCell`, `Mutex`, `AtomicUsize`, …) is **forbidden** inside a node, because mutating a field through a shared reference would invalidate everything keyed on the node's content: hash-consing (the node would be filed under a key that no longer describes it), pointer equality, the cached `HirpdagMeta`, and memoized results.  Identity-defining data is fundamentally incompatible with interior mutability.
+
+To associate *mutable* state with a node (annotations, analysis results, scratch state), keep it in a side-table keyed by the node reference (`HashMap<Node, _>`) rather than inside the node.  A hash-consed `HirpdagRef` is a stable, `O(1)`-hashable/ordered key.  See `book/src/ch04-00-techniques.md` — *No Interior Mutability*.
+
 ---
 
 ## Metadata
