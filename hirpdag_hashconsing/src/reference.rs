@@ -35,6 +35,31 @@ where
 
     /// Get a weak reference handle from a strong reference handle.
     fn weak_downgrade(ptr: &R) -> Self;
+
+    /// Clone a weak reference handle. The new handle refers to the same data and
+    /// keeps the weak count alive independently of the original.
+    ///
+    /// Unlike [`weak_downgrade`](Self::weak_downgrade) this does not require a
+    /// live strong reference: a weak handle can be duplicated whether or not its
+    /// referent is still alive. This is what lets a weak reference be stored as
+    /// the *value* of a concurrent map (see
+    /// [`NonPurgingTable`](crate::NonPurgingTable)), which must be able to clone
+    /// values out on lookup.
+    fn weak_clone(ptr: &Self) -> Self;
+
+    /// A stable identity for this weak handle, suitable for hashing and equality.
+    ///
+    /// The returned value is derived from the address of the referent allocation
+    /// and stays constant for the whole life of the weak handle — crucially, it
+    /// does *not* change when the referent is dropped. This makes it sound to use
+    /// as a `Hash`/`Eq` key (the [`WeakEntryStrong`](crate::WeakEntryStrong) weak
+    /// holder relies on this), whereas hashing the referent's data would be
+    /// unstable once the data dies.
+    ///
+    /// Under hash-consing, pointer identity coincides with structural identity —
+    /// two structurally equal nodes share one allocation — so this is also the
+    /// correct notion of equality for interned values.
+    fn weak_ptr_id(ptr: &Self) -> usize;
 }
 
 // Reference-counting implementations.

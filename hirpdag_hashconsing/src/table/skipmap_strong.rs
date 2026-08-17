@@ -12,10 +12,11 @@
 //! weak-reference GC of unreferenced nodes).
 
 use crate::reference::*;
+use crate::table::weak_holder::WeakEntryStrong;
 use crate::table::*;
 use crossbeam_skiplist::SkipMap;
 
-pub struct TableSharedSkipMap<D, R>
+pub struct TableSharedSkipMap<D, V>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -25,12 +26,12 @@ where
         + Send
         + Sync
         + 'static,
-    R: Reference<D> + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
-    map: SkipMap<D, R>,
+    map: SkipMap<D, V>,
 }
 
-impl<D, R> Default for TableSharedSkipMap<D, R>
+impl<D, V> Default for TableSharedSkipMap<D, V>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -40,7 +41,7 @@ where
         + Send
         + Sync
         + 'static,
-    R: Reference<D> + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self {
@@ -49,7 +50,47 @@ where
     }
 }
 
-impl<D, R> Table<D, R> for TableSharedSkipMap<D, R>
+/// Private map plumbing, shared by the strong ([`Table`]) and weak
+/// ([`NonPurgingTable`]) views so the raw `SkipMap` calls live in one place.
+impl<D, V> TableSharedSkipMap<D, V>
+where
+    D: std::hash::Hash
+        + std::cmp::Eq
+        + std::cmp::Ord
+        + std::fmt::Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+    fn map_get(&self, data: &D) -> Option<V> {
+        self.map.get(data).map(|e| e.value().clone())
+    }
+
+    fn map_retain<F>(&self, mut keep: F)
+    where
+        F: FnMut(&V) -> bool,
+    {
+        // SkipMap has no bulk retain; collect the dead keys then remove them.
+        // Iteration and removal are both lock-free and safe to interleave.
+        let mut dead: Vec<D> = Vec::new();
+        for e in self.map.iter() {
+            if !keep(e.value()) {
+                dead.push(e.key().clone());
+            }
+        }
+        for k in dead {
+            self.map.remove(&k);
+        }
+    }
+
+    fn map_len(&self) -> usize {
+        self.map.len()
+    }
+}
+
+impl<D, R, WR> Table<D, R, WR> for TableSharedSkipMap<D, R>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -60,9 +101,10 @@ where
         + Sync
         + 'static,
     R: Reference<D> + Clone + Send + Sync + 'static,
+    WR: ReferenceWeak<D, R>,
 {
     fn get(&self, data: &D) -> Option<R> {
-        self.map.get(data).map(|e| R::strong_clone(e.value()))
+        self.map_get(data)
     }
 
     fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
@@ -93,6 +135,61 @@ where
     }
 }
 
+/// Weak-reference (non-purging) view: stores weak handles; the purge adapter
+/// drives eviction.
+impl<D, R, WR> NonPurgingTable<D, R, WR> for TableSharedSkipMap<D, WeakEntryStrong<D, R, WR>>
+where
+    D: std::hash::Hash
+        + std::cmp::Eq
+        + std::cmp::Ord
+        + std::fmt::Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    R: Reference<D>,
+    WR: ReferenceWeak<D, R> + Send + Sync + 'static,
+{
+    fn get(&self, data: &D) -> Option<R> {
+        self.map_get(data).and_then(|entry| entry.upgrade())
+    }
+
+    fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
+    where
+        CF: FnOnce(&mut D),
+    {
+        if let Some(existing) = self.map_get(&data).and_then(|entry| entry.upgrade()) {
+            return existing;
+        }
+        creation_meta(&mut data);
+        let obj = R::new(data);
+        let key = R::strong_deref(&obj).clone();
+        loop {
+            // Insert our weak if the slot is absent or dead; keep an existing
+            // live entry. `compare_insert` re-evaluates the predicate under the
+            // final CAS, so a node that became live is never clobbered.
+            let entry =
+                self.map
+                    .compare_insert(key.clone(), WeakEntryStrong::downgrade(&obj), |current| {
+                        !current.is_alive()
+                    });
+            if let Some(existing) = entry.value().upgrade() {
+                return existing;
+            }
+            // The observed entry died between compare and upgrade; retry (the
+            // predicate will now replace it with our node).
+        }
+    }
+
+    fn retain_alive(&self) {
+        self.map_retain(|entry| entry.is_alive());
+    }
+
+    fn len(&self) -> usize {
+        self.map_len()
+    }
+}
+
 pub struct BuildTableSharedSkipMap<D, R> {
     phantom_d: std::marker::PhantomData<D>,
     phantom_r: std::marker::PhantomData<R>,
@@ -119,7 +216,7 @@ impl<D, R> Default for BuildTableSharedSkipMap<D, R> {
     }
 }
 
-impl<D, R> BuildTable<D, R> for BuildTableSharedSkipMap<D, R>
+impl<D, R, WR> BuildTable<D, R, WR> for BuildTableSharedSkipMap<D, R>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -130,6 +227,7 @@ where
         + Sync
         + 'static,
     R: Reference<D> + Clone + Send + Sync + 'static,
+    WR: ReferenceWeak<D, R>,
 {
     type TableSharedType = TableSharedSkipMap<D, R>;
 

@@ -545,6 +545,7 @@ fn expand_hirpdag_struct(
             static ref #hirpdag_table_name: HirpdagHashconsTable<
             #hirpdag_struct_name,
             ImplRef<HirpdagStorage<#hirpdag_struct_name>>,
+            ImplRefWeak<HirpdagStorage<#hirpdag_struct_name>>,
             ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>> =
                 HirpdagHashconsTable::new(
                   ImplBuildTableShared::<HirpdagStorage::<#hirpdag_struct_name>>::default()
