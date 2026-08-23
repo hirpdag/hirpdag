@@ -280,13 +280,20 @@ fn memoization_caches_rewrites() {
 
     // First rewrite visits each of the three nodes exactly once.
     let r1 = t.rewrite(&root);
-    assert_eq!(r1, root, "identity rewrite reproduces the same interned node");
+    assert_eq!(
+        r1, root,
+        "identity rewrite reproduces the same interned node"
+    );
     assert_eq!(calls.get(), 3, "first rewrite transforms each node once");
 
     // Rewriting the same root again is a full cache hit: no extra work.
     let r2 = t.rewrite(&root);
     assert_eq!(r2, root);
-    assert_eq!(calls.get(), 3, "second rewrite of the same root hits the cache");
+    assert_eq!(
+        calls.get(),
+        3,
+        "second rewrite of the same root hits the cache"
+    );
 
     // Rewriting an already-seen subtree is likewise served from the cache.
     let r_mid = t.rewrite(&mid);
