@@ -94,8 +94,8 @@ hirpdag_bench_configs! {
             rewritten
         }
 
-        fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-            Some(&self.cache)
+        fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+            &self.cache
         }
     }
 

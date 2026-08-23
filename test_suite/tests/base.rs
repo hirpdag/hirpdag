@@ -57,8 +57,8 @@ impl HirpdagRewriter for MessageAExtendLeaf {
         x.default_rewrite(self)
     }
 
-    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-        Some(&self.cache)
+    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+        &self.cache
     }
 }
 
@@ -210,8 +210,8 @@ impl HirpdagRewriter for Identity {
         x.default_rewrite(self)
     }
 
-    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-        Some(&self.cache)
+    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+        &self.cache
     }
 }
 
@@ -277,8 +277,8 @@ impl HirpdagRewriter for CountingIdentity {
         x.default_rewrite(self)
     }
 
-    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-        Some(&self.cache)
+    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+        &self.cache
     }
 }
 
@@ -345,8 +345,8 @@ impl HirpdagRewriter for AppendTag {
         )
     }
 
-    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-        Some(&self.cache)
+    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+        &self.cache
     }
 }
 

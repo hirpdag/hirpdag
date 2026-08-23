@@ -56,8 +56,8 @@ hirpdag_bench_configs! {
             ChainLink::new(x.n, self.rewrite(&x.next), x.v + 1)
         }
 
-        fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-            Some(&self.cache)
+        fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+            &self.cache
         }
     }
 

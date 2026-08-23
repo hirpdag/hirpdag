@@ -56,8 +56,8 @@ impl foo::HirpdagRewriter for FooExtendLeaf {
         x.default_rewrite(self)
     }
 
-    fn memoized_rewrite_cache(&self) -> Option<&foo::HirpdagRewriteCache> {
-        Some(&self.cache)
+    fn rewrite_cache(&self) -> &foo::HirpdagRewriteCache {
+        &self.cache
     }
 }
 
@@ -86,8 +86,8 @@ impl bar::HirpdagRewriter for BarExtendLeaf {
         x.default_rewrite(self)
     }
 
-    fn memoized_rewrite_cache(&self) -> Option<&bar::HirpdagRewriteCache> {
-        Some(&self.cache)
+    fn rewrite_cache(&self) -> &bar::HirpdagRewriteCache {
+        &self.cache
     }
 }
 

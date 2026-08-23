@@ -1072,30 +1072,49 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
                 x.hirpdag_rewrite(self)
             }
 
-            /// Memoization hook. Return `Some(cache)` — a `HirpdagRewriteCache`
-            /// the rewriter owns — to make this rewriter memoizing; the default
-            /// `None` disables memoization.
+            /// The `HirpdagRewriteCache` this rewriter owns.
+            ///
+            /// Memoization is **on by default**, so a rewriter embeds a
+            /// `HirpdagRewriteCache` and returns it here (e.g. `&self.cache`).
+            /// A rewriter that disables memoization — by overriding
+            /// `memoized_rewrite_cache` to return `None` — need not implement
+            /// this; the default panics if it is ever reached.
+            fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+                panic!(
+                    "HirpdagRewriter memoization is on by default but this \
+                     rewriter provides no cache: implement `rewrite_cache` to \
+                     return an owned `HirpdagRewriteCache`, or override \
+                     `memoized_rewrite_cache` to return `None` to disable \
+                     memoization"
+                )
+            }
+
+            /// The cache to memoize this rewrite through, or `None` to disable
+            /// memoization for this rewriter.
+            ///
+            /// Memoization is **on by default**: the default returns
+            /// `Some(self.rewrite_cache())`. Override to return `None` to turn
+            /// it off.
             ///
             /// Rewriters recurse through `self` (`x.default_rewrite(self)` /
-            /// `self.rewrite(&child)`), so the cache returned here is consulted
-            /// for every node the traversal reaches. Because nodes are
-            /// hash-consed, a node reached by several paths in a DAG is rewritten
-            /// once and served from the cache on every later encounter — within a
-            /// single traversal and across repeated `rewrite` calls (the cache
-            /// lives as long as the rewriter). The cache's tables are behind
-            /// `Mutex`es, so a `Send + Sync` rewriter holding one may be shared
-            /// across threads.
+            /// `self.rewrite(&child)`), so this cache is consulted for every
+            /// node the traversal reaches. Because nodes are hash-consed, a node
+            /// reached by several paths in a DAG is rewritten once and served
+            /// from the cache on every later encounter — within a single
+            /// traversal and across repeated `rewrite` calls (the cache lives as
+            /// long as the rewriter). The cache's tables are behind `Mutex`es,
+            /// so a `Send + Sync` rewriter may be shared across threads.
             fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-                None
+                Some(self.rewrite_cache())
             }
         }
 
         /// Per-type memoization tables a rewriter owns to memoize its rewrites.
         ///
-        /// Give a rewriter a `HirpdagRewriteCache` field and return `Some(&field)`
-        /// from `HirpdagRewriter::memoized_rewrite_cache` to opt in. Each field
-        /// maps an input node to its rewritten result; the maps are behind
-        /// `Mutex`es, so the cache is thread-safe.
+        /// Memoization is on by default: a rewriter embeds a `HirpdagRewriteCache`
+        /// and returns it from `HirpdagRewriter::rewrite_cache`. Each field maps
+        /// an input node to its rewritten result; the maps are behind `Mutex`es,
+        /// so the cache is thread-safe.
         pub struct HirpdagRewriteCache {
             #cache_members
         }

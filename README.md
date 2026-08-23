@@ -75,10 +75,11 @@ use expressions::*;
 // public API (the HirpdagRewriter trait, HirpdagRewriteCache,
 // default_rewrite, and the pub `x` field).
 //
-// To memoize, the rewriter owns a HirpdagRewriteCache and returns it from
-// `memoized_rewrite_cache`. Since rewriters recurse through `self`, the cache
-// is consulted for every node, so a subtree shared by several parents in the
-// hash-consed DAG is rewritten only once.
+// Memoization is on by default: the rewriter owns a HirpdagRewriteCache and
+// returns it from `rewrite_cache`. Since rewriters recurse through `self`, the
+// cache is consulted for every node, so a subtree shared by several parents in
+// the hash-consed DAG is rewritten only once. (To turn memoization off, a
+// rewriter overrides `memoized_rewrite_cache` to return `None` instead.)
 struct Substitute {
     var: String,
     s: Expr,
@@ -105,8 +106,8 @@ impl HirpdagRewriter for Substitute {
         x.default_rewrite(self)
     }
 
-    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-        Some(&self.cache)
+    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
+        &self.cache
     }
 }
 
