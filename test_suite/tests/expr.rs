@@ -115,16 +115,21 @@ mod datamodel {
 use datamodel::*;
 
 // A rewriter defined outside the hirpdag module, against the generated
-// public API (the HirpdagRewriter trait, HirpdagRewriteMemoized,
+// public API (the HirpdagRewriter trait, HirpdagRewriteCache,
 // default_rewrite, and the pub `x` field).
 struct Substitute {
     var: String,
     s: Expr,
+    cache: HirpdagRewriteCache,
 }
 
 impl Substitute {
-    pub fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
-        HirpdagRewriteMemoized::new(Self { var: var, s: s })
+    pub fn new(var: String, s: Expr) -> Self {
+        Self {
+            var: var,
+            s: s,
+            cache: HirpdagRewriteCache::new(),
+        }
     }
 }
 
@@ -136,6 +141,10 @@ impl HirpdagRewriter for Substitute {
             }
         }
         x.default_rewrite(self)
+    }
+
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+        Some(&self.cache)
     }
 }
 

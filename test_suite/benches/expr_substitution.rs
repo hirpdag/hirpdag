@@ -51,11 +51,15 @@ hirpdag_bench_configs! {
     struct SubstVars {
         // Maps Var(id) -> Num(id + 1) for id in 0..num_vars.
         num_vars: u32,
+        cache: HirpdagRewriteCache,
     }
 
     impl SubstVars {
-        fn new(num_vars: u32) -> HirpdagRewriteMemoized<Self> {
-            HirpdagRewriteMemoized::new(SubstVars { num_vars })
+        fn new(num_vars: u32) -> Self {
+            SubstVars {
+                num_vars,
+                cache: HirpdagRewriteCache::new(),
+            }
         }
     }
 
@@ -67,6 +71,10 @@ hirpdag_bench_configs! {
                 }
             }
             x.default_rewrite(self)
+        }
+
+        fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+            Some(&self.cache)
         }
     }
 

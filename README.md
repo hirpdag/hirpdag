@@ -72,16 +72,26 @@ mod expressions {
 use expressions::*;
 
 // A rewriter defined outside the hirpdag module, against the generated
-// public API (the HirpdagRewriter trait, HirpdagRewriteMemoized,
+// public API (the HirpdagRewriter trait, HirpdagRewriteCache,
 // default_rewrite, and the pub `x` field).
+//
+// To memoize, the rewriter owns a HirpdagRewriteCache and returns it from
+// `memoized_rewrite_cache`. Since rewriters recurse through `self`, the cache
+// is consulted for every node, so a subtree shared by several parents in the
+// hash-consed DAG is rewritten only once.
 struct Substitute {
     var: String,
     s: Expr,
+    cache: HirpdagRewriteCache,
 }
 
 impl Substitute {
-    pub fn new(var: String, s: Expr) -> HirpdagRewriteMemoized<Self> {
-        HirpdagRewriteMemoized::new(Self { var: var, s: s })
+    pub fn new(var: String, s: Expr) -> Self {
+        Self {
+            var,
+            s,
+            cache: HirpdagRewriteCache::new(),
+        }
     }
 }
 
@@ -93,6 +103,10 @@ impl HirpdagRewriter for Substitute {
             }
         }
         x.default_rewrite(self)
+    }
+
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+        Some(&self.cache)
     }
 }
 

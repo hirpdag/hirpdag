@@ -24,15 +24,16 @@ mod datamodel {
 use datamodel::*;
 
 // A rewriter defined outside the hirpdag module, against the generated
-// public API (the HirpdagRewriter trait, HirpdagRewriteMemoized, and the
-// pub `a` field).
+// public API (the HirpdagRewriter trait and the pub `a` field). EvenNumber is
+// a leaf, so this rewriter never recurses and does not need a memoization
+// cache — it leaves `memoized_rewrite_cache` at its `None` default.
 struct AddN {
     n: u32,
 }
 
 impl AddN {
-    pub fn new(x: u32) -> HirpdagRewriteMemoized<Self> {
-        HirpdagRewriteMemoized::new(Self { n: x })
+    pub fn new(x: u32) -> Self {
+        Self { n: x }
     }
 }
 

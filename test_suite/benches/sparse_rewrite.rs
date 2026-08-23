@@ -65,11 +65,15 @@ hirpdag_bench_configs! {
     // otherwise `default_rewrite` returns a clone of the input reference.
     struct BumpSome {
         change_period: u64,
+        cache: HirpdagRewriteCache,
     }
 
     impl BumpSome {
-        fn new(change_period: u64) -> HirpdagRewriteMemoized<Self> {
-            HirpdagRewriteMemoized::new(BumpSome { change_period })
+        fn new(change_period: u64) -> Self {
+            BumpSome {
+                change_period,
+                cache: HirpdagRewriteCache::new(),
+            }
         }
     }
 
@@ -88,6 +92,10 @@ hirpdag_bench_configs! {
                 );
             }
             rewritten
+        }
+
+        fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+            Some(&self.cache)
         }
     }
 

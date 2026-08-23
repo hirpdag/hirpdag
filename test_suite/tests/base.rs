@@ -28,16 +28,20 @@ mod datamodel {
 use datamodel::*;
 
 // A rewriter defined outside the hirpdag module: the generated
-// HirpdagRewriter trait, HirpdagRewriteMemoized, and default_rewrite are
+// HirpdagRewriter trait, HirpdagRewriteCache, and default_rewrite are
 // public, so external rewriters only need the fields they touch to be pub.
 struct MessageAExtendLeaf {
     doot: MessageA,
+    cache: HirpdagRewriteCache,
 }
 
 impl MessageAExtendLeaf {
-    fn new() -> HirpdagRewriteMemoized<Self> {
+    fn new() -> Self {
         let extension = MessageA::new(0, "DOOT".to_string(), None, 7007);
-        HirpdagRewriteMemoized::new(Self { doot: extension })
+        Self {
+            doot: extension,
+            cache: HirpdagRewriteCache::new(),
+        }
     }
 }
 
@@ -51,6 +55,10 @@ impl HirpdagRewriter for MessageAExtendLeaf {
         // we want to apply the default rewrite which will apply the rewrite
         // transitively to all applicable members.
         x.default_rewrite(self)
+    }
+
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+        Some(&self.cache)
     }
 }
 
@@ -185,17 +193,25 @@ fn foobar3() {
 // rewrite. This exercises the "no changes" fast path in default_rewrite, which
 // should return the input reference rather than reconstructing/re-hashconsing an
 // identical node.
-struct Identity;
+struct Identity {
+    cache: HirpdagRewriteCache,
+}
 
 impl Identity {
-    fn new() -> HirpdagRewriteMemoized<Self> {
-        HirpdagRewriteMemoized::new(Identity)
+    fn new() -> Self {
+        Identity {
+            cache: HirpdagRewriteCache::new(),
+        }
     }
 }
 
 impl HirpdagRewriter for Identity {
     fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
         x.default_rewrite(self)
+    }
+
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+        Some(&self.cache)
     }
 }
 
@@ -249,16 +265,20 @@ fn foobar4() {
 
 // A rewriter that counts how many times its node-local transform actually runs
 // (i.e. how many cache misses occur). The counter is shared via `Rc` so the
-// test can read it after the rewriter has been moved into the memoizing wrapper
-// (whose `rewriter` field is private to the generated module).
+// test can read it after the rewriter owns the cache.
 struct CountingIdentity {
     calls: std::rc::Rc<std::cell::Cell<usize>>,
+    cache: HirpdagRewriteCache,
 }
 
 impl HirpdagRewriter for CountingIdentity {
     fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
         self.calls.set(self.calls.get() + 1);
         x.default_rewrite(self)
+    }
+
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+        Some(&self.cache)
     }
 }
 
@@ -269,9 +289,10 @@ impl HirpdagRewriter for CountingIdentity {
 #[test]
 fn memoization_caches_rewrites() {
     let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
-    let t = HirpdagRewriteMemoized::new(CountingIdentity {
+    let t = CountingIdentity {
         calls: calls.clone(),
-    });
+        cache: HirpdagRewriteCache::new(),
+    };
 
     // A three-node chain: root -> mid -> leaf.
     let leaf: MessageA = MessageA::new(1, "memo_leaf".to_string(), None, 1);
@@ -310,6 +331,7 @@ fn memoization_caches_rewrites() {
 // shared across threads.
 struct AppendTag {
     tag: String,
+    cache: HirpdagRewriteCache,
 }
 
 impl HirpdagRewriter for AppendTag {
@@ -322,6 +344,10 @@ impl HirpdagRewriter for AppendTag {
             recursed.d,
         )
     }
+
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
+        Some(&self.cache)
+    }
 }
 
 // The cache is thread-safe: a single memoizer, shared by reference, can drive
@@ -333,9 +359,10 @@ fn memoization_cache_is_thread_safe() {
     let leaf: MessageA = MessageA::new(7, "ts_leaf".to_string(), None, 7);
     let root: MessageA = MessageA::new(8, "ts_root".to_string(), Some(leaf), 8);
 
-    let t = HirpdagRewriteMemoized::new(AppendTag {
+    let t = AppendTag {
         tag: "_x".to_string(),
-    });
+        cache: HirpdagRewriteCache::new(),
+    };
     let expected = t.rewrite(&root);
 
     std::thread::scope(|scope| {
