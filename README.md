@@ -72,20 +72,18 @@ mod expressions {
 use expressions::*;
 
 // A rewriter defined outside the hirpdag module, against the generated
-// public API (the HirpdagRewriter trait, HirpdagRewriteCache,
+// public API (the HirpdagRewriter trait, HirpdagMemoizeCache,
 // default_rewrite, and the pub `x` field).
 //
-// Memoization is on by default: the rewriter owns a HirpdagRewriteCache field
-// and derives HirpdagMemoize (which supplies the cache — no accessor to write).
-// Since rewriters recurse through `self`, the cache is consulted for every node,
-// so a subtree shared by several parents in the hash-consed DAG is rewritten
-// only once. (To turn memoization off, implement HirpdagMemoize by hand to
-// return `None` instead of deriving it.)
-#[derive(HirpdagMemoize)]
+// Every rewriter must decide whether it memoizes, via `memoized_rewrite_cache`.
+// To memoize, own a HirpdagMemoizeCache and return `Some(&self.cache)`. Since
+// rewriters recurse through `self`, the cache is consulted for every node, so a
+// subtree shared by several parents in the hash-consed DAG is rewritten only
+// once. (To skip memoization, return `None` and keep no cache field.)
 struct Substitute {
     var: String,
     s: Expr,
-    cache: HirpdagRewriteCache,
+    cache: HirpdagMemoizeCache,
 }
 
 impl Substitute {
@@ -93,7 +91,7 @@ impl Substitute {
         Self {
             var,
             s,
-            cache: HirpdagRewriteCache::new(),
+            cache: HirpdagMemoizeCache::new(),
         }
     }
 }
@@ -106,6 +104,10 @@ impl HirpdagRewriter for Substitute {
             }
         }
         x.default_rewrite(self)
+    }
+
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagMemoizeCache> {
+        Some(&self.cache)
     }
 }
 

@@ -77,121 +77,6 @@ pub fn hirpdag_module(
         .into()
 }
 
-/// Derives `HirpdagMemoize` for a rewriter that owns a `HirpdagRewriteCache`,
-/// so memoization works without a hand-written cache accessor.
-///
-/// The rewriter embeds a `HirpdagRewriteCache` field (mark it
-/// `#[hirpdag_cache]`, or leave it as the single field of that type) and
-/// derives this; the generated impl returns `Some(&that_field)`. Because
-/// memoization is the default (the generated `HirpdagRewriter` requires
-/// `HirpdagMemoize`), that is all a memoizing rewriter needs. To disable
-/// memoization instead, implement `HirpdagMemoize` by hand returning `None`.
-///
-/// ```ignore
-/// #[derive(HirpdagMemoize)]
-/// struct Substitute {
-///     var: String,
-///     s: Expr,
-///     cache: HirpdagRewriteCache,
-/// }
-/// ```
-#[proc_macro_derive(HirpdagMemoize, attributes(hirpdag_cache))]
-pub fn derive_hirpdag_memoize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    expand_derive_hirpdag_memoize(&input)
-        .unwrap_or_else(|e| e.to_compile_error())
-        .into()
-}
-
-/// Finds the rewriter's cache field and emits the `HirpdagMemoize` impl.
-///
-/// The cache field is the one marked `#[hirpdag_cache]`, or — if none is
-/// marked — the single field whose type names `HirpdagRewriteCache`.
-fn expand_derive_hirpdag_memoize(
-    input: &syn::DeriveInput,
-) -> syn::Result<proc_macro2::TokenStream> {
-    let name = &input.ident;
-
-    let fields = match &input.data {
-        syn::Data::Struct(syn::DataStruct {
-            fields: syn::Fields::Named(named),
-            ..
-        }) => &named.named,
-        _ => {
-            return Err(syn::Error::new_spanned(
-                input,
-                "#[derive(HirpdagMemoize)] is only supported on structs with named fields; \
-                 implement `HirpdagMemoize` by hand to disable memoization",
-            ))
-        }
-    };
-
-    // Prefer a field explicitly marked `#[hirpdag_cache]`; otherwise fall back
-    // to the single field whose type is spelled `HirpdagRewriteCache`.
-    let marked: Vec<&syn::Field> = fields
-        .iter()
-        .filter(|f| f.attrs.iter().any(|a| a.path().is_ident("hirpdag_cache")))
-        .collect();
-    let cache_field = match marked.len() {
-        1 => marked[0],
-        0 => {
-            let by_type: Vec<&syn::Field> = fields
-                .iter()
-                .filter(|f| type_names_hirpdag_rewrite_cache(&f.ty))
-                .collect();
-            match by_type.len() {
-                1 => by_type[0],
-                0 => {
-                    return Err(syn::Error::new_spanned(
-                        input,
-                        "#[derive(HirpdagMemoize)] found no `HirpdagRewriteCache` field; add one \
-                         (optionally mark it `#[hirpdag_cache]`), or implement `HirpdagMemoize` \
-                         by hand to disable memoization",
-                    ))
-                }
-                _ => {
-                    return Err(syn::Error::new_spanned(
-                        input,
-                        "#[derive(HirpdagMemoize)] found several `HirpdagRewriteCache` fields; \
-                         mark the cache field with `#[hirpdag_cache]`",
-                    ))
-                }
-            }
-        }
-        _ => return Err(syn::Error::new_spanned(
-            input,
-            "#[derive(HirpdagMemoize)] found several `#[hirpdag_cache]` fields; mark exactly one",
-        )),
-    };
-
-    let field_ident = cache_field.ident.as_ref().unwrap();
-    let cache_ty = &cache_field.ty;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    Ok(quote! {
-        impl #impl_generics hirpdag::base::HirpdagMemoize<#cache_ty> for #name #ty_generics
-            #where_clause
-        {
-            fn hirpdag_memoize_cache(&self) -> std::option::Option<&#cache_ty> {
-                std::option::Option::Some(&self.#field_ident)
-            }
-        }
-    })
-}
-
-/// Whether a field type is spelled `HirpdagRewriteCache` (in any module path),
-/// used to locate the cache field when it is not explicitly marked.
-fn type_names_hirpdag_rewrite_cache(ty: &syn::Type) -> bool {
-    matches!(
-        ty,
-        syn::Type::Path(syn::TypePath { path, .. })
-            if path
-                .segments
-                .last()
-                .is_some_and(|seg| seg.ident == "HirpdagRewriteCache")
-    )
-}
-
 fn expand_hirpdag_module(
     config: &HirpdagConfig,
     module: &syn::ItemMod,
@@ -1049,7 +934,7 @@ fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     //    cache_MessageA: std::sync::Mutex<std::collections::HashMap<MessageA, MessageA>>,
     //};
     //
-    // One field per hashconsed struct type on the module's `HirpdagRewriteCache`.
+    // One field per hashconsed struct type on the module's `HirpdagMemoizeCache`.
     // Interior-mutable and thread-safe, so a rewriter can populate it through a
     // shared `&self` during a rewrite and, if the rewriter is `Send + Sync`, be
     // driven from several threads at once.
@@ -1180,13 +1065,7 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         type ImplTableShared<D> = #tableshared_type;
         type ImplBuildTableShared<D> = #build_tableshared_type;
 
-        // Memoization is the default: every `HirpdagRewriter` also supplies a
-        // `HirpdagMemoize<HirpdagRewriteCache>` (via `#[derive(HirpdagMemoize)]`
-        // for the common case of owning a cache field, or by hand returning
-        // `None` to disable). `memoized_rewrite_cache` reads from it.
-        pub trait HirpdagRewriter:
-            std::marker::Sized + hirpdag::base::HirpdagMemoize<HirpdagRewriteCache>
-        {
+        pub trait HirpdagRewriter: std::marker::Sized {
             #rewrite_methods
 
             fn rewrite<T: HirpdagRewritable<Self>>(&self, x: &T) -> T {
@@ -1196,9 +1075,9 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
             /// The cache to memoize this rewrite through, or `None` to disable
             /// memoization for this rewriter.
             ///
-            /// Defaults to the rewriter's `HirpdagMemoize` cache, so a rewriter
-            /// that derives `HirpdagMemoize` (or implements it) memoizes with no
-            /// extra code; one whose `HirpdagMemoize` returns `None` skips it.
+            /// There is no default: every rewriter must decide. A memoizing
+            /// rewriter owns a `HirpdagMemoizeCache` and returns `Some(&self.cache)`;
+            /// one that does not want memoization returns `None`.
             ///
             /// Rewriters recurse through `self` (`x.default_rewrite(self)` /
             /// `self.rewrite(&child)`), so this cache is consulted for every
@@ -1208,22 +1087,19 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
             /// traversal and across repeated `rewrite` calls (the cache lives as
             /// long as the rewriter). The cache's tables are behind `Mutex`es,
             /// so a `Send + Sync` rewriter may be shared across threads.
-            fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-                hirpdag::base::HirpdagMemoize::hirpdag_memoize_cache(self)
-            }
+            fn memoized_rewrite_cache(&self) -> Option<&HirpdagMemoizeCache>;
         }
 
-        /// Per-type memoization tables a rewriter owns to memoize its rewrites.
-        ///
-        /// Memoization is on by default: a rewriter embeds a `HirpdagRewriteCache`
-        /// field and derives `HirpdagMemoize`. Each field maps an input node to
-        /// its rewritten result; the maps are behind `Mutex`es, so the cache is
-        /// thread-safe.
-        pub struct HirpdagRewriteCache {
+        /// A general-purpose memoization cache: one `Mutex<HashMap<Node, Node>>`
+        /// per hashconsed struct type in this module. A `HirpdagRewriter` owns one
+        /// and returns it from `memoized_rewrite_cache` to memoize; each map keys
+        /// a node to its rewritten result. The maps are behind `Mutex`es, so the
+        /// cache is thread-safe.
+        pub struct HirpdagMemoizeCache {
             #cache_members
         }
 
-        impl HirpdagRewriteCache {
+        impl HirpdagMemoizeCache {
             pub fn new() -> Self {
                 Self {
                     #cache_members_new
@@ -1231,7 +1107,7 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
             }
         }
 
-        impl std::default::Default for HirpdagRewriteCache {
+        impl std::default::Default for HirpdagMemoizeCache {
             fn default() -> Self {
                 Self::new()
             }

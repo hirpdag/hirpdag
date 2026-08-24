@@ -38,12 +38,6 @@
 
 pub mod base;
 
-// The memoization trait a rewriter supplies, re-exported at the crate root so
-// a rewriter that disables memoization can name it via `use hirpdag::*`
-// (`#[derive(HirpdagMemoize)]` covers the common, memoizing case). The trait and
-// the derive macro share a name in different namespaces, like `Clone`.
-pub use base::HirpdagMemoize;
-
 pub use hirpdag_hashconsing;
 
 // Re-export #[derive(Hirpdag)]

@@ -63,17 +63,16 @@ hirpdag_bench_configs! {
     // `change_period`, and leaves every other node untouched. A node is
     // reconstructed only if it is a seed or if one of its subtrees changed;
     // otherwise `default_rewrite` returns a clone of the input reference.
-    #[derive(hirpdag::HirpdagMemoize)]
     struct BumpSome {
         change_period: u64,
-        cache: HirpdagRewriteCache,
+        cache: HirpdagMemoizeCache,
     }
 
     impl BumpSome {
         fn new(change_period: u64) -> Self {
             BumpSome {
                 change_period,
-                cache: HirpdagRewriteCache::new(),
+                cache: HirpdagMemoizeCache::new(),
             }
         }
     }
@@ -93,6 +92,9 @@ hirpdag_bench_configs! {
                 );
             }
             rewritten
+        }
+        fn memoized_rewrite_cache(&self) -> Option<&HirpdagMemoizeCache> {
+            Some(&self.cache)
         }
     }
 

@@ -1,10 +1,10 @@
 //! Tests that a memoizing rewriter actually memoizes.
 //!
-//! Memoization is on by default: a rewriter owns a `HirpdagRewriteCache` and
-//! derives `HirpdagMemoize`. Because rewriters recurse through `self`, the cache
+//! A rewriter memoizes by owning a `HirpdagMemoizeCache` and returning it from
+//! `memoized_rewrite_cache`. Because rewriters recurse through `self`, the cache
 //! is consulted for every node, so on a DAG with shared subtrees each unique
 //! node's rewrite rule runs exactly once instead of once per root-to-node path.
-//! A rewriter opts out by implementing `HirpdagMemoize` to return `None`.
+//! A rewriter opts out by returning `None` from `memoized_rewrite_cache`.
 
 use hirpdag::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -44,11 +44,11 @@ fn fib_dag(n: u64) -> Node {
 
 /// A memoizing rewriter that leaves the tree unchanged but counts how many times
 /// its per-node rule runs. The counter is shared (`Arc`) so the test can read it
-/// back. Memoization is on by default via `#[derive(HirpdagMemoize)]`.
-#[derive(HirpdagMemoize)]
+/// back. It memoizes by owning a `HirpdagMemoizeCache` and returning it from
+/// `memoized_rewrite_cache`.
 struct CountingIdentity {
     calls: Arc<AtomicUsize>,
-    cache: HirpdagRewriteCache,
+    cache: HirpdagMemoizeCache,
 }
 
 impl HirpdagRewriter for CountingIdentity {
@@ -56,24 +56,23 @@ impl HirpdagRewriter for CountingIdentity {
         self.calls.fetch_add(1, Ordering::Relaxed);
         x.default_rewrite(self)
     }
-}
-
-/// The same rule, but with memoization disabled by implementing `HirpdagMemoize`
-/// to return `None` (so it needs no cache field).
-struct NaiveIdentity {
-    calls: Arc<AtomicUsize>,
-}
-
-impl HirpdagMemoize<HirpdagRewriteCache> for NaiveIdentity {
-    fn hirpdag_memoize_cache(&self) -> Option<&HirpdagRewriteCache> {
-        None
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagMemoizeCache> {
+        Some(&self.cache)
     }
 }
 
+/// The same rule, but with memoization disabled: `memoized_rewrite_cache`
+/// returns `None`, so it needs no cache field.
+struct NaiveIdentity {
+    calls: Arc<AtomicUsize>,
+}
 impl HirpdagRewriter for NaiveIdentity {
     fn rewrite_Node(&self, x: &Node) -> Node {
         self.calls.fetch_add(1, Ordering::Relaxed);
         x.default_rewrite(self)
+    }
+    fn memoized_rewrite_cache(&self) -> Option<&HirpdagMemoizeCache> {
+        None
     }
 }
 
@@ -103,7 +102,7 @@ fn memoization_visits_each_unique_node_once() {
     let memo_calls = Arc::new(AtomicUsize::new(0));
     let memoized = CountingIdentity {
         calls: memo_calls.clone(),
-        cache: HirpdagRewriteCache::new(),
+        cache: HirpdagMemoizeCache::new(),
     };
     let memo_out = memoized.rewrite(&root);
     assert_eq!(memo_out, root, "memoized identity rewrite must match");

@@ -3,7 +3,7 @@
 //
 // Also test that generated code that needs to be public, is public: the
 // rewriters are defined *outside* their modules, so each module's
-// HirpdagRewriter trait, HirpdagRewriteCache, default_rewrite, and the
+// HirpdagRewriter trait, HirpdagMemoizeCache, default_rewrite, and the
 // data fields the rewriter touches must all be reachable from outside.
 
 #[hirpdag::hirpdag_module]
@@ -29,10 +29,9 @@ mod bar {
 }
 
 // Rewriter for `foo`, defined outside the module.
-#[derive(hirpdag::HirpdagMemoize)]
 struct FooExtendLeaf {
     doot: foo::Data,
-    cache: foo::HirpdagRewriteCache,
+    cache: foo::HirpdagMemoizeCache,
 }
 
 impl FooExtendLeaf {
@@ -40,7 +39,7 @@ impl FooExtendLeaf {
         let extension = foo::Data::new(0, "DOOT".to_string(), None, 7007);
         Self {
             doot: extension,
-            cache: foo::HirpdagRewriteCache::new(),
+            cache: foo::HirpdagMemoizeCache::new(),
         }
     }
 }
@@ -56,13 +55,15 @@ impl foo::HirpdagRewriter for FooExtendLeaf {
         // transitively to all applicable members.
         x.default_rewrite(self)
     }
+    fn memoized_rewrite_cache(&self) -> Option<&foo::HirpdagMemoizeCache> {
+        Some(&self.cache)
+    }
 }
 
 // Rewriter for `bar`, defined outside the module.
-#[derive(hirpdag::HirpdagMemoize)]
 struct BarExtendLeaf {
     doot: bar::Data,
-    cache: bar::HirpdagRewriteCache,
+    cache: bar::HirpdagMemoizeCache,
 }
 
 impl BarExtendLeaf {
@@ -70,7 +71,7 @@ impl BarExtendLeaf {
         let extension = bar::Data::new(0, "DOOT".to_string(), None, 7007);
         Self {
             doot: extension,
-            cache: bar::HirpdagRewriteCache::new(),
+            cache: bar::HirpdagMemoizeCache::new(),
         }
     }
 }
@@ -82,6 +83,9 @@ impl bar::HirpdagRewriter for BarExtendLeaf {
         }
 
         x.default_rewrite(self)
+    }
+    fn memoized_rewrite_cache(&self) -> Option<&bar::HirpdagMemoizeCache> {
+        Some(&self.cache)
     }
 }
 

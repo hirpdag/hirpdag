@@ -48,18 +48,17 @@ hirpdag_bench_configs! {
         Mul(Vec<ExprNode>),
     }
 
-    #[derive(hirpdag::HirpdagMemoize)]
     struct SubstVars {
         // Maps Var(id) -> Num(id + 1) for id in 0..num_vars.
         num_vars: u32,
-        cache: HirpdagRewriteCache,
+        cache: HirpdagMemoizeCache,
     }
 
     impl SubstVars {
         fn new(num_vars: u32) -> Self {
             SubstVars {
                 num_vars,
-                cache: HirpdagRewriteCache::new(),
+                cache: HirpdagMemoizeCache::new(),
             }
         }
     }
@@ -72,6 +71,9 @@ hirpdag_bench_configs! {
                 }
             }
             x.default_rewrite(self)
+        }
+        fn memoized_rewrite_cache(&self) -> Option<&HirpdagMemoizeCache> {
+            Some(&self.cache)
         }
     }
 

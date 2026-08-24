@@ -39,15 +39,14 @@ hirpdag_bench_configs! {
         v: usize,
     }
 
-    #[derive(hirpdag::HirpdagMemoize)]
     struct BumpV {
-        cache: HirpdagRewriteCache,
+        cache: HirpdagMemoizeCache,
     }
 
     impl BumpV {
         fn new() -> Self {
             BumpV {
-                cache: HirpdagRewriteCache::new(),
+                cache: HirpdagMemoizeCache::new(),
             }
         }
     }
@@ -55,6 +54,9 @@ hirpdag_bench_configs! {
     impl HirpdagRewriter for BumpV {
         fn rewrite_ChainLink(&self, x: &ChainLink) -> ChainLink {
             ChainLink::new(x.n, self.rewrite(&x.next), x.v + 1)
+        }
+        fn memoized_rewrite_cache(&self) -> Option<&HirpdagMemoizeCache> {
+            Some(&self.cache)
         }
     }
 
