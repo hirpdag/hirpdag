@@ -30,6 +30,7 @@ use datamodel::*;
 // A rewriter defined outside the hirpdag module: the generated
 // HirpdagRewriter trait, HirpdagRewriteCache, and default_rewrite are
 // public, so external rewriters only need the fields they touch to be pub.
+#[derive(HirpdagMemoize)]
 struct MessageAExtendLeaf {
     doot: MessageA,
     cache: HirpdagRewriteCache,
@@ -55,10 +56,6 @@ impl HirpdagRewriter for MessageAExtendLeaf {
         // we want to apply the default rewrite which will apply the rewrite
         // transitively to all applicable members.
         x.default_rewrite(self)
-    }
-
-    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
-        &self.cache
     }
 }
 
@@ -193,6 +190,7 @@ fn foobar3() {
 // rewrite. This exercises the "no changes" fast path in default_rewrite, which
 // should return the input reference rather than reconstructing/re-hashconsing an
 // identical node.
+#[derive(HirpdagMemoize)]
 struct Identity {
     cache: HirpdagRewriteCache,
 }
@@ -208,10 +206,6 @@ impl Identity {
 impl HirpdagRewriter for Identity {
     fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
         x.default_rewrite(self)
-    }
-
-    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
-        &self.cache
     }
 }
 
@@ -266,6 +260,7 @@ fn foobar4() {
 // A rewriter that counts how many times its node-local transform actually runs
 // (i.e. how many cache misses occur). The counter is shared via `Rc` so the
 // test can read it after the rewriter owns the cache.
+#[derive(HirpdagMemoize)]
 struct CountingIdentity {
     calls: std::rc::Rc<std::cell::Cell<usize>>,
     cache: HirpdagRewriteCache,
@@ -275,10 +270,6 @@ impl HirpdagRewriter for CountingIdentity {
     fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
         self.calls.set(self.calls.get() + 1);
         x.default_rewrite(self)
-    }
-
-    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
-        &self.cache
     }
 }
 
@@ -329,6 +320,7 @@ fn memoization_caches_rewrites() {
 // A rewriter that appends a fixed suffix to every MessageA's string, so the
 // transform is observable and non-trivial. `Send + Sync` so the memoizer can be
 // shared across threads.
+#[derive(HirpdagMemoize)]
 struct AppendTag {
     tag: String,
     cache: HirpdagRewriteCache,
@@ -344,16 +336,11 @@ impl HirpdagRewriter for AppendTag {
             recursed.d,
         )
     }
-
-    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
-        &self.cache
-    }
 }
 
 // The cache is thread-safe: a single memoizer, shared by reference, can drive
-// rewrites from several threads at once. Each thread installs the shared cache
-// on its own stack (via a thread-local), and the per-type `Mutex` maps guard
-// concurrent access. All threads must agree on the result.
+// rewrites from several threads at once. The cache's per-type `Mutex` maps
+// guard concurrent access, and all threads must agree on the result.
 #[test]
 fn memoization_cache_is_thread_safe() {
     let leaf: MessageA = MessageA::new(7, "ts_leaf".to_string(), None, 7);

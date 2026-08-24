@@ -117,6 +117,7 @@ use datamodel::*;
 // A rewriter defined outside the hirpdag module, against the generated
 // public API (the HirpdagRewriter trait, HirpdagRewriteCache,
 // default_rewrite, and the pub `x` field).
+#[derive(HirpdagMemoize)]
 struct Substitute {
     var: String,
     s: Expr,
@@ -141,10 +142,6 @@ impl HirpdagRewriter for Substitute {
             }
         }
         x.default_rewrite(self)
-    }
-
-    fn rewrite_cache(&self) -> &HirpdagRewriteCache {
-        &self.cache
     }
 }
 

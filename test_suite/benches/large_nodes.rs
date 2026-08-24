@@ -112,6 +112,7 @@ hirpdag_bench_configs! {
 
     // Memoized rewrite that bumps the first byte of every blob,
     // forcing a fresh large node per unique blob.
+    #[derive(hirpdag::HirpdagMemoize)]
     struct BumpBlobs {
         cache: HirpdagRewriteCache,
     }
@@ -134,10 +135,6 @@ hirpdag_bench_configs! {
                 return DocNode::new(DocKind::Blob(nd));
             }
             x.default_rewrite(self)
-        }
-
-        fn rewrite_cache(&self) -> &HirpdagRewriteCache {
-            &self.cache
         }
     }
 

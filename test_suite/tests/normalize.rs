@@ -25,9 +25,10 @@ use datamodel::*;
 
 // A rewriter defined outside the hirpdag module, against the generated
 // public API (the HirpdagRewriter trait and the pub `a` field). EvenNumber is
-// a leaf, so this rewriter never recurses and gains nothing from memoization;
-// it opts out by overriding `memoized_rewrite_cache` to return `None` (caching
-// is on by default).
+// a leaf, so this rewriter never recurses and gains nothing from memoization.
+// Memoization is on by default; this rewriter opts out by implementing
+// `HirpdagMemoize` to return `None` instead of deriving it, so it needs no
+// cache field.
 struct AddN {
     n: u32,
 }
@@ -38,13 +39,15 @@ impl AddN {
     }
 }
 
+impl HirpdagMemoize<HirpdagRewriteCache> for AddN {
+    fn hirpdag_memoize_cache(&self) -> Option<&HirpdagRewriteCache> {
+        None
+    }
+}
+
 impl HirpdagRewriter for AddN {
     fn rewrite_EvenNumber(&self, x: &EvenNumber) -> EvenNumber {
         EvenNumber::new(x.a + self.n)
-    }
-
-    fn memoized_rewrite_cache(&self) -> Option<&HirpdagRewriteCache> {
-        None
     }
 }
 

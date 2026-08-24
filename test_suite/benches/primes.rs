@@ -60,6 +60,7 @@ hirpdag_bench_configs! {
         result
     }
 
+    #[derive(hirpdag::HirpdagMemoize)]
     struct IncrementVBy {
         inc: usize,
         cache: HirpdagRewriteCache,
@@ -82,10 +83,6 @@ hirpdag_bench_configs! {
                 self.rewrite(&x.last_prime),
                 x.v + self.inc,
             )
-        }
-
-        fn rewrite_cache(&self) -> &HirpdagRewriteCache {
-            &self.cache
         }
     }
 

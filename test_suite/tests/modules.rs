@@ -29,6 +29,7 @@ mod bar {
 }
 
 // Rewriter for `foo`, defined outside the module.
+#[derive(hirpdag::HirpdagMemoize)]
 struct FooExtendLeaf {
     doot: foo::Data,
     cache: foo::HirpdagRewriteCache,
@@ -55,13 +56,10 @@ impl foo::HirpdagRewriter for FooExtendLeaf {
         // transitively to all applicable members.
         x.default_rewrite(self)
     }
-
-    fn rewrite_cache(&self) -> &foo::HirpdagRewriteCache {
-        &self.cache
-    }
 }
 
 // Rewriter for `bar`, defined outside the module.
+#[derive(hirpdag::HirpdagMemoize)]
 struct BarExtendLeaf {
     doot: bar::Data,
     cache: bar::HirpdagRewriteCache,
@@ -84,10 +82,6 @@ impl bar::HirpdagRewriter for BarExtendLeaf {
         }
 
         x.default_rewrite(self)
-    }
-
-    fn rewrite_cache(&self) -> &bar::HirpdagRewriteCache {
-        &self.cache
     }
 }
 

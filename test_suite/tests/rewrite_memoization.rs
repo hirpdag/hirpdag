@@ -1,9 +1,10 @@
-//! Tests that `HirpdagRewriteMemoized` actually memoizes.
+//! Tests that a memoizing rewriter actually memoizes.
 //!
-//! The memo cache is populated through interior mutability (`RefCell`), and the
-//! memoizing wrapper is threaded through the whole traversal as the recursion
-//! driver, so on a DAG with shared subtrees each unique node's rewrite rule runs
-//! exactly once instead of once per root-to-node path.
+//! Memoization is on by default: a rewriter owns a `HirpdagRewriteCache` and
+//! derives `HirpdagMemoize`. Because rewriters recurse through `self`, the cache
+//! is consulted for every node, so on a DAG with shared subtrees each unique
+//! node's rewrite rule runs exactly once instead of once per root-to-node path.
+//! A rewriter opts out by implementing `HirpdagMemoize` to return `None`.
 
 use hirpdag::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -41,11 +42,13 @@ fn fib_dag(n: u64) -> Node {
     b
 }
 
-/// A rewriter that leaves the tree unchanged but counts how many times its
-/// per-node rule runs (via a shared counter, since the rewriter is moved into
-/// the memoizing wrapper).
+/// A memoizing rewriter that leaves the tree unchanged but counts how many times
+/// its per-node rule runs. The counter is shared (`Arc`) so the test can read it
+/// back. Memoization is on by default via `#[derive(HirpdagMemoize)]`.
+#[derive(HirpdagMemoize)]
 struct CountingIdentity {
     calls: Arc<AtomicUsize>,
+    cache: HirpdagRewriteCache,
 }
 
 impl HirpdagRewriter for CountingIdentity {
@@ -55,17 +58,35 @@ impl HirpdagRewriter for CountingIdentity {
     }
 }
 
+/// The same rule, but with memoization disabled by implementing `HirpdagMemoize`
+/// to return `None` (so it needs no cache field).
+struct NaiveIdentity {
+    calls: Arc<AtomicUsize>,
+}
+
+impl HirpdagMemoize<HirpdagRewriteCache> for NaiveIdentity {
+    fn hirpdag_memoize_cache(&self) -> Option<&HirpdagRewriteCache> {
+        None
+    }
+}
+
+impl HirpdagRewriter for NaiveIdentity {
+    fn rewrite_Node(&self, x: &Node) -> Node {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        x.default_rewrite(self)
+    }
+}
+
 #[test]
-#[should_panic(expected = "each unique node's rule should run exactly once")]
 fn memoization_visits_each_unique_node_once() {
     let n = 25u64;
     let root = fib_dag(n);
     let unique_nodes = (n + 1) as usize;
 
-    // Without memoization: the rule runs once per path, which is exponential in
+    // Memoization disabled: the rule runs once per path, which is exponential in
     // n on a Fibonacci DAG.
     let naive_calls = Arc::new(AtomicUsize::new(0));
-    let naive = CountingIdentity {
+    let naive = NaiveIdentity {
         calls: naive_calls.clone(),
     };
     let naive_out = naive.rewrite(&root);
@@ -77,12 +98,13 @@ fn memoization_visits_each_unique_node_once() {
         naive_count
     );
 
-    // With memoization: the wrapper is threaded through the traversal, so each of
-    // the n + 1 unique nodes is rewritten exactly once.
+    // Memoization on (the default): because the cache is consulted through the
+    // whole traversal, each of the n + 1 unique nodes is rewritten exactly once.
     let memo_calls = Arc::new(AtomicUsize::new(0));
-    let memoized = HirpdagRewriteMemoized::new(CountingIdentity {
+    let memoized = CountingIdentity {
         calls: memo_calls.clone(),
-    });
+        cache: HirpdagRewriteCache::new(),
+    };
     let memo_out = memoized.rewrite(&root);
     assert_eq!(memo_out, root, "memoized identity rewrite must match");
     assert_eq!(
