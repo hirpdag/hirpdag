@@ -478,8 +478,11 @@ fn expand_hirpdag_struct(
     let hirpdag_rewrite_method_name =
         Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
 
-    let hirpdag_cache_member_name_str = format!("cache_{}", name_str);
-    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+    // The `HirpdagMemoizeCache` accessor for this type: looks the node up and,
+    // on a miss, computes and records the rewritten value.
+    let hirpdag_cache_get_or_else_name_str = format!("get_or_else_{}", name_str);
+    let hirpdag_cache_get_or_else_name =
+        Ident::new(&hirpdag_cache_get_or_else_name_str, Span::call_site());
 
     let hirpdag_builder_name_str = format!("{}Builder", name_str);
     let hirpdag_builder_name = Ident::new(&hirpdag_builder_name_str, Span::call_site());
@@ -660,23 +663,10 @@ fn expand_hirpdag_struct(
                 // is consulted for every node in the traversal — a node reached
                 // by several paths in a hash-consed DAG is rewritten once.
                 match rewriter.memoized_rewrite_cache() {
-                    Some(hirpdag_cache) => {
-                        if let Some(hirpdag_cached) = hirpdag_cache
-                            .#hirpdag_cache_member_name
-                            .lock()
-                            .unwrap()
-                            .get(self)
-                        {
-                            return hirpdag_cached.clone();
-                        }
-                        let hirpdag_result = rewriter.#hirpdag_rewrite_method_name(self);
-                        hirpdag_cache
-                            .#hirpdag_cache_member_name
-                            .lock()
-                            .unwrap()
-                            .insert(self.clone(), hirpdag_result.clone());
-                        hirpdag_result
-                    }
+                    Some(hirpdag_cache) => hirpdag_cache.#hirpdag_cache_get_or_else_name(
+                        self,
+                        || rewriter.#hirpdag_rewrite_method_name(self),
+                    ),
                     None => rewriter.#hirpdag_rewrite_method_name(self),
                 }
             }
@@ -961,6 +951,61 @@ fn get_cache_member_new(name: &str) -> proc_macro2::TokenStream {
     }
 }
 
+/// The `HirpdagMemoizeCache` lookup method for one hashconsed type: return the
+/// memoized value for `x`, or compute it with `f`, record it, and return it.
+///
+/// This keeps the locking and the map handling inside the cache, so the
+/// generated `hirpdag_rewrite` only has to call `get_or_else_<Type>`.
+fn get_cache_get_or_else(name: &str) -> proc_macro2::TokenStream {
+    //let cache_get_or_else = quote! {
+    //    pub fn get_or_else_MessageA<F: FnOnce() -> MessageA>(
+    //        &self, x: &MessageA, f: F,
+    //    ) -> MessageA { ... }
+    //};
+    let hirpdag_ref_name = Ident::new(name, Span::call_site());
+
+    let hirpdag_cache_member_name_str = format!("cache_{}", name);
+    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+
+    let hirpdag_cache_get_or_else_name_str = format!("get_or_else_{}", name);
+    let hirpdag_cache_get_or_else_name =
+        Ident::new(&hirpdag_cache_get_or_else_name_str, Span::call_site());
+
+    quote! {
+
+        /// The memoized value for `x`, or `f()` computed, recorded, and
+        /// returned on a miss.
+        ///
+        /// The lock is not held across `f`, so a rewrite that recurses into
+        /// this same cache (the usual case: children are rewritten while the
+        /// parent's value is still being computed) does not deadlock. Two
+        /// threads may therefore both compute the value for the same `x`; they
+        /// agree on the result, so the last write wins harmlessly.
+        #[allow(non_snake_case)]
+        pub fn #hirpdag_cache_get_or_else_name<F>(
+            &self,
+            x: &#hirpdag_ref_name,
+            f: F,
+        ) -> #hirpdag_ref_name
+        where
+            F: FnOnce() -> #hirpdag_ref_name,
+        {
+            if let Some(hirpdag_cached) =
+                self.#hirpdag_cache_member_name.lock().unwrap().get(x)
+            {
+                return hirpdag_cached.clone();
+            }
+            let hirpdag_result = f();
+            self.#hirpdag_cache_member_name
+                .lock()
+                .unwrap()
+                .insert(x.clone(), hirpdag_result.clone());
+            hirpdag_result
+        }
+
+    }
+}
+
 /// Generates the module-level code for the given configuration from all of
 /// the `#[hirpdag]` types in the module: the Impl* type aliases, the
 /// HirpdagRewriter trait, memoized rewriting, and the serialization
@@ -984,6 +1029,14 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         .iter()
         .filter(|entry| entry.is_struct)
         .map(|entry| get_cache_member_new(&entry.name))
+        .collect();
+
+    // The per-type lookup methods on `HirpdagMemoizeCache`, which own the
+    // locking and map handling for memoized rewrites.
+    let cache_get_or_else_methods: proc_macro2::TokenStream = types
+        .iter()
+        .filter(|entry| entry.is_struct)
+        .map(|entry| get_cache_get_or_else(&entry.name))
         .collect();
 
     // (name, is_root) for each hashconsed struct type in the module.
@@ -1105,6 +1158,8 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
                     #cache_members_new
                 }
             }
+
+            #cache_get_or_else_methods
         }
 
         impl std::default::Default for HirpdagMemoizeCache {
