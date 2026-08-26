@@ -24,8 +24,8 @@ mod datamodel {
 use datamodel::*;
 
 // A rewriter defined outside the hirpdag module, against the generated
-// public API (the HirpdagRewriter trait, HirpdagRewriteMemoized, and the
-// pub `a` field).
+// public API (the HirpdagRewriter and HirpdagRewriteDriver traits,
+// HirpdagRewriteMemoized, and the pub `a` field).
 struct AddN {
     n: u32,
 }
@@ -37,7 +37,13 @@ impl AddN {
 }
 
 impl HirpdagRewriter for AddN {
-    fn rewrite_EvenNumber(&self, x: &EvenNumber) -> EvenNumber {
+    // A rule that replaces the node outright never recurses, so it ignores the
+    // driver it is handed.
+    fn rewrite_EvenNumber<D: HirpdagRewriteDriver>(
+        &self,
+        x: &EvenNumber,
+        _driver: &D,
+    ) -> EvenNumber {
         EvenNumber::new(x.a + self.n)
     }
 }

@@ -28,8 +28,9 @@ mod datamodel {
 use datamodel::*;
 
 // A rewriter defined outside the hirpdag module: the generated
-// HirpdagRewriter trait, HirpdagRewriteMemoized, and default_rewrite are
-// public, so external rewriters only need the fields they touch to be pub.
+// HirpdagRewriter and HirpdagRewriteDriver traits, HirpdagRewriteMemoized, and
+// default_rewrite are public, so external rewriters only need the fields they
+// touch to be pub.
 struct MessageAExtendLeaf {
     doot: MessageA,
 }
@@ -42,15 +43,16 @@ impl MessageAExtendLeaf {
 }
 
 impl HirpdagRewriter for MessageAExtendLeaf {
-    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+    fn rewrite_MessageA<D: HirpdagRewriteDriver>(&self, x: &MessageA, driver: &D) -> MessageA {
         if x.c.is_none() {
             return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
 
         // In the case where we don't want to make changes to extend the leaf,
         // we want to apply the default rewrite which will apply the rewrite
-        // transitively to all applicable members.
-        x.default_rewrite(self)
+        // transitively to all applicable members. Recursion goes through the
+        // driver, so the memoizing wrapper gets to cache each node it reaches.
+        x.default_rewrite(driver)
     }
 }
 
@@ -194,8 +196,8 @@ impl Identity {
 }
 
 impl HirpdagRewriter for Identity {
-    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-        x.default_rewrite(self)
+    fn rewrite_MessageA<D: HirpdagRewriteDriver>(&self, x: &MessageA, driver: &D) -> MessageA {
+        x.default_rewrite(driver)
     }
 }
 

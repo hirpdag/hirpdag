@@ -49,14 +49,15 @@ struct CountingIdentity {
 }
 
 impl HirpdagRewriter for CountingIdentity {
-    fn rewrite_Node(&self, x: &Node) -> Node {
+    fn rewrite_Node<D: HirpdagRewriteDriver>(&self, x: &Node, driver: &D) -> Node {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        x.default_rewrite(self)
+        // Recursion goes through the driver, so under HirpdagRewriteMemoized the
+        // children are served from the cache instead of being walked again.
+        x.default_rewrite(driver)
     }
 }
 
 #[test]
-#[should_panic(expected = "each unique node's rule should run exactly once")]
 fn memoization_visits_each_unique_node_once() {
     let n = 25u64;
     let root = fib_dag(n);
@@ -99,5 +100,31 @@ fn memoization_visits_each_unique_node_once() {
         memo_calls.load(Ordering::Relaxed),
         unique_nodes,
         "a second rewrite of the same input should be served from the cache"
+    );
+}
+
+/// The caches are interior-mutable state, not part of the rules: clearing them
+/// makes the memoizer forget what it has seen and run the rules again.
+#[test]
+fn clear_caches_forgets_memoized_results() {
+    let n = 6u64;
+    let root = fib_dag(n);
+    let unique_nodes = (n + 1) as usize;
+
+    let memoized = HirpdagRewriteMemoized::new(CountingIdentity {
+        calls: Arc::new(AtomicUsize::new(0)),
+    });
+    let calls = || memoized.rewriter().calls.load(Ordering::Relaxed);
+
+    assert_eq!(memoized.rewrite(&root), root);
+    assert_eq!(calls(), unique_nodes);
+
+    memoized.clear_caches();
+
+    assert_eq!(memoized.rewrite(&root), root);
+    assert_eq!(
+        calls(),
+        2 * unique_nodes,
+        "after clearing the caches every unique node is rewritten again"
     );
 }

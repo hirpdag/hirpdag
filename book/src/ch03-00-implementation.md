@@ -69,11 +69,20 @@ Apply rewrite rule to self.
 Rewrite all children.
 Construct a replacement for self, if anything changed.
 
+The rules and the traversal are separate: a rewriter supplies the per-type
+rules, a *driver* supplies the recursion. Rules are handed the driver and
+recurse through it, so swapping the driver changes how the graph is walked
+without touching a rule.
+
 ## Memoization
 
 Enabled by immutability and reference counting.
 
 Hash map of reference to reference. Key is input, value is output.
+
+The memoizing driver consults that map before running a rule, and fills it
+afterwards. A node reached along many paths is a single interned node, so the
+second path is a hash lookup rather than a repeat of the subtree below it.
 
 ## Serialization
 

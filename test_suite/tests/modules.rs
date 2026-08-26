@@ -3,8 +3,9 @@
 //
 // Also test that generated code that needs to be public, is public: the
 // rewriters are defined *outside* their modules, so each module's
-// HirpdagRewriter trait, HirpdagRewriteMemoized, default_rewrite, and the
-// data fields the rewriter touches must all be reachable from outside.
+// HirpdagRewriter trait, HirpdagRewriteDriver trait, HirpdagRewriteMemoized,
+// default_rewrite, and the data fields the rewriter touches must all be
+// reachable from outside.
 
 #[hirpdag::hirpdag_module]
 mod foo {
@@ -41,7 +42,7 @@ impl FooExtendLeaf {
 }
 
 impl foo::HirpdagRewriter for FooExtendLeaf {
-    fn rewrite_Data(&self, x: &foo::Data) -> foo::Data {
+    fn rewrite_Data<D: foo::HirpdagRewriteDriver>(&self, x: &foo::Data, driver: &D) -> foo::Data {
         if x.c.is_none() {
             return foo::Data::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
@@ -49,7 +50,7 @@ impl foo::HirpdagRewriter for FooExtendLeaf {
         // In the case where we don't want to make changes to extend the leaf,
         // we want to apply the default rewrite which will apply the rewrite
         // transitively to all applicable members.
-        x.default_rewrite(self)
+        x.default_rewrite(driver)
     }
 }
 
@@ -66,12 +67,12 @@ impl BarExtendLeaf {
 }
 
 impl bar::HirpdagRewriter for BarExtendLeaf {
-    fn rewrite_Data(&self, x: &bar::Data) -> bar::Data {
+    fn rewrite_Data<D: bar::HirpdagRewriteDriver>(&self, x: &bar::Data, driver: &D) -> bar::Data {
         if x.c.is_none() {
             return bar::Data::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
 
-        x.default_rewrite(self)
+        x.default_rewrite(driver)
     }
 }
 
@@ -85,7 +86,7 @@ fn foa_bar_test() {
 
     eprintln!("a\n{:?}", b);
     let t_b = {
-        use crate::foo::HirpdagRewriter;
+        use crate::foo::HirpdagRewriteDriver;
         let foo_t = FooExtendLeaf::new();
         foo_t.rewrite(&b)
     };
@@ -93,7 +94,7 @@ fn foa_bar_test() {
 
     eprintln!("d\n{:?}", d);
     let t_d = {
-        use crate::bar::HirpdagRewriter;
+        use crate::bar::HirpdagRewriteDriver;
         let bar_t = BarExtendLeaf::new();
         bar_t.rewrite(&d)
     };
