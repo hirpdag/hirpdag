@@ -1,9 +1,12 @@
 //! Tests that `HirpdagRewriteMemoized` actually memoizes.
 //!
-//! The memo cache is populated through interior mutability (`RefCell`), and the
-//! memoizing wrapper is threaded through the whole traversal as the recursion
-//! driver, so on a DAG with shared subtrees each unique node's rewrite rule runs
-//! exactly once instead of once per root-to-node path.
+//! The memo cache is populated through interior mutability, and the memoizing
+//! wrapper is threaded through the whole traversal as the recursion driver, so
+//! on a DAG with shared subtrees each unique node's rewrite rule runs exactly
+//! once instead of once per root-to-node path. The cache itself
+//! (`HirpdagMemoizeCache`) is an ordinary thread-safe value: shareable between
+//! threads, and usable for node-keyed computations that have nothing to do with
+//! rewriting.
 
 use hirpdag::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -126,5 +129,130 @@ fn clear_caches_forgets_memoized_results() {
         calls(),
         2 * unique_nodes,
         "after clearing the caches every unique node is rewritten again"
+    );
+}
+
+/// One memoizer, several threads: the cache is shared, so the threads divide
+/// the work rather than each repeating it.
+#[test]
+fn one_memoizer_shared_across_threads() {
+    const THREADS: usize = 4;
+    let n = 20u64;
+    let root = fib_dag(n);
+    let unique_nodes = (n + 1) as usize;
+
+    let memoized = HirpdagRewriteMemoized::new(CountingIdentity {
+        calls: Arc::new(AtomicUsize::new(0)),
+    });
+    let calls = || memoized.rewriter().calls.load(Ordering::Relaxed);
+
+    std::thread::scope(|scope| {
+        for _ in 0..THREADS {
+            scope.spawn(|| {
+                assert_eq!(memoized.rewrite(&root), root);
+            });
+        }
+    });
+
+    // Two threads reaching the same node before either has finished it will
+    // both run the rule, so the exact count depends on scheduling. What the
+    // shared cache guarantees is the bound: a small multiple of the node count,
+    // never the exponential an unshared walk of this DAG would cost.
+    let concurrent_calls = calls();
+    assert!(
+        (unique_nodes..=THREADS * unique_nodes).contains(&concurrent_calls),
+        "expected between {} and {} rule calls across {} threads, got {}",
+        unique_nodes,
+        THREADS * unique_nodes,
+        THREADS,
+        concurrent_calls
+    );
+
+    // Whatever the threads raced over, every node is cached now.
+    assert_eq!(memoized.rewrite(&root), root);
+    assert_eq!(calls(), concurrent_calls);
+}
+
+/// The cache is not rewrite-specific: it memoizes any node-keyed computation.
+#[test]
+fn memoize_cache_is_usable_outside_rewriting() {
+    let n = 24u64;
+    let root = fib_dag(n);
+    let unique_nodes = (n + 1) as usize;
+
+    // Node -> node: the lowest-id node reachable from this one. Recursion is
+    // memoized through the generated cache, so the shared subtrees of the DAG
+    // are visited once between them.
+    let cache = HirpdagMemoizeCache::new();
+    let evaluations = AtomicUsize::new(0);
+    fn lowest_reachable(
+        cache: &HirpdagMemoizeCache,
+        evaluations: &AtomicUsize,
+        node: &Node,
+    ) -> Node {
+        cache.get_or_else(node, || {
+            evaluations.fetch_add(1, Ordering::Relaxed);
+            [&node.left, &node.right]
+                .iter()
+                .filter_map(|child| child.as_ref())
+                .map(|child| lowest_reachable(cache, evaluations, child))
+                .min_by_key(|found| found.id)
+                .unwrap_or_else(|| node.clone())
+        })
+    }
+    assert_eq!(lowest_reachable(&cache, &evaluations, &root).id, 0);
+    assert_eq!(
+        evaluations.load(Ordering::Relaxed),
+        unique_nodes,
+        "each unique node should be evaluated exactly once"
+    );
+
+    // A table of one's own, for a result that is not a node.
+    let sizes: HirpdagMemoizeMap<Node, u64> = HirpdagMemoizeMap::new();
+    fn paths_to_leaves(sizes: &HirpdagMemoizeMap<Node, u64>, node: &Node) -> u64 {
+        sizes.get_or_else(node, || match (&node.left, &node.right) {
+            (None, None) => 1,
+            (left, right) => [left, right]
+                .iter()
+                .filter_map(|child| child.as_ref())
+                .map(|child| paths_to_leaves(sizes, child))
+                .sum(),
+        })
+    }
+    // Node k has one path per path of its two children, so the path counts
+    // follow the same recurrence the DAG was built from: 1, 1, 2, 3, 5, ...
+    let mut paths = (1u64, 1u64); // (node 0, node 1)
+    for _ in 2..=n {
+        paths = (paths.1, paths.0 + paths.1);
+    }
+    assert_eq!(paths_to_leaves(&sizes, &root), paths.1);
+    assert_eq!(sizes.len(), unique_nodes);
+}
+
+/// A cache can be primed before it is handed to a rewriter: a node with an
+/// entry is served from it, and its subtree is never walked.
+#[test]
+fn with_cache_reuses_a_primed_cache() {
+    let n = 8u64;
+    let root = fib_dag(n);
+    let unique_nodes = (n + 1) as usize;
+
+    // Rewrite node 3 (a shared subtree of the root) to node 0.
+    let cache = HirpdagMemoizeCache::new();
+    cache.insert(fib_dag(3), Node::new(0, None, None));
+
+    let memoized = HirpdagRewriteMemoized::with_cache(
+        CountingIdentity {
+            calls: Arc::new(AtomicUsize::new(0)),
+        },
+        cache,
+    );
+    let rewritten = memoized.rewrite(&root);
+
+    assert_ne!(rewritten, root, "the primed entry should change the result");
+    assert_eq!(
+        memoized.rewriter().calls.load(Ordering::Relaxed),
+        unique_nodes - 1,
+        "every unique node but the primed one should run its rule once"
     );
 }

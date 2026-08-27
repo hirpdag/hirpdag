@@ -4,6 +4,9 @@ pub use self::reference::*;
 pub mod meta;
 pub use self::meta::*;
 
+pub mod memoize;
+pub use self::memoize::*;
+
 pub mod rewrite;
 pub use self::rewrite::*;
 

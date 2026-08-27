@@ -36,13 +36,41 @@ We split the two things the old `HirpdagRewriter` conflated:
 
 Two drivers are generated per module: `HirpdagRewriteDirect<'_, R>` (apply the
 rules on every path — what `rewriter.rewrite(&x)` uses) and
-`HirpdagRewriteMemoized<R>` (consult a per-type `RefCell<HashMap<Foo, Foo>>`
-first, run the rule once, cache the result). Because a rule recurses through
-the driver it is handed, and the memoizer hands *itself* down, every node in
-the traversal now passes through the cache: one rule invocation per unique
-node, however many paths reach it. `test_suite/tests/rewrite_memoization.rs`
-pins this on a Fibonacci DAG, where the un-memoized walk makes ~10<sup>4</sup>
-times more calls than there are nodes.
+`HirpdagRewriteMemoized<R>` (ask a cache first, run the rule only on a miss).
+Because a rule recurses through the driver it is handed, and the memoizer hands
+*itself* down, every node in the traversal now passes through the cache: one
+rule invocation per unique node, however many paths reach it.
+`test_suite/tests/rewrite_memoization.rs` pins this on a Fibonacci DAG, where
+the un-memoized walk makes ~10<sup>4</sup> times more calls than there are
+nodes.
+
+The cache is a value in its own right, not a private part of the memoizer.
+`#[hirpdag_module]` generates a `HirpdagMemoizeCache` holding one
+`hirpdag::base::HirpdagMemoizeMap<Foo, Foo>` per data type, and the memoizer's
+driver methods are one line each:
+
+```rust
+fn rewrite_Foo(&self, x: &Foo) -> Foo {
+    self.memoize_cache.get_or_else(x, || self.rewriter.rewrite_Foo(x, self))
+}
+```
+
+The lookup-or-compute logic lives once in `HirpdagMemoizeMap`, in the hirpdag
+crate, rather than being stamped out per type by the macro. A node-keyed cache
+is useful well beyond rewriting — hash-consing makes a node an `O(1)` key for
+any derived result — so `HirpdagMemoizeCache` is public and standalone: build
+one, use `cache.get_or_else(&node, || ..)` for an analysis of your own, prime
+one with known results and hand it to a rewriter via
+`HirpdagRewriteMemoized::with_cache`, or use `HirpdagMemoizeMap<Node, YourType>`
+directly for results that are not nodes. This is also the side-table the
+immutability rules point users at (`book/src/ch04-00-techniques.md`): the state
+a node cannot hold, held beside it.
+
+`HirpdagMemoizeMap` is thread-safe the way the hash-consing tables are:
+`N_SHARDS` independently locked shards chosen by the key's hash. It never holds
+a lock while computing a value, so a rule is free to recurse into the same
+cache for its children, and one rewriter can be driven from several threads at
+once with the work shared rather than repeated.
 
 ## Considered Options
 
@@ -71,6 +99,11 @@ times more calls than there are nodes.
   or in what order, to descend (`Substitute` returning a replacement subtree
   without walking into it, a rule that inspects children before deciding),
   which is most of what rewriting is for.
+- **A `RefCell` cache private to the memoizer** — the first cut of this
+  change. Simpler, and enough to make the traversal memoize, but it makes the
+  memoizer `!Sync` for no reason the problem demands, and it buries a
+  generally useful data structure (a thread-safe node-keyed table) inside the
+  rewriting code, where nothing else can reach it.
 - **A `&dyn HirpdagRewriteDriver` parameter** instead of a generic one.
   Shorter signatures in user code (`driver: &dyn HirpdagRewriteDriver`), at
   one virtual call per child edge — on the hot path of every traversal, in a
@@ -91,13 +124,20 @@ times more calls than there are nodes.
   on it now comes from `HirpdagRewriteDriver` — code that imported the
   rewriter trait to call `.rewrite()` on a memoizer imports the driver trait
   instead.
-- The memoizer is single-threaded (`RefCell`), and is not `Sync`. Parallel
-  rewriting gives each thread its own memoizer, which is also what keeps the
-  caches contention-free.
+- One memoizer can be shared by several threads (`&memoized` is `Sync` when
+  the rules and the reference type are), and they share what they have
+  computed. Threads that race to the same node before either finishes it can
+  each run the rule; the first result to land is the one kept, so callers still
+  agree on one value. Node types built on `RefRc` are single-threaded as
+  before — the auto traits decide, nothing new is imposed.
 - Cached results assume a rule is a pure function of its node — the usual
   case, since a rewriter's state is fixed when it is constructed. A memoizer
-  also keeps every node it has seen alive; `clear_caches()` releases them
-  without rebuilding the rewriter.
+  also keeps every node it has seen alive; `clear_caches()` (or
+  `HirpdagMemoizeCache::clear()`) releases them without rebuilding the
+  rewriter.
+- The generated per-module surface grows by `HirpdagMemoizeCache` and its
+  `hirpdag::base::HirpdagMemoize<Foo>` impls, re-exported from the module so a
+  glob import is enough to call them.
 - Benchmarks that rewrite shared graphs (`primes`, `expr_substitution`,
   `sparse_rewrite`) now do the work their memoized rewriters always claimed
   to do, so their results are not comparable across this change.
