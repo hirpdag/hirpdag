@@ -314,6 +314,20 @@ where
             slot: ptr.slot,
         }
     }
+
+    fn weak_clone(ptr: &Self) -> Self {
+        // Duplicating a weak handle takes an additional weak count. The slot
+        // outlives every weak handle, so this is sound even if the data is dead.
+        unsafe { ptr.slot.as_ref() }.weak_inc();
+        Self {
+            data: ptr.data,
+            slot: ptr.slot,
+        }
+    }
+
+    fn weak_ptr_id(ptr: &Self) -> usize {
+        ptr.data.as_ptr() as usize
+    }
 }
 
 /// Separate contiguous counts, packed 16-byte slots.

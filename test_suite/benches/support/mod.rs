@@ -216,11 +216,19 @@ macro_rules! hirpdag_bench_configs {
         #[cfg(feature = "third-party-tables")]
         hirpdag_bench_configs!(@one arc_dashmap, "arc_dashmap", $($items)*);
         #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_dashmap_strong, "arc_dashmap_strong", $($items)*);
+        #[cfg(feature = "third-party-tables")]
         hirpdag_bench_configs!(@one arc_flurry, "arc_flurry", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_flurry_strong, "arc_flurry_strong", $($items)*);
         #[cfg(feature = "third-party-tables")]
         hirpdag_bench_configs!(@one arc_skipmap, "arc_skipmap", $($items)*);
         #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_skipmap_strong, "arc_skipmap_strong", $($items)*);
+        #[cfg(feature = "third-party-tables")]
         hirpdag_bench_configs!(@one arc_arcswap, "arc_arcswap", $($items)*);
+        #[cfg(feature = "third-party-tables")]
+        hirpdag_bench_configs!(@one arc_arcswap_strong, "arc_arcswap_strong", $($items)*);
     };
 }
 
@@ -246,11 +254,19 @@ macro_rules! bench_each_config {
         #[cfg(feature = "third-party-tables")]
         bench_each_config!(@one $group, $params, $function, arc_dashmap, "ArcDashMap");
         #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_dashmap_strong, "ArcDashMapStrong");
+        #[cfg(feature = "third-party-tables")]
         bench_each_config!(@one $group, $params, $function, arc_flurry, "ArcFlurry");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_flurry_strong, "ArcFlurryStrong");
         #[cfg(feature = "third-party-tables")]
         bench_each_config!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
         #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_skipmap_strong, "ArcSkipMapStrong");
+        #[cfg(feature = "third-party-tables")]
         bench_each_config!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config!(@one $group, $params, $function, arc_arcswap_strong, "ArcArcSwapStrong");
     };
 }
 
@@ -290,10 +306,18 @@ macro_rules! bench_each_config_mem {
         #[cfg(feature = "third-party-tables")]
         bench_each_config_mem!(@one $group, $params, $function, arc_dashmap, "ArcDashMap");
         #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_dashmap_strong, "ArcDashMapStrong");
+        #[cfg(feature = "third-party-tables")]
         bench_each_config_mem!(@one $group, $params, $function, arc_flurry, "ArcFlurry");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_flurry_strong, "ArcFlurryStrong");
         #[cfg(feature = "third-party-tables")]
         bench_each_config_mem!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
         #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_skipmap_strong, "ArcSkipMapStrong");
+        #[cfg(feature = "third-party-tables")]
         bench_each_config_mem!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
+        #[cfg(feature = "third-party-tables")]
+        bench_each_config_mem!(@one $group, $params, $function, arc_arcswap_strong, "ArcArcSwapStrong");
     };
 }

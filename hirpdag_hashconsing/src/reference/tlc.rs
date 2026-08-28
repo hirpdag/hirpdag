@@ -299,4 +299,19 @@ where
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self { ptr: ptr.ptr }
     }
+
+    fn weak_clone(ptr: &Self) -> Self {
+        // Take an additional weak count. The allocation is kept alive by the
+        // weak count until the last weak handle drops, so this is sound whether
+        // or not the strong data is still live.
+        let inner = unsafe { ptr.ptr.as_ref() };
+        inner
+            .weak
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self { ptr: ptr.ptr }
+    }
+
+    fn weak_ptr_id(ptr: &Self) -> usize {
+        ptr.ptr.as_ptr() as usize
+    }
 }
