@@ -2,17 +2,16 @@ use crate::reference::*;
 use crate::table::*;
 use array_init::array_init;
 
-/// Number of independent shard locks.  Power-of-two so shard selection is a bitmask (no modulo).
-const N_SHARDS: usize = 8;
-
 type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
 
-/// Concurrent hash-consing table using [`N_SHARDS`] independent mutexes.
+/// Concurrent hash-consing table using `N_SHARDS` independent mutexes.
 ///
 /// The shard is selected by the low bits of the hash, so threads operating on
-/// structurally different nodes rarely contend.  This is the default `Table`
-/// implementation used by the `hirpdag` macro.
-pub struct TableSharedSharded<D, R, T, HB = DefaultHasher>
+/// structurally different nodes rarely contend.  `N_SHARDS` must be a power of
+/// two: shard selection is a bitmask (`hash & (N_SHARDS - 1)`), so a non
+/// power-of-two would only ever use the low shards.  See [`TableSharedSharded8`]
+/// for the eight-shard alias used by the `hirpdag` macro presets.
+pub struct TableSharedShardedN<const N_SHARDS: usize, D, R, T, HB = DefaultHasher>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -26,7 +25,11 @@ where
     phantom_r: std::marker::PhantomData<R>,
 }
 
-impl<D, R, T, HB> TableSharedSharded<D, R, T, HB>
+/// Eight-shard [`TableSharedShardedN`].  This is the default `Table`
+/// implementation used by the `hirpdag` macro.
+pub type TableSharedSharded8<D, R, T, HB = DefaultHasher> = TableSharedShardedN<8, D, R, T, HB>;
+
+impl<const N_SHARDS: usize, D, R, T, HB> TableSharedShardedN<N_SHARDS, D, R, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -48,7 +51,7 @@ fn make_hash<K: std::hash::Hash + ?Sized>(
     hash_builder.hash_one(val)
 }
 
-impl<D, R, T, HB> Table<D, R> for TableSharedSharded<D, R, T, HB>
+impl<const N_SHARDS: usize, D, R, T, HB> Table<D, R> for TableSharedShardedN<N_SHARDS, D, R, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -82,7 +85,7 @@ where
     }
 }
 
-pub struct BuildTableSharedSharded<D, R, T, TB, HB> {
+pub struct BuildTableSharedShardedN<const N_SHARDS: usize, D, R, T, TB, HB> {
     table_builder: TB,
     hash_builder: HB,
 
@@ -91,7 +94,10 @@ pub struct BuildTableSharedSharded<D, R, T, TB, HB> {
     phantom_t: std::marker::PhantomData<T>,
 }
 
-impl<D, R, T, TB, HB> BuildTableSharedSharded<D, R, T, TB, HB>
+/// Builder for [`TableSharedSharded8`].
+pub type BuildTableSharedSharded8<D, R, T, TB, HB> = BuildTableSharedShardedN<8, D, R, T, TB, HB>;
+
+impl<const N_SHARDS: usize, D, R, T, TB, HB> BuildTableSharedShardedN<N_SHARDS, D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -111,7 +117,8 @@ where
     }
 }
 
-impl<D, R, T, TB, HB> Clone for BuildTableSharedSharded<D, R, T, TB, HB>
+impl<const N_SHARDS: usize, D, R, T, TB, HB> Clone
+    for BuildTableSharedShardedN<N_SHARDS, D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -131,7 +138,8 @@ where
     }
 }
 
-impl<D, R, T, TB, HB> Default for BuildTableSharedSharded<D, R, T, TB, HB>
+impl<const N_SHARDS: usize, D, R, T, TB, HB> Default
+    for BuildTableSharedShardedN<N_SHARDS, D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -151,7 +159,8 @@ where
     }
 }
 
-impl<D, R, T, TB, HB> BuildTable<D, R> for BuildTableSharedSharded<D, R, T, TB, HB>
+impl<const N_SHARDS: usize, D, R, T, TB, HB> BuildTable<D, R>
+    for BuildTableSharedShardedN<N_SHARDS, D, R, T, TB, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -159,12 +168,12 @@ where
     TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
     HB: std::hash::BuildHasher + Default + Clone,
 {
-    type TableSharedType = TableSharedSharded<D, R, T, HB>;
+    type TableSharedType = TableSharedShardedN<N_SHARDS, D, R, T, HB>;
 
-    fn build_tableshared(&self) -> TableSharedSharded<D, R, T, HB> {
+    fn build_tableshared(&self) -> TableSharedShardedN<N_SHARDS, D, R, T, HB> {
         let shards: [std::sync::Mutex<T>; N_SHARDS] =
             array_init(|_| std::sync::Mutex::new(self.table_builder.build_table()));
-        TableSharedSharded::<D, R, T, HB> {
+        TableSharedShardedN::<N_SHARDS, D, R, T, HB> {
             inner: shards,
             hash_builder: self.hash_builder.clone(),
 

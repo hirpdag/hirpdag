@@ -45,8 +45,10 @@ pub use crate::table::vec_sorted_threadunsafe::TableVecSortedWeak;
 
 pub use crate::table::hashmap_fallback_threadunsafe::TableHashmapFallbackWeak;
 
-pub use crate::table::shared_sharded::BuildTableSharedSharded;
-pub use crate::table::shared_sharded::TableSharedSharded;
+pub use crate::table::shared_sharded::BuildTableSharedSharded8;
+pub use crate::table::shared_sharded::BuildTableSharedShardedN;
+pub use crate::table::shared_sharded::TableSharedSharded8;
+pub use crate::table::shared_sharded::TableSharedShardedN;
 
 pub use crate::table::shared_mutex::BuildTableSharedMutex;
 pub use crate::table::shared_mutex::TableSharedMutex;
@@ -103,15 +105,15 @@ mod tests {
         {
             let table_builder = BuildThreadUnsafeTableDefault::<T>::default();
             let tsb =
-                BuildTableSharedSharded::<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>::with_builders(
+                BuildTableSharedSharded8::<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>::with_builders(
                     table_builder,
                     hash_builder,
                 );
 
             test_tableshared::<
                 R,
-                TableSharedSharded<TestData, R, T, HB>,
-                BuildTableSharedSharded<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>,
+                TableSharedSharded8<TestData, R, T, HB>,
+                BuildTableSharedSharded8<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>,
             >(tsb);
         }
 
