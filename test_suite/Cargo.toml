@@ -22,7 +22,6 @@ reset-tables = ["hirpdag/reset-tables"]
 hirpdag = {path = '../hirpdag'}
 
 [dev-dependencies]
-hirpdag_derive = {path = '../hirpdag_derive'}
 criterion = "0.8"
 
 [[bench]]

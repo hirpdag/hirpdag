@@ -539,15 +539,13 @@ fn expand_hirpdag_struct(
             }
         }
 
-        hirpdag::lazy_static! {
-            static ref #hirpdag_table_name: HirpdagHashconsTable<
+        static #hirpdag_table_name: std::sync::LazyLock<HirpdagHashconsTable<
             #hirpdag_struct_name,
             ImplRef<HirpdagStorage<#hirpdag_struct_name>>,
-            ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>> =
-                HirpdagHashconsTable::new(
+            ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>>> =
+                std::sync::LazyLock::new(|| HirpdagHashconsTable::new(
                   ImplBuildTableShared::<HirpdagStorage::<#hirpdag_struct_name>>::default()
-                );
-        }
+                ));
 
         #[derive(Hash, Clone, Debug, PartialEq, Eq)]
         pub struct #hirpdag_ref_name(HirpdagRef<#hirpdag_struct_name, ImplRef<HirpdagStorage<#hirpdag_struct_name>>>);

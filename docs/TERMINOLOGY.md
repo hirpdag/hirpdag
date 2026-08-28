@@ -183,7 +183,7 @@ The attribute macro.  Applied to an inline module (`mod name { ... }`), it expan
 Inert marker consumed by `#[hirpdag_module]`.  Applied to a named struct or enum inside the module to generate:
 - An inner struct holding the fields.
 - A `Builder` type for ergonomic construction.
-- A global `lazy_static` hash-consing table.
+- A global `LazyLock` hash-consing table.
 - `spawn` (direct intern) and optionally `new` (intern via normalizer) constructors.
 - `HirpdagStruct`, `HirpdagComputeMeta`, `HirpdagRewritable` impls.
 

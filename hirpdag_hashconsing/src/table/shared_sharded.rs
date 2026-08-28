@@ -1,6 +1,5 @@
 use crate::reference::*;
 use crate::table::*;
-use array_init::array_init;
 
 /// Number of independent shard locks.  Power-of-two so shard selection is a bitmask (no modulo).
 const N_SHARDS: usize = 8;
@@ -163,7 +162,7 @@ where
 
     fn build_tableshared(&self) -> TableSharedSharded<D, R, T, HB> {
         let shards: [std::sync::Mutex<T>; N_SHARDS] =
-            array_init(|_| std::sync::Mutex::new(self.table_builder.build_table()));
+            std::array::from_fn(|_| std::sync::Mutex::new(self.table_builder.build_table()));
         TableSharedSharded::<D, R, T, HB> {
             inner: shards,
             hash_builder: self.hash_builder.clone(),

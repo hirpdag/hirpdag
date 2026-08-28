@@ -211,7 +211,7 @@ where
 
 /// Per-type global table that deduplicates nodes via hash-consing.
 ///
-/// One instance lives in a `lazy_static` per `#[hirpdag]` type.  All node construction
+/// One instance lives in a `LazyLock` static per `#[hirpdag]` type.  All node construction
 /// funnels through [`hirpdag_hashcons`](Self::hirpdag_hashcons), which either returns an
 /// existing node or inserts a new one and computes its metadata and creation ID.
 pub struct HirpdagHashconsTable<
