@@ -40,7 +40,7 @@ pub mod base;
 
 pub use hirpdag_hashconsing;
 
-// Re-export #[derive(Hirpdag)]
+// Re-export the #[hirpdag_module] attribute macro.
 #[doc(hidden)]
 pub use hirpdag_derive::*;
 

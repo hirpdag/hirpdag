@@ -256,12 +256,11 @@ fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
 
 /// Body of a struct's `default_rewrite`.
 ///
-/// Each field is rewritten through the recursion driver into a local, then the
-/// rewritten values are compared against the originals. If every field is unchanged, the input reference is
-/// cloned (a single reference-count bump on the already-interned node) instead
-/// of reconstructing and re-hashconsing a structurally identical node. Only when
-/// something actually changed do we pay for `Self::new` (normalization + a
-/// hash-cons table lookup).
+/// Each field is rewritten through the recursion driver into a local and
+/// compared against the original. If every field is unchanged, the input
+/// reference is cloned (one reference-count bump on the already-interned node)
+/// rather than paying for `Self::new` (normalization + a hash-cons table
+/// lookup) to rebuild a structurally identical node.
 ///
 /// Equality is cheap for the common cases: child `HirpdagRef` fields compare by
 /// pointer, and leaf fields compare by value.
@@ -282,8 +281,7 @@ fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::Tok
         .map(|t| t.ident.as_ref().unwrap())
         .collect();
 
-    // A struct with no fields has nothing to rewrite and is a fixpoint; just
-    // clone the input reference.
+    // A struct with no fields has nothing to rewrite; clone the input reference.
     if field_names.is_empty() {
         return quote! { self.clone() };
     }
@@ -594,9 +592,8 @@ fn expand_hirpdag_struct(
 
             /// Deep structural comparison of the underlying data, independent of creation order.
             ///
-            /// This is the previous default `Ord` behaviour. It is O(n) in the size of the DAG.
-            /// Prefer `cmp` (creation-ID based) for ordering; use this only when structural
-            /// order is specifically needed.
+            /// O(n) in the size of the DAG. Prefer `cmp` (creation-ID based) for
+            /// ordering; use this only when structural order is specifically needed.
             pub fn hirpdag_cmp_deep(&self, other: &Self) -> std::cmp::Ordering {
                 self.0.hirpdag_cmp_deep(&other.0)
             }

@@ -1,4 +1,4 @@
-// This benchmark Number nodes, from 1 up to benchmark size N.
+// This benchmark builds Number nodes, from 1 up to benchmark size N.
 // Each node has a vector of references to its prime factors (empty if prime),
 // and if it is prime it has a reference to the previous prime number.
 
@@ -176,12 +176,10 @@ criterion_group! {
     targets = bench_primes_time
 }
 
-// Memory (peak-heap) benchmark. `bench_each_config_mem!` resets the interning
-// table before each measured build, so every run starts from empty. Peak-heap
-// sizes are deterministic, so this is configured for the minimum number of runs
-// criterion allows (flat sampling with a tiny warm-up and measurement window,
-// making each of the ten samples a single invocation) and `without_plots()`
-// because criterion cannot render a distribution from zero-variance samples.
+// Memory (peak-heap) benchmark; see `support::AllocBytes` and
+// `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
+// setup. `without_plots()` because criterion cannot render a distribution from
+// zero-variance samples.
 criterion_group! {
     name = benches_mem;
     config = Criterion::default()
