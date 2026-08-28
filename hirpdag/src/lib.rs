@@ -44,8 +44,6 @@ pub use hirpdag_hashconsing;
 #[doc(hidden)]
 pub use hirpdag_derive::*;
 
-pub use lazy_static::lazy_static;
-
 // Re-exported for use by hirpdag_derive generated code, so that user crates
 // do not need to declare these dependencies themselves.
 pub use postcard;

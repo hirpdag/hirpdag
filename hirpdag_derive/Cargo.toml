@@ -3,6 +3,7 @@ name = "hirpdag_derive"
 version = "0.2.0"
 authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
 edition = "2021"
+rust-version = "1.80"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/hirpdag/hirpdag"
 description = "Procedural macro for generating hirpdag boilerplate. See hirpdag crate."
@@ -13,4 +14,4 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "3.0", features = ["visit", "full"] }
+syn = { version = "3.0", features = ["full"] }

@@ -3,6 +3,7 @@ name = "hirpdag"
 version = "0.2.0"
 authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
 edition = "2021"
+rust-version = "1.80"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/hirpdag/hirpdag"
 keywords = ["hashconsing", "persistent", "dag", "rewriting"]
@@ -23,7 +24,6 @@ third-party-tables = ["hirpdag_hashconsing/third-party-tables"]
 [dependencies]
 hirpdag_hashconsing = { version = "0.2.0", path = '../hirpdag_hashconsing' }
 hirpdag_derive = { version = "0.2.0", path = "../hirpdag_derive" }
-lazy_static = "1.5.0"
 serde = { version = "1.0", features = ["derive"] }
-postcard = { version = "1.0", features = ["use-std"] }
+postcard = { version = "1.0", default-features = false, features = ["use-std"] }
 serde_json = "1.0"
