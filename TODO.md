@@ -76,11 +76,6 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
   - Generalise the trait (e.g. `HirpdagMemoize<T, V = T>`) so a cache can host
     analysis results too.
 
-- [P2] Distinguish independent memoizations of the same type.
-  - Two passes sharing one cache share one table per type, so their results
-    collide; today the only separation is building a second cache.
-  - Consider a pass/namespace key, or generated per-pass cache types.
-
 - [P2] Finer-grained cache management.
   - `clear()` empties every type's table; add per-type clear, and consider
     keeping allocated capacity across passes (or `shrink_to_fit` on demand)
