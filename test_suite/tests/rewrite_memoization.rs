@@ -237,9 +237,10 @@ fn with_cache_reuses_a_primed_cache() {
     let root = fib_dag(n);
     let unique_nodes = (n + 1) as usize;
 
-    // Rewrite node 3 (a shared subtree of the root) to node 0.
+    // Prime the cache: node 3 (a shared subtree of the root) rewrites to node 0.
+    // get_or_else is how entries are made, here with the answer already known.
     let cache = HirpdagMemoizeCache::new();
-    cache.insert(fib_dag(3), Node::new(0, None, None));
+    cache.get_or_else(&fib_dag(3), || Node::new(0, None, None));
 
     let memoized = HirpdagRewriteMemoized::with_cache(
         CountingIdentity {

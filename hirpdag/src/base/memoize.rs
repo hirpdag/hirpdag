@@ -31,6 +31,13 @@ type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::D
 /// threads working on different nodes rarely contend.  No lock is ever held
 /// while a value is being computed, so a computation is free to recurse into
 /// the same table for the keys it depends on.
+///
+/// Entries are written only by [`get_or_else`](Self::get_or_else), and only
+/// when the key is absent: a memoized value is what the computation *does*
+/// return for that key, so an entry that could be replaced by a different one
+/// would mean the callers that already read the old value disagree with the
+/// ones that read the new. Whatever a key resolves to first, it keeps until
+/// the table is [`clear`](Self::clear)ed.
 pub struct HirpdagMemoizeMap<K, V, HB = DefaultHasher>
 where
     K: std::hash::Hash + std::cmp::Eq + Clone,
@@ -85,13 +92,11 @@ where
         self.get_shard(key).lock().unwrap().get(key).cloned()
     }
 
-    /// Remember `value` for `key`, returning whatever it replaced.
-    pub fn insert(&self, key: K, value: V) -> Option<V> {
-        self.get_shard(&key).lock().unwrap().insert(key, value)
-    }
-
     /// The value remembered for `key`, computing and remembering it first if
     /// this is the first time the table has seen the key.
+    ///
+    /// This is the only way to fill the table, and it never overwrites an
+    /// entry — see the note on the type.
     ///
     /// `compute` runs with no lock held, so it may recurse into this table (a
     /// rewrite rule descending into a node's children does exactly that).  The
@@ -152,14 +157,9 @@ where
         self.hirpdag_memoize_map().get(key)
     }
 
-    /// Remember `value` for `key`, returning whatever it replaced.
-    fn insert(&self, key: T, value: T) -> Option<T> {
-        self.hirpdag_memoize_map().insert(key, value)
-    }
-
     /// The value remembered for `key`, computing and remembering it first if
-    /// this is the first time the cache has seen the key.  See
-    /// [`HirpdagMemoizeMap::get_or_else`].
+    /// this is the first time the cache has seen the key.  The only way to fill
+    /// the cache; see [`HirpdagMemoizeMap::get_or_else`].
     fn get_or_else<F>(&self, key: &T, compute: F) -> T
     where
         F: FnOnce() -> T,
