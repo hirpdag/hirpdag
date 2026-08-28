@@ -271,9 +271,7 @@ impl HirpdagConfig {
     }
 
     pub fn from(args: &HirpdagArgs) -> Self {
-        // Start with default config.
         let mut config = Self::default();
-        // Override according to the arguments in macro attributes.
         for a in &args.args {
             match a {
                 HirpdagArg::Normalizer => config.normalizer = true,
@@ -288,7 +286,6 @@ impl HirpdagConfig {
                     config.types.build_tableshared_type = name.clone()
                 }
                 HirpdagArg::Preset(name) => {
-                    // Validated when the argument was parsed.
                     config.types = preset_types(name).expect("preset validated at parse time");
                 }
             }
