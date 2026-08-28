@@ -23,6 +23,83 @@
 
 - [P2] Caching for `ref.hirpdag_compute_meta()`. e.g. `ref.hirpdag_compute_meta(meta_cache)`.
 
+### Memoization cache improvements
+
+Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
+(`hirpdag/src/base/memoize.rs`, `hirpdag_derive/src/lib.rs`).
+
+- [P1] Bound what the cache keeps alive.
+  - Keys and values are strong node references, so a long-lived cache pins every
+    node it has ever seen; `clear()` is currently the only way to release them.
+  - Options to try: weak keys/values with a purge pass (like
+    `table/weak_entry.rs` and the `PURGE_LEN_MIN` purge in
+    `table/hashmap_fallback_threadunsafe.rs`), a capacity bound with LRU or
+    random eviction, or generational tables dropped between passes.
+  - Evicting is always safe for correctness (the value can be recomputed), so
+    the trade-off is purely recompute cost vs. retained memory - measure it.
+
+- [P1] Avoid re-hashing on the `get_or_else` miss path.
+  - A miss hashes the key twice for shard selection (`get`, then `get_shard`)
+    plus twice more inside the shard's `HashMap`, and takes the shard lock
+    twice.
+  - Compute the hash once and reuse it for both the shard index and the map
+    lookup (hashbrown's raw entry API, or a `HashMap` keyed by precomputed
+    hash).
+
+- [P1] Use a cheaper hasher than SipHash for node keys.
+  - `DefaultHasher` is the default `BuildHasher` here, but node keys hash by
+    interned identity (a pointer / creation id), which is already well
+    distributed; an identity or multiply-shift hasher should be much cheaper.
+  - The hash-consing tables have the same question - keep the answer shared
+    rather than picking one per table.
+
+- [P1] Share the sharding with the hash-consing tables.
+  - `const N_SHARDS: usize = 8` and the mask-based shard selection are
+    duplicated between `base/memoize.rs` and `table/shared_sharded.rs`, and 8
+    is a guess unrelated to the machine or the workload.
+  - Factor out one sharded-map helper, and make the shard count configurable
+    (module config, or derived from `available_parallelism()`); sweep it in a
+    benchmark.
+
+- [P2] Let concurrent callers share one in-flight computation.
+  - Threads racing to the same key today all compute it and the first result
+    to land wins; this is correct but wasteful for expensive rules.
+  - A per-key in-progress marker that later callers wait on would fix it, but
+    must not deadlock the recursive case (`get_or_else` re-entering the same
+    table for a child node is the normal traversal pattern), so it needs
+    reentrancy detection - check that it is worth the complexity first.
+
+- [P2] Allow values that are not the key type.
+  - `HirpdagMemoize<T>` hard-codes `HirpdagMemoizeMap<T, T>`, so the generated
+    cache only holds node -> node results; an analysis pass has to build its
+    own map outside the cache even though `HirpdagMemoizeMap` supports any `V`.
+  - Generalise the trait (e.g. `HirpdagMemoize<T, V = T>`) so a cache can host
+    analysis results too.
+
+- [P2] Distinguish independent memoizations of the same type.
+  - Two passes sharing one cache share one table per type, so their results
+    collide; today the only separation is building a second cache.
+  - Consider a pass/namespace key, or generated per-pass cache types.
+
+- [P2] Finer-grained cache management.
+  - `clear()` empties every type's table; add per-type clear, and consider
+    keeping allocated capacity across passes (or `shrink_to_fit` on demand)
+    so repeated rewrites do not rebuild the tables from scratch.
+  - `len()` locks every shard, and `is_empty()` goes through `len()` instead of
+    stopping at the first non-empty shard.
+
+- [P2] Optional hit/miss instrumentation.
+  - Feature-gated counters per table (hits, misses, races lost, evictions) so
+    benchmarks and users can tell whether memoizing is paying for itself.
+
+- [P2] See also the `std::any::Any` single-map experiment above, which covers
+  the rewrite caches as well as the hash-consing tables.
+
+- [P2] Benchmark the cache itself.
+  - The existing benchmarks exercise memoization only indirectly through
+    rewriting; none measures hit-path cost, shard contention across threads, or
+    the shard-count/hasher/eviction trade-offs above.
+
 ### More benchmarks
 
 - [P1] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
