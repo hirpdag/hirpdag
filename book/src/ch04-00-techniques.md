@@ -119,3 +119,13 @@ Mutable state associated with a node can be kept *outside* the node in a side-ta
 let mut annotations: HashMap<MyNode, Annotation> = HashMap::new();
 annotations.insert(node.clone(), Annotation::new());
 ```
+
+Hash consing is what makes this cheap: the node hashes and compares by its
+interned identity, so the side-table costs `O(1)` per lookup no matter how
+large the graph under the node is.
+
+`hirpdag::base::HirpdagMemoizeMap<Node, T>` is a ready-made side-table for the
+common case of *deriving* something from a node: it fills through a shared
+reference (`&table`), so several threads can build it together, and
+`get_or_else` computes an entry only if it is missing. Rewriting uses one of
+these per data type, gathered into the generated `HirpdagMemoizeCache`.

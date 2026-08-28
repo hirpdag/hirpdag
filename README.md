@@ -72,8 +72,8 @@ mod expressions {
 use expressions::*;
 
 // A rewriter defined outside the hirpdag module, against the generated
-// public API (the HirpdagRewriter trait, HirpdagRewriteMemoized,
-// default_rewrite, and the pub `x` field).
+// public API (the HirpdagRewriter and HirpdagRewriteDriver traits,
+// HirpdagRewriteMemoized, default_rewrite, and the pub `x` field).
 struct Substitute {
     var: String,
     s: Expr,
@@ -86,13 +86,16 @@ impl Substitute {
 }
 
 impl HirpdagRewriter for Substitute {
-    fn rewrite_Expr(&self, x: &Expr) -> Expr {
+    // Rules are handed the recursion driver alongside the node; recursing
+    // through it is what lets HirpdagRewriteMemoized rewrite each unique node
+    // once, however many paths reach it.
+    fn rewrite_Expr<D: HirpdagRewriteDriver>(&self, x: &Expr, driver: &D) -> Expr {
         if let ExprKind::Var(name) = &x.x {
             if *name == self.var {
                 return self.s.clone();
             }
         }
-        x.default_rewrite(self)
+        x.default_rewrite(driver)
     }
 }
 

@@ -60,13 +60,17 @@ hirpdag_bench_configs! {
     }
 
     impl HirpdagRewriter for SubstVars {
-        fn rewrite_ExprNode(&self, x: &ExprNode) -> ExprNode {
+        fn rewrite_ExprNode<D: HirpdagRewriteDriver>(
+            &self,
+            x: &ExprNode,
+            driver: &D,
+        ) -> ExprNode {
             if let ExprKind::Var(id) = &x.kind {
                 if *id < self.num_vars {
                     return ExprNode::new(ExprKind::Num(u64::from(*id) + 1));
                 }
             }
-            x.default_rewrite(self)
+            x.default_rewrite(driver)
         }
     }
 

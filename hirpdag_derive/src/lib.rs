@@ -256,8 +256,8 @@ fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
 
 /// Body of a struct's `default_rewrite`.
 ///
-/// Each field is rewritten into a local, then the rewritten values are compared
-/// against the originals. If every field is unchanged, the input reference is
+/// Each field is rewritten through the recursion driver into a local, then the
+/// rewritten values are compared against the originals. If every field is unchanged, the input reference is
 /// cloned (a single reference-count bump on the already-interned node) instead
 /// of reconstructing and re-hashconsing a structurally identical node. Only when
 /// something actually changed do we pay for `Self::new` (normalization + a
@@ -267,9 +267,9 @@ fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
 /// pointer, and leaf fields compare by value.
 fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
     //let body = quote! {
-    //    let hirpdag_rw_a = rewriter.rewrite(&self.a);
-    //    let hirpdag_rw_b = rewriter.rewrite(&self.b);
-    //    let hirpdag_rw_c = rewriter.rewrite(&self.c);
+    //    let hirpdag_rw_a = driver.rewrite(&self.a);
+    //    let hirpdag_rw_b = driver.rewrite(&self.b);
+    //    let hirpdag_rw_c = driver.rewrite(&self.c);
     //    if hirpdag_rw_a == self.a && hirpdag_rw_b == self.b && hirpdag_rw_c == self.c {
     //        self.clone()
     //    } else {
@@ -288,7 +288,7 @@ fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::Tok
         return quote! { self.clone() };
     }
 
-    // Prefixed locals so a field literally named `rewriter` or `self` cannot
+    // Prefixed locals so a field literally named `driver` or `self` cannot
     // shadow the parameters used to rewrite the remaining fields.
     let locals: Vec<syn::Ident> = field_names
         .iter()
@@ -298,7 +298,7 @@ fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::Tok
     let lets: proc_macro2::TokenStream = field_names
         .iter()
         .zip(locals.iter())
-        .map(|(field_name, local)| quote! { let #local = rewriter.rewrite(&self.#field_name); })
+        .map(|(field_name, local)| quote! { let #local = driver.rewrite(&self.#field_name); })
         .collect();
 
     let unchanged = field_names
@@ -604,8 +604,14 @@ fn expand_hirpdag_struct(
             // If normalizer is not provided, generate one.
             #default_normalizer
 
+            /// Rewrite every field through `driver` and rebuild this node.
+            ///
+            /// This is the traversal step a `HirpdagRewriter` rule delegates to
+            /// when it has nothing special to do for a node. Recursion goes
+            /// through the driver (not through the rule), so a memoizing driver
+            /// sees — and can cache — every node in the traversal.
             #[allow(non_snake_case)]
-            pub fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
+            pub fn default_rewrite<D: HirpdagRewriteDriver>(&self, driver: &D) -> Self {
                 #default_rewrite_body
             }
 
@@ -649,9 +655,9 @@ fn expand_hirpdag_struct(
 
         // ==== Rewriting
 
-        impl<T: HirpdagRewriter> HirpdagRewritable<T> for #hirpdag_ref_name {
-            fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self)
+        impl<D: HirpdagRewriteDriver> HirpdagRewritable<D> for #hirpdag_ref_name {
+            fn hirpdag_rewrite(&self, driver: &D) -> Self {
+                driver.#hirpdag_rewrite_method_name(self)
             }
         }
 
@@ -783,17 +789,17 @@ fn get_variants_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream 
 }
 
 fn get_variants_rewrite(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
-    //let variants_compute_meta = quote! {
-    //    Foo(x) => Foo(rewriter.rewrite(&x)),
-    //    Bar(x) => Bar(rewriter.rewrite(&x)),
-    //    Baz(x) => Baz(rewriter.rewrite(&x)),
+    //let variants_rewrite = quote! {
+    //    Foo(x) => Foo(driver.rewrite(&x)),
+    //    Bar(x) => Bar(driver.rewrite(&x)),
+    //    Baz(x) => Baz(driver.rewrite(&x)),
     //};
     input_enum
         .variants
         .iter()
         .map(|t| {
             let variant = &t.ident;
-            quote! { #variant(x) => #variant(rewriter.rewrite(&x)), }
+            quote! { #variant(x) => #variant(driver.rewrite(&x)), }
         })
         .collect()
 }
@@ -848,8 +854,12 @@ fn expand_hirpdag_enum(
         }
 
         impl #name {
+            /// Rewrite the payload of the active variant through `driver`.
+            ///
+            /// See the struct `default_rewrite` for why recursion goes through
+            /// the driver rather than through the rewriter's rules.
             #[allow(non_snake_case)]
-            pub fn default_rewrite<T: HirpdagRewriter>(&self, rewriter: &T) -> Self {
+            pub fn default_rewrite<D: HirpdagRewriteDriver>(&self, driver: &D) -> Self {
                 use #name::*;
                 match self {
                     #variants_rewrite
@@ -857,9 +867,9 @@ fn expand_hirpdag_enum(
             }
         }
 
-        impl<T: HirpdagRewriter> HirpdagRewritable<T> for #name {
-            fn hirpdag_rewrite(&self, rewriter: &T) -> Self {
-                rewriter.#hirpdag_rewrite_method_name(self)
+        impl<D: HirpdagRewriteDriver> HirpdagRewritable<D> for #name {
+            fn hirpdag_rewrite(&self, driver: &D) -> Self {
+                driver.#hirpdag_rewrite_method_name(self)
             }
         }
 
@@ -879,11 +889,68 @@ fn expand_hirpdag_enum(
     }
 }
 
+/// One method of the user-facing `HirpdagRewriter` trait: the rewrite rule for
+/// a single data type.
+///
+/// The rule is handed the node and the recursion driver. The default
+/// implementation passes both to `default_rewrite`, which recurses into the
+/// node's children through the driver.
 fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
     //let rewrite_datatype = quote! {
     //    #[allow(non_snake_case)]
+    //    fn rewrite_MessageA<D: HirpdagRewriteDriver>(&self, x: &MessageA, driver: &D) -> MessageA {
+    //        MessageA::default_rewrite(x, driver)
+    //    }
+    //};
+    let hirpdag_ref_name = Ident::new(name, Span::call_site());
+
+    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
+    let hirpdag_rewrite_method_name =
+        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
+
+    quote! {
+
+        #[allow(non_snake_case)]
+        fn #hirpdag_rewrite_method_name<D: HirpdagRewriteDriver>(
+            &self,
+            x: &#hirpdag_ref_name,
+            driver: &D,
+        ) -> #hirpdag_ref_name {
+            #hirpdag_ref_name::default_rewrite(x, driver)
+        }
+
+    }
+}
+
+/// One method of the `HirpdagRewriteDriver` trait: rewrite a node of a single
+/// data type. Drivers implement the traversal strategy (plain recursion,
+/// memoized recursion, ...) and are the only path recursion takes.
+fn get_driver_datatype(name: &str) -> proc_macro2::TokenStream {
+    //let driver_datatype = quote! {
+    //    #[allow(non_snake_case)]
+    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA;
+    //};
+    let hirpdag_ref_name = Ident::new(name, Span::call_site());
+
+    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
+    let hirpdag_rewrite_method_name =
+        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
+
+    quote! {
+
+        #[allow(non_snake_case)]
+        fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name;
+
+    }
+}
+
+/// The `HirpdagRewriteDirect` implementation of one driver method: run the
+/// rule, handing it this same driver so the recursion stays direct.
+fn get_direct_rewrite(name: &str) -> proc_macro2::TokenStream {
+    //let direct_rewrite = quote! {
+    //    #[allow(non_snake_case)]
     //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        MessageA::default_rewrite<Self>(x, self)
+    //        self.rewriter.rewrite_MessageA(x, self)
     //    }
     //};
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
@@ -896,7 +963,7 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
 
         #[allow(non_snake_case)]
         fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
-            #hirpdag_ref_name::default_rewrite::<Self>(x, self)
+            self.rewriter.#hirpdag_rewrite_method_name(x, self)
         }
 
     }
@@ -904,7 +971,7 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
 
 fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     //let cache_member = quote! {
-    //    cache_MessageA: std::collections::HashMap<MessageA, MessageA>,
+    //    cache_MessageA: hirpdag::base::HirpdagMemoizeMap<MessageA, MessageA>,
     //};
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
@@ -912,35 +979,76 @@ fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     quote! {
-        #hirpdag_cache_member_name: std::collections::HashMap<#hirpdag_ref_name, #hirpdag_ref_name>,
+        #hirpdag_cache_member_name:
+            hirpdag::base::HirpdagMemoizeMap<#hirpdag_ref_name, #hirpdag_ref_name>,
     }
 }
 
 fn get_cache_member_new(name: &str) -> proc_macro2::TokenStream {
     //let cache_member_new = quote! {
-    //    cache_MessageA: std::collections::HashMap::new(),
+    //    cache_MessageA: hirpdag::base::HirpdagMemoizeMap::new(),
     //};
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
 
     quote! {
-        #hirpdag_cache_member_name: std::collections::HashMap::new(),
+        #hirpdag_cache_member_name: hirpdag::base::HirpdagMemoizeMap::new(),
     }
 }
 
-fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
-    //let cache_rewrite = quote! {
-    //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        cache_MessageA.get(x).unwrap_or_else(|x| {
-    //          MessageA::default_rewrite<Self>(x, self)
-    //        };
+fn get_cache_clear(name: &str) -> proc_macro2::TokenStream {
+    //let cache_clear = quote! {
+    //    self.cache_MessageA.clear();
+    //};
+    let hirpdag_cache_member_name_str = format!("cache_{}", name);
+    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+
+    quote! {
+        self.#hirpdag_cache_member_name.clear();
+    }
+}
+
+/// The `HirpdagMemoize` impl that points the cache's per-type API at one type's
+/// table, so `cache.get_or_else(&node, || ..)` resolves to the right map.
+fn get_cache_memoize_impl(name: &str) -> proc_macro2::TokenStream {
+    //let cache_memoize_impl = quote! {
+    //    impl hirpdag::base::HirpdagMemoize<MessageA> for HirpdagMemoizeCache {
+    //        fn hirpdag_memoize_map(&self)
+    //        -> &hirpdag::base::HirpdagMemoizeMap<MessageA, MessageA> {
+    //            &self.cache_MessageA
+    //        }
     //    }
     //};
     let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
     let hirpdag_cache_member_name_str = format!("cache_{}", name);
     let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+
+    quote! {
+
+        impl hirpdag::base::HirpdagMemoize<#hirpdag_ref_name> for HirpdagMemoizeCache {
+            fn hirpdag_memoize_map(
+                &self,
+            ) -> &hirpdag::base::HirpdagMemoizeMap<#hirpdag_ref_name, #hirpdag_ref_name> {
+                &self.#hirpdag_cache_member_name
+            }
+        }
+
+    }
+}
+
+/// The `HirpdagRewriteMemoized` implementation of one driver method: the cache
+/// serves the node, or runs the rule once and remembers the result.
+fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
+    //let cache_rewrite = quote! {
+    //    #[allow(non_snake_case)]
+    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
+    //        self.memoize_cache.get_or_else(x, || {
+    //            self.rewriter.rewrite_MessageA(x, self)
+    //        })
+    //    }
+    //};
+    let hirpdag_ref_name = Ident::new(name, Span::call_site());
 
     let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
     let hirpdag_rewrite_method_name =
@@ -950,12 +1058,9 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
 
         #[allow(non_snake_case)]
         fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
-            self.#hirpdag_cache_member_name
-                .get(x)
-                .cloned()
-                .unwrap_or_else(|| {
-                    self.rewriter.rewrite(x)
-                })
+            self.memoize_cache.get_or_else(x, || {
+                self.rewriter.#hirpdag_rewrite_method_name(x, self)
+            })
         }
 
     }
@@ -971,6 +1076,16 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         .map(|entry| get_rewrite_datatype(&entry.name))
         .collect();
 
+    let driver_methods: proc_macro2::TokenStream = types
+        .iter()
+        .map(|entry| get_driver_datatype(&entry.name))
+        .collect();
+
+    let direct_methods: proc_macro2::TokenStream = types
+        .iter()
+        .map(|entry| get_direct_rewrite(&entry.name))
+        .collect();
+
     let cache_members: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_cache_member(&entry.name))
@@ -979,6 +1094,16 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
     let cache_members_new: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_cache_member_new(&entry.name))
+        .collect();
+
+    let cache_clears: proc_macro2::TokenStream = types
+        .iter()
+        .map(|entry| get_cache_clear(&entry.name))
+        .collect();
+
+    let cache_memoize_impls: proc_macro2::TokenStream = types
+        .iter()
+        .map(|entry| get_cache_memoize_impl(&entry.name))
         .collect();
 
     let cache_methods: proc_macro2::TokenStream = types
@@ -1065,29 +1190,169 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         type ImplTableShared<D> = #tableshared_type;
         type ImplBuildTableShared<D> = #build_tableshared_type;
 
+        /// The rewrite rules: one method per data type in this module.
+        ///
+        /// Implement the methods for the types to transform; the rest default to
+        /// rewriting their children and rebuilding. Every rule is handed the
+        /// recursion `driver` alongside the node — pass it to `default_rewrite`
+        /// (or call `driver.rewrite(..)` directly) to continue into the node's
+        /// children. Recursing through the driver rather than through `self` is
+        /// what lets a driver such as `HirpdagRewriteMemoized` observe, and
+        /// short-circuit, the whole traversal.
         pub trait HirpdagRewriter: std::marker::Sized {
             #rewrite_methods
 
+            /// Rewrite `x` with these rules, recursing without a cache.
+            ///
+            /// Shorthand for `HirpdagRewriteDirect::new(self).rewrite(&x)`. On a
+            /// DAG with shared subtrees prefer
+            /// `HirpdagRewriteMemoized::new(rules).rewrite(&x)`, which runs each
+            /// rule once per unique node instead of once per path to it.
+            fn rewrite<'hirpdag_r, T>(&'hirpdag_r self, x: &T) -> T
+            where
+                T: HirpdagRewritable<HirpdagRewriteDirect<'hirpdag_r, Self>>,
+            {
+                HirpdagRewriteDirect::new(self).rewrite(x)
+            }
+        }
+
+        /// Drives a rewrite traversal: maps a node to its rewritten form.
+        ///
+        /// The driver decides *how* the traversal runs, the `HirpdagRewriter`
+        /// rules decide *what* each node becomes. Two drivers are generated for
+        /// every module: `HirpdagRewriteDirect` (recurse on every path) and
+        /// `HirpdagRewriteMemoized` (recurse once per unique node). Because the
+        /// rules recurse through the driver they are given, the same rules can
+        /// be run under either one.
+        pub trait HirpdagRewriteDriver: std::marker::Sized {
+            #driver_methods
+
+            /// Rewrite any rewritable value: a node, or a container of nodes
+            /// such as `Option<Node>` or `Vec<Node>`.
             fn rewrite<T: HirpdagRewritable<Self>>(&self, x: &T) -> T {
                 x.hirpdag_rewrite(self)
             }
         }
 
-        pub struct HirpdagRewriteMemoized<Rewriter: HirpdagRewriter> {
+        /// Driver that applies the rules directly, with no cache: a node reached
+        /// by several paths is rewritten once per path.
+        pub struct HirpdagRewriteDirect<'hirpdag_r, Rewriter: HirpdagRewriter> {
+            rewriter: &'hirpdag_r Rewriter,
+        }
+
+        impl<'hirpdag_r, Rewriter: HirpdagRewriter> HirpdagRewriteDirect<'hirpdag_r, Rewriter> {
+            pub fn new(rewriter: &'hirpdag_r Rewriter) -> Self {
+                Self { rewriter: rewriter }
+            }
+
+            /// The rules this driver runs.
+            pub fn rewriter(&self) -> &Rewriter {
+                self.rewriter
+            }
+        }
+
+        impl<'hirpdag_r, Rewriter: HirpdagRewriter> HirpdagRewriteDriver
+            for HirpdagRewriteDirect<'hirpdag_r, Rewriter>
+        {
+            #direct_methods
+        }
+
+        // Re-exported so that glob-importing this module is enough to call the
+        // cache's methods (`cache.get_or_else(..)`) and to build node-keyed
+        // tables of one's own.
+        pub use hirpdag::base::{HirpdagMemoize, HirpdagMemoizeMap};
+
+        /// Memoization tables for this module: one
+        /// `hirpdag::base::HirpdagMemoizeMap` per data type, keyed by node.
+        ///
+        /// `HirpdagRewriteMemoized` remembers rewritten nodes here, but the cache
+        /// is an ordinary value with no dependency on rewriting: build one and
+        /// use it for any node-keyed computation worth doing once —
+        /// `cache.get_or_else(&node, || expensive(node))` — through the
+        /// `hirpdag::base::HirpdagMemoize` implementation for each type.
+        ///
+        /// Filling a table takes `&self` and is thread-safe (sharded locks), so a
+        /// single cache can be shared by every thread working on the same graph,
+        /// and work one thread has done is not repeated by the others.
+        #[allow(non_snake_case)]
+        pub struct HirpdagMemoizeCache {
             #cache_members
+        }
+
+        impl HirpdagMemoizeCache {
+            pub fn new() -> Self {
+                Self {
+                    #cache_members_new
+                }
+            }
+
+            /// Forget everything the cache has remembered, for every type.
+            pub fn clear(&self) {
+                #cache_clears
+            }
+        }
+
+        impl Default for HirpdagMemoizeCache {
+            fn default() -> Self {
+                Self::new()
+            }
+        }
+
+        #cache_memoize_impls
+
+        /// Driver that remembers the result of rewriting each node, in a
+        /// `HirpdagMemoizeCache`.
+        ///
+        /// Nodes are hash-consed, so a shared subtree is literally the same node
+        /// on every path that reaches it and one cache lookup (`O(1)`: the key
+        /// hashes and compares by interned identity) replaces re-traversing it.
+        /// On a DAG this collapses a traversal that is exponential in the sharing
+        /// into one rule invocation per unique node, and a later rewrite of an
+        /// already-seen node is served from the cache.
+        ///
+        /// Rewriting takes `&self` and the cache is thread-safe, so one memoizer
+        /// can rewrite on several threads at once, sharing everything it has
+        /// already computed. Results are cached under the assumption that the
+        /// rules are a pure function of the node (the usual case: whatever state
+        /// the rules read is fixed when the rewriter is constructed);
+        /// `clear_caches` discards them, which also releases the nodes they keep
+        /// alive.
+        pub struct HirpdagRewriteMemoized<Rewriter: HirpdagRewriter> {
+            memoize_cache: HirpdagMemoizeCache,
             rewriter: Rewriter,
         }
 
         impl<Rewriter: HirpdagRewriter> HirpdagRewriteMemoized<Rewriter> {
             pub fn new(rewriter: Rewriter) -> Self {
+                Self::with_cache(rewriter, HirpdagMemoizeCache::new())
+            }
+
+            /// Run `rewriter` against an existing cache, reusing (and adding to)
+            /// what it already holds.
+            pub fn with_cache(rewriter: Rewriter, memoize_cache: HirpdagMemoizeCache) -> Self {
                 Self {
-                    #cache_members_new
+                    memoize_cache: memoize_cache,
                     rewriter: rewriter,
                 }
             }
+
+            /// The rules this driver runs.
+            pub fn rewriter(&self) -> &Rewriter {
+                &self.rewriter
+            }
+
+            /// The rewritten nodes this driver has remembered so far.
+            pub fn memoize_cache(&self) -> &HirpdagMemoizeCache {
+                &self.memoize_cache
+            }
+
+            /// Forget every memoized result.
+            pub fn clear_caches(&self) {
+                self.memoize_cache.clear();
+            }
         }
 
-        impl<Rewriter: HirpdagRewriter> HirpdagRewriter for HirpdagRewriteMemoized<Rewriter> {
+        impl<Rewriter: HirpdagRewriter> HirpdagRewriteDriver for HirpdagRewriteMemoized<Rewriter> {
             #cache_methods
         }
 
