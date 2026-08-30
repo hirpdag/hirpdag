@@ -10,29 +10,29 @@ almost everything from the `#[hirpdag]` struct while keeping hirpdag's code smal
 We implement DAG-awareness once as a format-agnostic archive layer (a topologically
 ordered node table indexed by `u64`, with `HirpdagRef` fields encoded as indices via
 custom serde impls and thread-local session state) and delegate the byte format to
-serde, using postcard for binary and serde_json for text — the same archive code
+serde, using postcard for binary and serde_json for text. The same archive code
 serves both formats, and only the ref encoding and the surrounding archive structure
 are hand-written.
 
 ## Considered options
 
-- **serde + postcard/serde_json (chosen)** — DAG logic is written once against
+- **serde + postcard/serde_json (chosen).** DAG logic is written once against
   serde's traits; field encoding is fully derived; the text format is free; the
   binary codec is swappable (bincode, bitcode) without touching DAG logic. Costs:
   serde carries no user state, so ref index resolution uses per-module thread-local
   sessions, and (de)serialization is not re-entrant within a thread.
-- **rkyv (zero-copy)** — rejected. Loaded nodes must be re-interned through the
+- **rkyv (zero-copy), rejected.** Loaded nodes must be re-interned through the
   hashcons table (to merge with live nodes, recompute meta, assign creation IDs), so
   a full reconstruction pass is mandatory and zero-copy access buys nothing. rkyv
   also requires `unsafe` (hirpdag is `#![forbid(unsafe_code)]`), imposes a parallel
   archived-type system across the generic `Reference`/`Table` abstractions, and has
   no text format.
-- **Schema-IDL formats (flatbuffers, capnp, protobuf)** — rejected: require an
+- **Schema-IDL formats (flatbuffers, capnp, protobuf), rejected.** They require an
   external schema duplicating the `#[hirpdag]` type definitions.
-- **Own-derive binary crates (borsh, speedy, bitcode-native)** — rejected: binary
-  only, no simpler custom-type extension points than serde.
-- **Hand-rolled binary format** — rejected: hirpdag would own byte-level encoding of
-  every field type plus a JSON writer; largest code footprint of all options.
+- **Own-derive binary crates (borsh, speedy, bitcode-native), rejected.** Binary
+  only, and their custom-type extension points are no simpler than serde's.
+- **Hand-rolled binary format, rejected.** Hirpdag would own byte-level encoding of
+  every field type plus a JSON writer, the largest code footprint of all options.
 
 ## Consequences
 
@@ -42,7 +42,7 @@ are hand-written.
 - Deserialization re-interns through the raw hashcons path (not `new()`): normalizers
   do not re-run, sharing is restored exactly, and loading merges with nodes already
   live in the process (in-process round trips are pointer-equal).
-- A ref serialized outside a session is a hard error — there is no accidental
+- A ref serialized outside a session is a hard error. There is no accidental
   tree-expansion path, so serialization is always DAG-aware.
 - Roots are typed: struct types opt in with `#[hirpdag(root)]`, and the generated
   `HirpdagArchiveRoots` struct (one vector per root type) is the serialize input and
@@ -54,8 +54,8 @@ are hand-written.
   opt-out attribute can be added later if a user needs it.
 - Binary enum tags are ordinal: reordering `#[hirpdag]` type declarations or enum
   variants changes the wire format. The binary header therefore embeds a schema
-  fingerprint — a stable FNV-1a hash of the module's type definitions computed at
-  macro expansion time, plus a debug name (package name and type list) — and decoding
+  fingerprint: a stable FNV-1a hash of the module's type definitions computed at
+  macro expansion time, plus a debug name (package name and type list). Decoding
   fails with a `SchemaMismatch` error naming both schemas instead of misparsing. JSON
   is name-tagged, more tolerant, and carries no fingerprint (kept hand-editable by
   design).

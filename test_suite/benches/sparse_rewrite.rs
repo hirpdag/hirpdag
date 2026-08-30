@@ -12,10 +12,10 @@
 // distinct nodes.
 //
 // `change_period` sweeps how sparse the rewrite is:
-//   * `1` — every node is a change seed, so every node changes.
-//   * `k` — roughly one node in `k` is a seed; a subtree is rebuilt only if it
+//   * `1`: every node is a change seed, so every node changes.
+//   * `k`: roughly one node in `k` is a seed; a subtree is rebuilt only if it
 //     contains a seed, so most subtrees are cloned unchanged.
-//   * `0` — no seeds: a pure no-op rewrite that clones the whole tree back.
+//   * `0`: no seeds, a pure no-op rewrite that clones the whole tree back.
 //
 // Cost drops sharply as `change_period` grows and fewer nodes change.
 

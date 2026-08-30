@@ -2,7 +2,7 @@
 //!
 //! A skip list is a probabilistically balanced, *ordered* map. `SkipMap` is a
 //! lock-free concurrent implementation using epoch-based reclamation. Unlike the
-//! hash-map backends it keeps entries sorted by key, so it needs no hasher — the
+//! hash-map backends it keeps entries sorted by key, so it needs no hasher; the
 //! key type only has to be [`Ord`]. Lookups are `O(log n)` rather than `O(1)`,
 //! which is the trade-off for ordered iteration and lock-free progress.
 //!

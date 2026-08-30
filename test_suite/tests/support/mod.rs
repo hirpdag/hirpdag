@@ -1,7 +1,7 @@
 // Shared test support.
 //
-// `hirpdag_test_configs!` expands the given items — a `#[hirpdag]` type plus one
-// or more `#[test]` functions that exercise it — once per hash-consing
+// `hirpdag_test_configs!` expands the given items (a `#[hirpdag]` type plus one
+// or more `#[test]` functions that exercise it) once per hash-consing
 // configuration preset, each in a `#[hirpdag_module]` module named after the
 // preset. Cargo then discovers the tests as `<preset>::<fn>`. The presets backed
 // by third-party collection crates are gated behind the `third-party-tables`

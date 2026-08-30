@@ -2,7 +2,7 @@
 
 /// Total node count in a subtree (saturating u32; capped rather than overflowing).
 pub type HirpdagMetaCountType = u32;
-/// Height of a node's subtree — distance from the node to its deepest leaf (saturating u16).
+/// Height of a node's subtree: the distance from the node to its deepest leaf (saturating u16).
 pub type HirpdagMetaHeightType = u16;
 /// Bitfield of user-defined flags propagated upward through the DAG via bitwise OR.
 pub type HirpdagMetaFlagType = u16;

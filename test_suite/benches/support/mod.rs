@@ -102,9 +102,9 @@ static GLOBAL: TrackingAllocator = TrackingAllocator;
 /// high-water mark of live bytes = sum of allocations minus deallocations),
 /// instead of how long it took.
 ///
-/// Allocation sizes are deterministic for a given workload, so — unlike the
-/// jittery latencies criterion is designed to smooth out — a memory benchmark
-/// does not need many samples to converge. The memory benchmark groups are
+/// Allocation sizes are deterministic for a given workload, so a memory
+/// benchmark does not need the many samples criterion uses to smooth out
+/// jittery latencies. The memory benchmark groups are
 /// therefore configured for the minimum number of runs (flat sampling, a tiny
 /// measurement window, so each of criterion's ten samples is a single
 /// invocation).
@@ -112,7 +112,7 @@ static GLOBAL: TrackingAllocator = TrackingAllocator;
 /// The reported figure is the peak *increase* in live heap during the run,
 /// relative to the heap size at [`start`](Self::start). For this to equal the
 /// cost of building the DAG from scratch, the run must start from an empty
-/// hash-consing table — otherwise a preset that retains nodes across runs
+/// hash-consing table; otherwise a preset that retains nodes across runs
 /// (e.g. the `leak_*` presets) finds them already interned and allocates
 /// little. See [`crate::support`] docs / the bench setup for how each measured
 /// run is given a fresh table.

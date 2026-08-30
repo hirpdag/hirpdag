@@ -604,7 +604,7 @@ fn expand_hirpdag_struct(
             /// This is the traversal step a `HirpdagRewriter` rule delegates to
             /// when it has nothing special to do for a node. Recursion goes
             /// through the driver (not through the rule), so a memoizing driver
-            /// sees — and can cache — every node in the traversal.
+            /// sees, and can cache, every node in the traversal.
             #[allow(non_snake_case)]
             pub fn default_rewrite<D: HirpdagRewriteDriver>(&self, driver: &D) -> Self {
                 #default_rewrite_body
@@ -1189,7 +1189,7 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         ///
         /// Implement the methods for the types to transform; the rest default to
         /// rewriting their children and rebuilding. Every rule is handed the
-        /// recursion `driver` alongside the node — pass it to `default_rewrite`
+        /// recursion `driver` alongside the node. Pass it to `default_rewrite`
         /// (or call `driver.rewrite(..)` directly) to continue into the node's
         /// children. Recursing through the driver rather than through `self` is
         /// what lets a driver such as `HirpdagRewriteMemoized` observe, and
@@ -1262,8 +1262,8 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         ///
         /// `HirpdagRewriteMemoized` remembers rewritten nodes here, but the cache
         /// is an ordinary value with no dependency on rewriting: build one and
-        /// use it for any node-keyed computation worth doing once —
-        /// `cache.get_or_else(&node, || expensive(node))` — through the
+        /// use it for any node-keyed computation worth doing once, calling
+        /// `cache.get_or_else(&node, || expensive(node))` through the
         /// `hirpdag::base::HirpdagMemoize` implementation for each type.
         ///
         /// Filling a table takes `&self` and is thread-safe (sharded locks), so a

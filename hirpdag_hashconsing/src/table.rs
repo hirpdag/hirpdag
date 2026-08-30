@@ -1,6 +1,6 @@
 use crate::reference::*;
 
-/// Single-threaded hash-consing table — the inner storage unit behind [`Table`].
+/// Single-threaded hash-consing table, the inner storage unit behind [`Table`].
 ///
 /// Implementations vary in lookup strategy (linear scan, sorted binary search, hash map) and
 /// eviction policy (weak references allow GC of unreferenced nodes).
@@ -17,7 +17,7 @@ where
     /// Return an existing interned value or intern a fresh one.
     ///
     /// If `data` is not yet in the table, `creation_meta` is called on the new entry
-    /// before it is stored — allowing metadata and creation IDs to be set atomically
+    /// before it is stored, allowing metadata and creation IDs to be set atomically
     /// with insertion.
     fn get_or_insert<CF>(&mut self, hash: u64, data: D, creation_meta: CF) -> R
     where

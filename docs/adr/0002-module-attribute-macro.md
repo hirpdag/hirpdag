@@ -7,9 +7,9 @@ status: accepted
 Hirpdag's code generation needs to see every data type in a module at once
 (the `HirpdagRewriter` trait, the serialization archive, and the schema
 fingerprint are all per-module aggregates over the types). The original
-interface split this across attribute macro invocations — `#[hirpdag]` on
-each type, then a trailing `#[hirpdag_end] pub struct HirpdagEndMarker;` —
-which forced the two macros to communicate through a global registry
+interface split this across attribute macro invocations: `#[hirpdag]` on
+each type, then a trailing `#[hirpdag_end] pub struct HirpdagEndMarker;`.
+That forced the two macros to communicate through a global registry
 (`static DATA_TYPES: Mutex<Vec<...>>`) in the proc-macro process, drained by
 each end marker. That contract silently depends on the compiler expanding
 the attributes in source order. The order holds for attributes written
@@ -32,20 +32,20 @@ mod datamodel {
 
 `#[hirpdag_module]` sees the whole module in a single invocation: it expands
 the (now inert) `#[hirpdag]` type markers, passes other items through, and
-appends the module-level code — no end marker, no global state, no
+appends the module-level code. No end marker, no global state, no
 dependence on expansion order. The hash-consing configuration moves to the
 attribute's arguments, including named presets
 (`#[hirpdag_module(preset = "arc_hash_linear")]`), which lets the benchmark
 suite stamp out its per-configuration modules with a ten-line
 `macro_rules!`.
 
-## Considered Options
+## Considered options
 
 - **Keep `#[hirpdag]`/`#[hirpdag_end]` and stamp configuration modules with
   `macro_rules!`.** Fails: the registry handoff breaks under the reordered
   expansion described above. Diagnosed empirically by tracing expansion
   order inside the derive macros; the failure is order-dependent, not (as
-  first suspected) macro hygiene — proc-macro-generated items from
+  first suspected) macro hygiene. Proc-macro-generated items from
   macro-authored attribute tokens resolve fine.
 - **Invoke the attributes by absolute path (`#[hirpdag::hirpdag_end]`) in
   the stamping macro.** Empirically restores source-order expansion (the
@@ -81,7 +81,7 @@ suite stamp out its per-configuration modules with a ten-line
   their parameter lists.
 - Generated code (including the default and preset configuration types)
   refers to the hirpdag crate by absolute paths, so modules need no
-  `use hirpdag::*;` for the generated code — imports inside the module are
+  `use hirpdag::*;` for the generated code. Imports inside the module are
   only for the user's own code.
 - The inner attribute form (`#![hirpdag_module]` inside the module or at
   file scope) is not possible: Rust rejects proc-macro inner attributes

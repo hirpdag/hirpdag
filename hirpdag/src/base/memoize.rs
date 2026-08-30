@@ -3,7 +3,7 @@
 //! A hash-consed node is a stable key: it hashes and compares by interned
 //! identity in `O(1)`, whatever the size of the graph below it.  That makes a
 //! map from node to result the natural place to keep anything derived from a
-//! node — a rewritten node, an analysis result, an annotation — instead of
+//! node (a rewritten node, an analysis result, an annotation), instead of
 //! recomputing it once per path that reaches the node, and instead of trying
 //! to store it *inside* the node, which hash-consing forbids (see
 //! `book/src/ch04-00-techniques.md`).
@@ -16,7 +16,7 @@
 //! `#[hirpdag_module]` generates a `HirpdagMemoizeCache` holding one table per
 //! data type in the module, implementing [`HirpdagMemoize`] for each of them.
 //! `HirpdagRewriteMemoized` memoizes rewrite rules through that cache; any
-//! other traversal can use it — or its own [`HirpdagMemoizeMap`] — the same way.
+//! other traversal can use it, or its own [`HirpdagMemoizeMap`], the same way.
 
 /// Number of independent shard locks.  Power-of-two so shard selection is a bitmask (no modulo).
 const N_SHARDS: usize = 8;
@@ -96,7 +96,7 @@ where
     /// this is the first time the table has seen the key.
     ///
     /// This is the only way to fill the table, and it never overwrites an
-    /// entry — see the note on the type.
+    /// entry.  See the note on the type.
     ///
     /// `compute` runs with no lock held, so it may recurse into this table (a
     /// rewrite rule descending into a node's children does exactly that).  The

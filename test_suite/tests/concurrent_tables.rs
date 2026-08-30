@@ -1,6 +1,6 @@
 // End-to-end tests exercising every configuration preset through the full
-// derive pipeline over real `HirpdagStorage` nodes — not just the unit tests in
-// hirpdag_hashconsing.
+// derive pipeline over real `HirpdagStorage` nodes, rather than only the unit
+// tests in hirpdag_hashconsing.
 //
 // `hirpdag_test_configs!` (see tests/support) stamps the `Node` type and the
 // `interning` test out once per preset, so each runs as `<preset>::interning`.

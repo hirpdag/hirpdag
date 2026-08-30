@@ -13,10 +13,10 @@ Struct types that may be serialization roots are marked with
 struct with one vector per root type (field names are the snake_case type
 names), plus entry points:
 
-* `hirpdag_serialize(&HirpdagArchiveRoots) -> Result<Vec<u8>, HirpdagSerializeError>`
-  — compact binary (via [postcard](https://crates.io/crates/postcard)).
+* `hirpdag_serialize(&HirpdagArchiveRoots) -> Result<Vec<u8>, HirpdagSerializeError>`,
+  compact binary (via [postcard](https://crates.io/crates/postcard)).
 * `hirpdag_deserialize(&[u8]) -> Result<HirpdagArchiveRoots, HirpdagDeserializeError>`
-* `hirpdag_serialize_json` / `hirpdag_deserialize_json` — the same archive as
+* `hirpdag_serialize_json` / `hirpdag_deserialize_json`, the same archive as
   human-readable JSON.
 
 Types without `#[hirpdag(root)]` can still appear anywhere *inside* the DAG;
@@ -52,7 +52,7 @@ are written in post-order DFS order (children before parents), and
 indices into the node table. `#[hirpdag]` enum values are not hashconsed and
 are stored inline inside their parent node.
 
-The binary header additionally carries a **schema fingerprint**: a stable
+The binary header also carries a schema fingerprint: a stable
 hash of the module's hirpdag type definitions (computed at macro expansion
 time) plus a human-readable name (the defining package and its type list).
 Deserializing a binary archive written by different type definitions fails up
@@ -76,7 +76,7 @@ decoded, so:
 * loading merges with nodes already live in the process (an in-process round
   trip yields pointer-equal nodes);
 * metadata and creation IDs are recomputed rather than trusted from the file;
-* normalizers do **not** re-run (the archived data was produced from
+* normalizers do not re-run (the archived data was produced from
   already-normalized nodes).
 
 ## Caveats
@@ -84,7 +84,7 @@ decoded, so:
 * (De)serialization uses a per-thread session; entry points are not re-entrant
   within a thread (concurrent use on different threads is fine). Serializing a
   hirpdag reference outside a session (e.g. calling `serde_json::to_string` on
-  a node directly) is an error — there is no accidental tree-expansion path.
+  a node directly) is an error. There is no accidental tree-expansion path.
 * Binary enum tags are ordinal: reordering `#[hirpdag]` type declarations or
   enum variants changes the wire format. The schema fingerprint turns this
   into an early, clear error for binary archives; JSON is name-tagged, more

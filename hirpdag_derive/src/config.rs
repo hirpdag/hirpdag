@@ -57,7 +57,7 @@ const PRESETS: &[&str] = &[
 /// `reference_type`, `reference_weak_type`, `tableshared_type` and
 /// `build_tableshared_type` are always emitted, as the aliases `ImplRef<D>`,
 /// `ImplRefWeak<D>`, `ImplTableShared<D>` and `ImplBuildTableShared<D>`.
-/// `ImplRef` / `ImplRefWeak` are the strong/weak reference pair — the vocabulary
+/// `ImplRef` / `ImplRefWeak` are the strong/weak reference pair, the vocabulary
 /// any table implementation draws on to name whichever reference-counting
 /// implementation it was configured with, so both are available whether or not a
 /// given table happens to use the weak side.

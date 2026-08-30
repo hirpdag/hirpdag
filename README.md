@@ -171,7 +171,7 @@ let p: Point = Point::builder()
 
 assert_eq!(p, Point::new(1, 2));
 
-// Derive a modified copy with to_builder() — the original is unchanged.
+// Derive a modified copy with to_builder(). The original is unchanged.
 let q: Point = p.to_builder().y(99).build();
 
 assert_eq!(q, Point::new(1, 99));
