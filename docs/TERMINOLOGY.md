@@ -9,29 +9,29 @@ This document defines the domain vocabulary used throughout the hirpdag codebase
 ### HIRPDAG
 **H**ash Consed · **I**mmutable · **R**eference Counted · **P**ersistent · **D**irected **A**cyclic **G**raph.
 
-The acronym names both the project and the combination of properties that make the data structure useful.  Each property reinforces the others — see `book/src/ch02-00-hirpdag.md`.
+The acronym names both the project and the combination of properties that make the data structure useful.  Each property reinforces the others.  See `book/src/ch02-00-hirpdag.md`.
 
 ### Hash Consing / Interning
 The practice of deduplicating structurally identical nodes so that only one allocation ever exists for a given value.  When a new node is constructed, the table checks whether an equal node already exists; if so, the existing pointer is returned instead of allocating a new one.
 
-Source: `hirpdag/src/base/reference.rs` — `HirpdagHashconsTable::hirpdag_hashcons`
+Source: `hirpdag/src/base/reference.rs`, `HirpdagHashconsTable::hirpdag_hashcons`
 
 ### Pointer Equality
-Because hash-consing guarantees at most one allocation per distinct value, two `HirpdagRef`s are equal **iff** they point to the same address — an O(1) check.  Deep structural comparison (`hirpdag_cmp_deep`) is available but O(n).
+Because hash-consing guarantees at most one allocation per distinct value, two `HirpdagRef`s are equal if and only if they point to the same address, an O(1) check.  Deep structural comparison (`hirpdag_cmp_deep`) is available but O(n).
 
-Source: `hirpdag/src/base/reference.rs` — `HirpdagRef` `PartialEq` impl
+Source: `hirpdag/src/base/reference.rs`, `HirpdagRef` `PartialEq` impl
 
 ### Directed Acyclic Graph (DAG)
-The shape of the data structure.  Nodes reference children but never form cycles.  Hash-consing means multiple parent nodes can share the same child allocation — this sharing is what gives DAGs their space efficiency over trees.
+The shape of the data structure.  Nodes reference children but never form cycles.  Hash-consing means multiple parent nodes can share the same child allocation.  That sharing is what makes a DAG smaller than the tree it stands for.
 
 ### Persistence
-The ability to create a modified version of a node without mutating the original.  Because all nodes are immutable and hash-consed, "modifying" a node means constructing a new one — existing references to the old node remain valid.
+The ability to create a modified version of a node without mutating the original.  Because all nodes are immutable and hash-consed, "modifying" a node means constructing a new one.  Existing references to the old node remain valid.
 
 ### Referential Transparency
 Nodes with identical structure always have identical meaning and share the same interned pointer.  Programs can compare, cache, or substitute any two equal nodes freely.
 
 ### Immutability / No Interior Mutability
-A node's contents are fixed for its lifetime — they *are* its identity.  Interior mutability (`Cell`, `RefCell`, `Mutex`, `AtomicUsize`, …) is **forbidden** inside a node, because mutating a field through a shared reference would invalidate everything keyed on the node's content: hash-consing, pointer equality, and memoized results.  Identity-defining data is fundamentally incompatible with interior mutability.
+A node's contents are fixed for its lifetime; they *are* its identity.  Interior mutability (`Cell`, `RefCell`, `Mutex`, `AtomicUsize`, …) is forbidden inside a node, because mutating a field through a shared reference would invalidate everything keyed on the node's content: hash-consing, pointer equality, and memoized results.  Data that defines a node's identity cannot also change.
 
 To associate *mutable* state with a node (annotations, analysis results, scratch state), keep it in a side-table keyed by the node reference (e.g. `HashMap<Node, _>`, or [`HirpdagMemoizeMap`](#hirpdagmemoizemap) to share one between threads) rather than inside the node.  A hash-consed `HirpdagRef` is a stable, `O(1)`-hashable/ordered key.  See `book/src/ch04-00-techniques.md`.
 
@@ -75,7 +75,7 @@ Trait: `hirpdag_hashconsing::ReferenceWeak`
 ### Creation ID
 A monotonically increasing integer (u64) assigned to each node at intern time.  If node A was interned after node B (e.g. because A contains B as a child), then B's ID is strictly less than A's.  Used to give `HirpdagRef` a total O(1) ordering consistent with DAG dependency order.
 
-Source: `hirpdag/src/base/reference.rs` — `HIRPDAG_CREATION_COUNTER`
+Source: `hirpdag/src/base/reference.rs`, `HIRPDAG_CREATION_COUNTER`
 
 ---
 
@@ -87,7 +87,7 @@ The single-threaded storage unit for a hash-consing table.  Implementations diff
 Trait: `hirpdag_hashconsing::ThreadUnsafeTable`
 
 ### `Table<D, R>`
-The thread-safe hash-consing interface (`get` / `get_or_insert` over `&self`).  Implementations choose their concurrency strategy: some wrap one or more inner single-threaded `ThreadUnsafeTable` instances behind locks, others store the mapping directly in a concurrent collection.  Note the trait is *not* parameterized over an inner `ThreadUnsafeTable` — a backend that needs one (mutex/sharded) carries it as its own generic, so backends that don't (the concurrent-collection ones) name no table at all.
+The thread-safe hash-consing interface (`get` / `get_or_insert` over `&self`).  Implementations choose their concurrency strategy: some wrap one or more inner single-threaded `ThreadUnsafeTable` instances behind locks, others store the mapping directly in a concurrent collection.  The trait is *not* parameterized over an inner `ThreadUnsafeTable`.  A backend that needs one (mutex/sharded) carries it as its own generic, so backends that don't (the concurrent-collection ones) name no table at all.
 
 Trait: `hirpdag_hashconsing::Table`
 
@@ -109,12 +109,12 @@ Hash-sorted `Vec` of weak entries; O(log n) binary search to the hash run, then 
 `Table` implementation wrapping a single `Mutex`.  Simple; all threads serialise on one lock.  An adapter that connects a single-threaded `ThreadUnsafeTable` to the thread-safe `Table` interface.
 
 ### `TableSharedSharded`
-`Table` implementation using `N_SHARDS` (= 8) independent mutexes.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)` — a bitmask because `N_SHARDS` is a power of two.  Like the mutex backend, an adapter connecting a `ThreadUnsafeTable` to the `Table` interface.
+`Table` implementation using `N_SHARDS` (= 8) independent mutexes.  Threads hashing to different shards never contend.  Shard selection is `hash & (N_SHARDS - 1)`, a bitmask because `N_SHARDS` is a power of two.  Like the mutex backend, an adapter connecting a `ThreadUnsafeTable` to the `Table` interface.
 
 Source: `hirpdag_hashconsing/src/table/shared_sharded.rs`
 
 ### Third-party-collection table backends (`third-party-tables` feature)
-Table backends built on external collection crates, behind the opt-in `third-party-tables` Cargo feature (off by default; enable it on `hirpdag` to select these presets). `TableTovWeakTable` is an inner `ThreadUnsafeTable` (wrapping the [`weak-table`] crate) used behind the sharded shared table; the rest are `Table` implementations that store the interned mapping directly in a concurrent collection instead of delegating to an inner `ThreadUnsafeTable`. The concurrent ones store **strong** references (unreferenced nodes are retained, not garbage-collected) and require a `Send + Sync` reference, so they are wired to `RefArc`.
+Table backends built on external collection crates, behind the opt-in `third-party-tables` Cargo feature (off by default; enable it on `hirpdag` to select these presets). `TableTovWeakTable` is an inner `ThreadUnsafeTable` (wrapping the [`weak-table`] crate) used behind the sharded shared table; the rest are `Table` implementations that store the interned mapping directly in a concurrent collection instead of delegating to an inner `ThreadUnsafeTable`. The concurrent ones store strong references (unreferenced nodes are retained, not garbage-collected) and require a `Send + Sync` reference, so they are wired to `RefArc`.
 
 | Type | Preset | Backend | Strategy |
 | --- | --- | --- | --- |
@@ -137,12 +137,12 @@ Source: `hirpdag_hashconsing/src/table/tov_weak_table_threadunsafe.rs`, `dashmap
 ## Rewriting
 
 ### Rewriter
-A user-defined struct that implements the generated `HirpdagRewriter` trait — the *rules* of a transformation.  It has one method per `#[hirpdag]` type (`rewrite_Foo`, `rewrite_Bar`, …), each taking the node and the recursion driver: `fn rewrite_Foo<D: HirpdagRewriteDriver>(&self, x: &Foo, driver: &D) -> Foo`.  Methods left unimplemented default to `default_rewrite`.
+A user-defined struct that implements the generated `HirpdagRewriter` trait, the *rules* of a transformation.  It has one method per `#[hirpdag]` type (`rewrite_Foo`, `rewrite_Bar`, …), each taking the node and the recursion driver: `fn rewrite_Foo<D: HirpdagRewriteDriver>(&self, x: &Foo, driver: &D) -> Foo`.  Methods left unimplemented default to `default_rewrite`.
 
 Generated by: `#[hirpdag_module]`
 
 ### Driver
-A user-facing struct implementing the generated `HirpdagRewriteDriver` trait — the *traversal* of a transformation.  Rules recurse by calling back into the driver they are handed (`driver.rewrite(&child)`, usually via `default_rewrite`) rather than into themselves, so the driver observes every node the traversal reaches and can decide what to do before the rule runs again.  Two drivers are generated per module:
+A user-facing struct implementing the generated `HirpdagRewriteDriver` trait, the *traversal* of a transformation.  Rules recurse by calling back into the driver they are handed (`driver.rewrite(&child)`, usually via `default_rewrite`) rather than into themselves, so the driver observes every node the traversal reaches and can decide what to do before the rule runs again.  Two drivers are generated per module:
 
 | Driver | Traversal |
 | --- | --- |
@@ -155,17 +155,17 @@ Generated by: `#[hirpdag_module]`
 The default traversal step provided for every `#[hirpdag]` type.  It rewrites each child field through the driver, then reconstructs the node with the new children (returning the original if nothing changed).  Override individual `rewrite_*` methods to intercept specific node types, and pass the driver on to `default_rewrite` for the parts of the node the rule does not handle itself.  Public, so rewriters may be defined outside the hirpdag module (any fields they read must then be `pub`).
 
 ### Memoization
-`HirpdagRewriteMemoized<Rewriter>` is the caching driver: it wraps any `HirpdagRewriter` and remembers the result of every `rewrite_*` call in a `HirpdagMemoizeCache`, so each unique node runs its rule once however many paths reach it.  Its driver methods are one line each — `self.memoize_cache.get_or_else(x, || self.rewriter.rewrite_Foo(x, self))`.  Cached results assume the rules are a pure function of the node (the usual case: a rewriter's state is fixed when it is constructed), and the memoizer keeps every node it has seen alive until it is dropped or `clear_caches()` is called.  `HirpdagRewriteMemoized::with_cache(rules, cache)` runs rules against a cache built (or primed) elsewhere.
+`HirpdagRewriteMemoized<Rewriter>` is the caching driver: it wraps any `HirpdagRewriter` and remembers the result of every `rewrite_*` call in a `HirpdagMemoizeCache`, so each unique node runs its rule once however many paths reach it.  Its driver methods are one line each, `self.memoize_cache.get_or_else(x, || self.rewriter.rewrite_Foo(x, self))`.  Cached results assume the rules are a pure function of the node (the usual case: a rewriter's state is fixed when it is constructed), and the memoizer keeps every node it has seen alive until it is dropped or `clear_caches()` is called.  `HirpdagRewriteMemoized::with_cache(rules, cache)` runs rules against a cache built (or primed) elsewhere.
 
 Generated by: `#[hirpdag_module]`
 
 ### `HirpdagMemoizeCache`
-Per-module memoization state: one [`HirpdagMemoizeMap`](#hirpdagmemoizemap) per data type, keyed by node, reachable through the `hirpdag::base::HirpdagMemoize<Foo>` implementation for each type (`cache.get(&node)`, `cache.get_or_else(&node, || ..)`).  Nothing about it is rewrite-specific: hash-consing makes a node an `O(1)` key for any derived result, so a cache can memoize an analysis, a lowering, or an annotation pass just as well — and can then be handed to a rewriter with `with_cache`.  `clear()` empties every table.
+Per-module memoization state: one [`HirpdagMemoizeMap`](#hirpdagmemoizemap) per data type, keyed by node, reachable through the `hirpdag::base::HirpdagMemoize<Foo>` implementation for each type (`cache.get(&node)`, `cache.get_or_else(&node, || ..)`).  Nothing about it is rewrite-specific: hash-consing makes a node an `O(1)` key for any derived result, so a cache can memoize an analysis, a lowering, or an annotation pass just as well, and can then be handed to a rewriter with `with_cache`.  `clear()` empties every table.
 
 Generated by: `#[hirpdag_module]`
 
 ### `HirpdagMemoizeMap`
-A concurrent memoization table (`hirpdag::base::HirpdagMemoizeMap<K, V>`): a map from key to computed value, filled through `&self`.  Split into `N_SHARDS` independently locked shards chosen by the key's hash, like `TableSharedSharded`, so threads working on different nodes rarely contend.  `get_or_else` is the only way to fill the table and never replaces an entry — a memoized value *is* the answer for its key, so there is no `insert` with which two callers could be given different ones; `clear` is the only way to forget.  It never holds a lock while computing a value, so a computation may recurse into the same table for the keys it depends on (which is exactly what a rewrite rule descending into a node's children does); the cost is that two threads racing on one key can both compute it, and the first result to land is the one kept and returned to both.  Because filling takes `&self`, one table — and so one `HirpdagRewriteMemoized` — can be shared by every thread working on the same graph.  Available directly for tables whose values are not nodes (`HirpdagMemoizeMap<Node, MyAnalysis>`).
+A concurrent memoization table (`hirpdag::base::HirpdagMemoizeMap<K, V>`): a map from key to computed value, filled through `&self`.  Split into `N_SHARDS` independently locked shards chosen by the key's hash, like `TableSharedSharded`, so threads working on different nodes rarely contend.  `get_or_else` is the only way to fill the table, and it never replaces an entry.  A memoized value *is* the answer for its key, so there is no `insert` with which two callers could be given different ones; `clear` is the only way to forget.  It never holds a lock while computing a value, so a computation may recurse into the same table for the keys it depends on (which is exactly what a rewrite rule descending into a node's children does); the cost is that two threads racing on one key can both compute it, and the first result to land is the one kept and returned to both.  Because filling takes `&self`, one table, and so one `HirpdagRewriteMemoized`, can be shared by every thread working on the same graph.  Available directly for tables whose values are not nodes (`HirpdagMemoizeMap<Node, MyAnalysis>`).
 
 Source: `hirpdag/src/base/memoize.rs`
 

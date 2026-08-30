@@ -10,8 +10,8 @@ use hirpdag_hashconsing::Table;
 
 /// A hash-consed, reference-counted pointer to an interned DAG node.
 ///
-/// Two `HirpdagRef`s are equal (via `==`) iff they point to the same allocation — O(1) pointer
-/// equality guaranteed by hash-consing.  Ordering (via `cmp`) uses the creation ID, which
+/// Two `HirpdagRef`s are equal (via `==`) if and only if they point to the same allocation,
+/// the O(1) pointer equality that hash-consing guarantees.  Ordering (via `cmp`) uses the creation ID, which
 /// reflects DAG dependency order: if A depends on B then B < A.
 ///
 /// `Deref` gives direct access to the underlying `D` fields.
@@ -269,8 +269,8 @@ where
     ///
     /// Intended for benchmarks and tests that reuse the process-global tables
     /// across runs and want each run to start cold. Resetting invalidates the
-    /// hash-consing invariant for any `HirpdagRef`s created before the reset —
-    /// see [`hirpdag_hashconsing::Table::reset`].
+    /// hash-consing invariant for any `HirpdagRef`s created before the reset.
+    /// See [`hirpdag_hashconsing::Table::reset`].
     #[cfg(feature = "reset-tables")]
     pub fn reset(&self) {
         self.table.reset();

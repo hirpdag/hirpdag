@@ -3,8 +3,8 @@
 //! DashMap is a bucket-striped concurrent hash map: it internally shards into
 //! several independently locked `RwLock<HashMap>` regions, so threads touching
 //! structurally different nodes rarely contend. This wrapper stores the mapping
-//! directly in the concurrent map, so — unlike the `TableSharedMutex` /
-//! `TableSharedSharded` wrappers — it does not delegate to an inner
+//! directly in the concurrent map, so, unlike the `TableSharedMutex` and
+//! `TableSharedSharded` wrappers, it does not delegate to an inner
 //! single-threaded [`ThreadUnsafeTable`](crate::ThreadUnsafeTable) at all.
 //!
 //! Note on retention: entries hold a *strong* reference `R` to each interned
@@ -72,7 +72,7 @@ where
             return R::strong_clone(r.value());
         }
         // Slow path: take the bucket entry (exclusive lock) so that creation and
-        // insertion of a new node are atomic with respect to other writers —
+        // insertion of a new node are atomic with respect to other writers:
         // no two threads can both insert a structurally equal node.
         let key = data.clone();
         match self.map.entry(key) {

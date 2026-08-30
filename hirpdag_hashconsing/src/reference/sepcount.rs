@@ -102,7 +102,7 @@ impl<S: CountSlot> SlotPool<S> {
         guard.free.push(slot);
     }
 
-    /// (allocated chunks, free slots) — for tests and leak diagnosis.
+    /// (allocated chunks, free slots), for tests and leak diagnosis.
     pub fn stats(&self) -> (usize, usize) {
         let guard = self.inner.lock().unwrap();
         (guard.chunks.len(), guard.free.len())

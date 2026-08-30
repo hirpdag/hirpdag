@@ -36,7 +36,7 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
     `table/hashmap_fallback_threadunsafe.rs`), a capacity bound with LRU or
     random eviction, or generational tables dropped between passes.
   - Evicting is always safe for correctness (the value can be recomputed), so
-    the trade-off is purely recompute cost vs. retained memory - measure it.
+    the trade-off is recompute cost vs. retained memory; measure it.
 
 - [P1] Avoid re-hashing on the `get_or_else` miss path.
   - A miss hashes the key twice for shard selection (`get`, then `get_shard`)
@@ -50,7 +50,7 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
   - `DefaultHasher` is the default `BuildHasher` here, but node keys hash by
     interned identity (a pointer / creation id), which is already well
     distributed; an identity or multiply-shift hasher should be much cheaper.
-  - The hash-consing tables have the same question - keep the answer shared
+  - The hash-consing tables have the same question; keep the answer shared
     rather than picking one per table.
 
 - [P1] Share the sharding with the hash-consing tables.
@@ -67,7 +67,7 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
   - A per-key in-progress marker that later callers wait on would fix it, but
     must not deadlock the recursive case (`get_or_else` re-entering the same
     table for a child node is the normal traversal pattern), so it needs
-    reentrancy detection - check that it is worth the complexity first.
+    reentrancy detection; check that it is worth the complexity first.
 
 - [P2] Allow values that are not the key type.
   - `HirpdagMemoize<T>` hard-codes `HirpdagMemoizeMap<T, T>`, so the generated
@@ -124,12 +124,12 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
   - DONE: The macro-generated `default_rewrite` now rewrites each field into a
     local, compares the results against the originals (child `HirpdagRef` fields
     compare by pointer, leaf fields by value) and, when nothing changed, returns
-    `self.clone()` — a single reference-count bump on the already-interned node.
+    `self.clone()`, a single reference-count bump on the already-interned node.
     Previously every rewrite reconstructed the struct and went through
     `Self::new` (normalization + a hash-cons table lookup) even when the result
-    was identical. On the unchanged fast path this replaces the rebuild — which
-    clones every child field into a temporary struct (N ref-count increments),
-    interns it, then drops the temporary (N decrements) — with one increment, so
+    was identical. That rebuild cloned every child field into a temporary struct
+    (N ref-count increments), interned it, then dropped the temporary (N
+    decrements). The unchanged fast path now costs one increment instead, so
     identity/partial rewrites that leave subtrees untouched no longer touch the
     hash-cons table or churn child reference counts. See
     `tests/base.rs::identity_rewrite_preserves_nodes` and
@@ -176,8 +176,8 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
     usage (high-water mark of live = allocated − freed bytes) via a custom
     `AllocBytes` criterion measurement over a tracking global allocator. The
     opt-in `reset-tables` feature empties each type's interning table between
-    runs — in place, through the table's existing lock, so the timing benchmarks
-    are unaffected — so every measured build starts from empty. This gives
+    runs, in place through the table's existing lock, so the timing benchmarks
+    are unaffected and every measured build starts from empty. This gives
     deterministic from-empty peaks even for the non-freeing `leak_*` presets.
     The memory groups use flat sampling with a minimal warm-up/measurement
     window (criterion's floor is 10 samples) since allocation sizes do not need
@@ -189,17 +189,17 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
     existing suite did not cover (see `test_suite/benches/README.md` for the
     full coverage table across topology / node size / sharing / operation /
     concurrency / RC churn):
-    * `large_nodes` — nodes carry large `Vec<u8>` payloads (a content-addressed
+    * `large_nodes` gives nodes large `Vec<u8>` payloads (a content-addressed
       blob tree), so interning cost is dominated by hashing/comparing big data
       rather than reference counting; sweeps payload size and sharing ratio.
-    * `churn` — continuously creates and drops unique units through a rolling
+    * `churn` continuously creates and drops unique units through a rolling
       live-window, stressing reference-count decrements, `RC == 0` frees, and
       weak-table eviction (the destruction half of the lifecycle the
       build-and-hold benchmarks never reach; `leak_*` presets separate clearly).
-    * `builder_edits` — persistent single-leaf edits via `to_builder()`,
+    * `builder_edits` makes persistent single-leaf edits via `to_builder()`,
       path-copying one root-to-leaf path per edit while retaining every version.
-    * `serde_roundtrip` — build → serialize → deserialize round trip over a
-      highly shared Fibonacci DAG, in both postcard binary and JSON.
+    * `serde_roundtrip` runs a build, serialize and deserialize round trip over
+      a highly shared Fibonacci DAG, in both postcard binary and JSON.
 
 ### Code cleanup
 

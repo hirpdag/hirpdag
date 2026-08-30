@@ -50,8 +50,8 @@ where
     /// Probe this entry for use in sorted tables.
     ///
     /// Returns `Ok(Some(strong))` on a hit, `Ok(None)` if the hash matches but data differs
-    /// (keep scanning neighbours), or `Err(())` if the hash differs (stop the linear scan —
-    /// no further entries in this direction can match).
+    /// (keep scanning neighbours), or `Err(())` if the hash differs (stop the linear scan,
+    /// because no further entries in this direction can match).
     pub fn get_existing_near(&self, hash: u64, data: &T) -> Result<Option<R>, ()> {
         if self.hash == hash {
             return Ok(self.get_data(data));
