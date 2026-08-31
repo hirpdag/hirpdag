@@ -97,7 +97,28 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
 
 ### More benchmarks
 
+- [P0] Add memory measurement groups (`benches_mem`) to remaining benchmarks.
+  - `churn.rs`, `builder_edits.rs`, `large_nodes.rs`, and `serde_roundtrip.rs` currently only have wall-clock timing groups.
+  - Add `bench_*_mem` using `AllocBytes` and `bench_each_config_mem!` so all 9 benchmarks track peak heap usage (especially critical for `churn` to track deallocation/eviction and `large_nodes` to measure memory savings across sharing ratios).
+
+- [P1] Multi-threaded concurrency and contention benchmarks.
+  - **Concurrent Churn / Dropping**: Multi-threaded node creation and drop to stress atomic decrement contention, `RefTlc` thread-local decrement flushing, and test whether `RefSepPad` eliminates cache-line false sharing compared to `RefSep`.
+  - **Concurrent Read/Write Contention**: Mixed reader-writer workloads (concurrent lookup of existing interned nodes while writers insert new nodes) to evaluate `TableSharedDashMap`, `TableSharedFlurry`, `TableSharedSkipMap`, and `TableSharedArcSwap` against `TableSharedSharded`.
+  - **Shared Memoization Cache Contention**: Multi-threaded memoized rewrite passes sharing a single `HirpdagRewriteMemoized` cache across threads (currently `primes.rs` allocates separate per-thread rewriters, avoiding cache contention).
+
+- [P1] Benchmark additional reference types, table backends, and normalizers.
+  - **`RefRc` preset**: Add a single-threaded `rc_hash_linear` preset / benchmark to quantify the atomic ref-counting overhead of `RefArc` on single-threaded workloads.
+  - **`TableSharedMutex` vs `TableSharedSharded`**: Benchmark single coarse mutex table against sharded mutex table to measure the scalability and locking overhead of sharding.
+  - **Normalizer overhead**: Benchmark `#[hirpdag(normalizer)]` and `Expr::spawn()` normalization during construction vs un-normalized construction.
+
 - [P1] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
+  - Use `perf_event_open` / `criterion-perf-events` (or `criterion-linux-perf`) to measure L1/LLC cache misses, branch mispredictions, and instructions per cycle.
+  - Crucial for validating cache-line false sharing on `RefSep` vs `RefSepPad` and comparing linear search (`TableVecLinearWeak`) vs binary search (`TableVecSortedWeak`).
+
+- [P2] Microbenchmarks for common DAG operations and traversals.
+  - **Comparison and Hashing**: Compare $O(1)$ pointer/creation-ID comparison (`HirpdagRef::cmp`, `Eq`) and $O(1)$ hashing against $O(N)$ deep structural comparison (`hirpdag_cmp_deep`) in tight loops.
+  - **Read-Only / Visitor Passes**: Benchmark pure traversal/visitor passes and metadata queries (`hirpdag_get_meta` vs recomputing `hirpdag_compute_meta`).
+  - **Serialization Graph Variety**: Expand `serde_roundtrip` to cover wide trees with high fanout, large payload DAGs (`large_nodes`), and deep chains in addition to the Fibonacci DAG.
 
 ### Code cleanup
 
