@@ -201,6 +201,35 @@ A three-step ergonomic construction API.  `builder()` creates a fresh `Builder`;
 
 ---
 
+## Serialization
+
+### Archive
+A serialized form of a set of DAG roots and every node reachable from them.  Its layout is a format version, then the node table, then the roots.  Written and read by the entry points `#[hirpdag_module]` generates: `hirpdag_serialize` / `hirpdag_deserialize` (binary, postcard) and `hirpdag_serialize_json` / `hirpdag_deserialize_json` (text).
+
+Source: `hirpdag/src/base/archive.rs`
+
+### Node Table
+The list of every unique node in an archive, in post-order DFS order — children before parents.  A node reached by several paths appears once, which is how an archive preserves DAG sharing.  A `HirpdagRef` is written as a `u64` index into this table; because children always precede parents, a forward reference is invalid and cycles are unrepresentable.
+
+### Root
+A node an archive starts from.  A struct type opts in with `#[hirpdag(root)]` and gets a vector in the generated `HirpdagArchiveRoots`, which is the input of the serialize entry points and the output of the deserialize ones.
+
+### Session
+The per-thread state that lets a ref resolve its node table index: on the way out, the index each collected node was given; on the way in, the nodes reconstructed so far.  serde's traits carry no user state, so the entry points open a session for the duration of one archive and close it on the way out.  Sessions are not re-entrant, and serializing a ref outside one is an error rather than a silent expansion of the DAG into a tree.
+
+### Schema Fingerprint
+A stable hash of a module's type definitions (names, fields and their types, variants, root markers, in declaration order), computed at macro expansion time and carried in the binary header.  Reading an archive written by different type definitions fails with `SchemaMismatch` instead of misparsing.  The JSON format omits it, staying hand-editable.
+
+Source: `hirpdag/src/base/serialize.rs` — `HirpdagSchemaFingerprint`
+
+### `HirpdagArchive`
+The interface a module presents to the archive machinery: its node, reconstructed-node and roots types, its schema fingerprint, how to intern a decoded node, and access to its session slots.  Implemented by the generated `HirpdagArchiveSchema`.  See `docs/adr/0004-archive-machinery-in-runtime-crate.md`.
+
+### `HirpdagArchiveMember`
+One data type's place in its module's archive: its name for error messages, and how to recover it from a reconstructed node.  Implemented by the generated ref type of every `#[hirpdag]` struct.
+
+---
+
 ## Configuration Overrides
 
 The following `#[hirpdag_module(...)]` options override the default pluggable implementations:
