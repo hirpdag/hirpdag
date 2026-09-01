@@ -240,4 +240,5 @@ The following `#[hirpdag_module(...)]` options override the default pluggable im
 | `reference_weak_type` | `RefArcWeak` | Weak reference |
 | `table_type` | `TableVecLinearWeak` | Inner table strategy |
 | `tableshared_type` | `TableSharedSharded` | Locking strategy |
-| `build_tableshared_type` | `BuildTableSharedSharded` | Factory for the shared table |
+
+A shared table constructs itself: whichever `tableshared_type` is named is built with `Default`, so there is no separate factory to configure.

@@ -4,7 +4,6 @@ use crate::base::meta::HirpdagComputeMeta;
 use crate::base::meta::HirpdagMeta;
 use crate::base::meta::HirpdagMetaFlagType;
 use hirpdag_hashconsing;
-use hirpdag_hashconsing::BuildTable;
 use hirpdag_hashconsing::Reference;
 use hirpdag_hashconsing::Table;
 
@@ -231,12 +230,17 @@ where
     R: Reference<HirpdagStorage<D>>,
     TS: Table<HirpdagStorage<D>, R>,
 {
-    pub fn new<TB>(table_builder: TB) -> Self
+    /// An empty table of the configured [`Table`] implementation.
+    ///
+    /// The implementation builds itself: every `Table` is `Default`, taking
+    /// whatever it needs (inner table, hasher) from its own type parameters,
+    /// which is where the macro's configuration already puts them.
+    pub fn new() -> Self
     where
-        TB: BuildTable<HirpdagStorage<D>, R, TableSharedType = TS> + Default,
+        TS: Default,
     {
         Self {
-            table: table_builder.build_tableshared(),
+            table: TS::default(),
 
             phantom_d: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,
@@ -274,6 +278,17 @@ where
     #[cfg(feature = "reset-tables")]
     pub fn reset(&self) {
         self.table.reset();
+    }
+}
+
+impl<D, R, TS> Default for HirpdagHashconsTable<D, R, TS>
+where
+    D: HirpdagStruct,
+    R: Reference<HirpdagStorage<D>>,
+    TS: Table<HirpdagStorage<D>, R> + Default,
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -96,33 +96,29 @@ where
     assert_match_and_unique(&v1, &v2);
 }
 
-fn test_tableshared_interface<R, TS, TSB>(tableshared_builder: TSB)
+fn test_tableshared_interface<R, TS>(tableshared: TS)
 where
     R: Reference<TestData>,
     TS: Table<TestData, R>,
-    TSB: BuildTable<TestData, R>,
 {
-    let tableshared = tableshared_builder.build_tableshared();
     let data = TestData::new(2, 4, "6".to_string());
-    test_interface_impl(&tableshared, data);
+    test_interface_impl::<R, TS>(&tableshared, data);
 }
 
-fn test_tableshared_deduplication_basic<R, TS, TSB>(tableshared_builder: TSB)
+fn test_tableshared_deduplication_basic<R, TS>(tableshared: TS)
 where
     R: Reference<TestData>,
     TS: Table<TestData, R>,
-    TSB: BuildTable<TestData, R>,
 {
-    let tableshared = tableshared_builder.build_tableshared();
-    hashcons_two_copies(&tableshared);
+    hashcons_two_copies::<R, TS>(&tableshared);
 }
 
-pub fn test_tableshared<R, TS, TSB>(tableshared_builder: TSB)
+/// Run the shared-table checks, each against a table fresh from `new_table`.
+pub fn test_tableshared<R, TS>(new_table: impl Fn() -> TS)
 where
     R: Reference<TestData>,
     TS: Table<TestData, R>,
-    TSB: BuildTable<TestData, R> + Clone,
 {
-    test_tableshared_interface::<R, TS, TSB>(tableshared_builder.clone());
-    test_tableshared_deduplication_basic::<R, TS, TSB>(tableshared_builder);
+    test_tableshared_interface::<R, TS>(new_table());
+    test_tableshared_deduplication_basic::<R, TS>(new_table());
 }

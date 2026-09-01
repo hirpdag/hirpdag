@@ -32,49 +32,6 @@ where
     fn reset(&mut self) {}
 }
 
-/// Factory for constructing [`ThreadUnsafeTable`] instances.
-///
-/// Used by [`BuildTable`] implementations to create per-shard inner tables.
-pub trait BuildThreadUnsafeTable<D, R>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-{
-    type ThreadUnsafeTable: ThreadUnsafeTable<D, R>;
-
-    fn build_table(&self) -> Self::ThreadUnsafeTable;
-}
-
-pub struct BuildThreadUnsafeTableDefault<T>(std::marker::PhantomData<T>);
-
-impl<D, R, T> BuildThreadUnsafeTable<D, R> for BuildThreadUnsafeTableDefault<T>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: Default + ThreadUnsafeTable<D, R>,
-{
-    type ThreadUnsafeTable = T;
-
-    fn build_table(&self) -> T {
-        T::default()
-    }
-}
-
-impl<T> Default for BuildThreadUnsafeTableDefault<T>
-where
-    T: Default,
-{
-    fn default() -> Self {
-        Self(std::marker::PhantomData)
-    }
-}
-
-impl<T> Clone for BuildThreadUnsafeTableDefault<T> {
-    fn clone(&self) -> Self {
-        Self(std::marker::PhantomData)
-    }
-}
-
 /// Thread-safe hash-consing table.
 ///
 /// Implementations choose how to serialize concurrent access. Some wrap one or more inner
@@ -82,6 +39,11 @@ impl<T> Clone for BuildThreadUnsafeTableDefault<T> {
 /// mutexes); others store the mapping directly in a concurrent collection (lock-free hash
 /// maps, skip lists, RCU). The `hirpdag` macro selects the implementation via
 /// `#[hirpdag(tableshared_type = "...")]`.
+///
+/// Implementations construct themselves: an empty table is [`Default`], which is
+/// all `HirpdagHashconsTable::new` asks for. Backends that hash also offer
+/// `with_hasher`, for the rare caller wanting a hasher its type parameter cannot
+/// supply by default.
 pub trait Table<D, R>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
@@ -114,34 +76,6 @@ where
     /// between benchmark iterations that have dropped all their nodes).
     #[cfg(feature = "reset-tables")]
     fn reset(&self) {}
-}
-
-/// Factory for constructing [`Table`] instances.
-///
-/// The default implementation calls [`BuildThreadUnsafeTable`] for each shard.
-pub trait BuildTable<D, R>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-{
-    type TableSharedType: Table<D, R>;
-
-    fn build_tableshared(&self) -> Self::TableSharedType;
-}
-
-pub struct BuildTableDefault<TS>(std::marker::PhantomData<TS>);
-
-impl<D, R, TS> BuildTable<D, R> for BuildTableDefault<TS>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    TS: Table<D, R> + Default,
-{
-    type TableSharedType = TS;
-
-    fn build_tableshared(&self) -> TS {
-        TS::default()
-    }
 }
 
 // Table-support helper (cached-hash weak entry for the vector-backed tables).
