@@ -214,8 +214,13 @@ The list of every unique node in an archive, in post-order DFS order — childre
 ### Root
 A node an archive starts from.  A struct type opts in with `#[hirpdag(root)]` and gets a vector in the generated `HirpdagArchiveRoots`, which is the input of the serialize entry points and the output of the deserialize ones.
 
-### Session
-The per-thread state that lets a ref resolve its node table index: on the way out, the index each collected node was given; on the way in, the nodes reconstructed so far.  serde's traits carry no user state, so the entry points open a session for the duration of one archive and close it on the way out.  Sessions are not re-entrant, and serializing a ref outside one is an error rather than a silent expansion of the DAG into a tree.
+### Archived Form
+The plain-data twin of a hirpdag value: the same value with every `HirpdagRef` replaced by the `u64` index of the node it names.  Only this form meets serde, so the byte format never has to know about references and a reference has no serde implementation that could expand a DAG into a tree.  Named by `HirpdagArchived::Archive`, and generated per type (`HirpdagArchiveStructFoo`, `HirpdagArchiveEnumKind`, `HirpdagArchiveRootIndices`).
+
+Source: `hirpdag/src/base/serialize.rs` — `HirpdagArchived`
+
+### Encode / Decode Phase
+The two phases either side of serde, which is where references become indices and indices become references.  Encoding follows the collect phase and uses the index it built; decoding walks the node table in order, resolving each node against the nodes reconstructed before it and interning the result.  Both take the state they need as an argument, so nothing about an archive is ambient: archives nest, and run concurrently, without arrangement.
 
 ### Schema Fingerprint
 A stable hash of a module's type definitions (names, fields and their types, variants, root markers, in declaration order), computed at macro expansion time and carried in the binary header.  Reading an archive written by different type definitions fails with `SchemaMismatch` instead of misparsing.  The JSON format omits it, staying hand-editable.
@@ -223,7 +228,7 @@ A stable hash of a module's type definitions (names, fields and their types, var
 Source: `hirpdag/src/base/serialize.rs` — `HirpdagSchemaFingerprint`
 
 ### `HirpdagArchive`
-The interface a module presents to the archive machinery: its node, reconstructed-node and roots types, its schema fingerprint, how to intern a decoded node, and access to its session slots.  Implemented by the generated `HirpdagArchiveSchema`.  See `docs/adr/0004-archive-machinery-in-runtime-crate.md`.
+The interface a module presents to the archive machinery: its node and roots types, and its schema fingerprint.  Implemented by the generated `HirpdagArchiveSchema`.  See `docs/adr/0004-archive-machinery-in-runtime-crate.md` and `docs/adr/0005-archive-as-plain-data.md`.
 
 ### `HirpdagArchiveMember`
 One data type's place in its module's archive: its name for error messages, and how to recover it from a reconstructed node.  Implemented by the generated ref type of every `#[hirpdag]` struct.

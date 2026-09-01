@@ -9,8 +9,9 @@
 //   a single forward pass reconstructs everything, forward references are
 //   errors, and cycles are unrepresentable.
 //
-// This module holds the format-agnostic pieces: the collect traversal trait,
-// the error type, the format version marker, and the binary magic prefix.
+// This module holds the format-agnostic pieces: the two traversal traits
+// (collect and archive encoding), the error types, the format version marker,
+// and the binary magic prefix.
 
 /// Magic prefix identifying a hirpdag binary archive.
 ///
@@ -33,9 +34,12 @@ pub const HIRPDAG_FORMAT_VERSION: u32 = 1;
 /// `serde::ser::Error` and `serde::de::Error`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HirpdagSerializeError {
-    /// A serialization session is already active on this thread.
-    /// Sessions are per-thread and not re-entrant.
-    SessionActive,
+    /// A reference was encoded without the node it names having been
+    /// registered by the collect phase. Unreachable through the generated
+    /// code, where the collect walk and the encode walk visit the same
+    /// fields; it exists so encoding a reference is a checked operation
+    /// rather than an unchecked map lookup.
+    NotCollected(&'static str),
     /// An underlying format error (postcard/serde_json).
     Format(String),
 }
@@ -43,9 +47,10 @@ pub enum HirpdagSerializeError {
 impl std::fmt::Display for HirpdagSerializeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SessionActive => write!(
+            Self::NotCollected(type_name) => write!(
                 f,
-                "hirpdag: a serialization session is already active on this thread"
+                "hirpdag: reference {} was not collected before serialization",
+                type_name
             ),
             Self::Format(msg) => write!(f, "hirpdag: {}", msg),
         }
@@ -67,12 +72,18 @@ pub enum HirpdagDeserializeError {
         found_hash: u64,
         found_name: String,
     },
-    /// A deserialization session is already active on this thread.
-    /// Sessions are per-thread and not re-entrant.
-    SessionActive,
+    /// A node reference names an index that is not a node reconstructed so
+    /// far: out of range, or a forward reference (nodes are stored children
+    /// first, so a node may only name nodes before it).
+    InvalidNodeIndex {
+        index: u64,
+        /// How many nodes were reconstructed when the reference was resolved.
+        available: u64,
+    },
+    /// A node reference resolved to a node of a different hirpdag type.
+    NodeTypeMismatch { expected: &'static str },
     /// An underlying format error (postcard/serde_json), including
-    /// unsupported format versions, invalid node indices, node type
-    /// mismatches and truncated input.
+    /// unsupported format versions and truncated input.
     Format(String),
 }
 
@@ -91,10 +102,15 @@ impl std::fmt::Display for HirpdagDeserializeError {
                  but is being read by \"{}\" (hash {:#018x})",
                 found_name, found_hash, expected_name, expected_hash
             ),
-            Self::SessionActive => write!(
+            Self::InvalidNodeIndex { index, available } => write!(
                 f,
-                "hirpdag: a deserialization session is already active on this thread"
+                "hirpdag: node index {} is invalid (out of range or a forward \
+                 reference; {} nodes reconstructed so far)",
+                index, available
             ),
+            Self::NodeTypeMismatch { expected } => {
+                write!(f, "hirpdag: node type mismatch: expected {}", expected)
+            }
             Self::Format(msg) => write!(f, "hirpdag: {}", msg),
         }
     }
@@ -220,5 +236,144 @@ impl<C, T: HirpdagCollect<C>> HirpdagCollect<C> for Vec<T> {
         for item in self {
             item.hirpdag_collect(ctx);
         }
+    }
+}
+
+/// Where the collect phase put each node: creation id to node table index.
+///
+/// Hash-consing makes a creation id a unique name for an interned node, so
+/// one map covers every hirpdag type in a module.  Built by the collect
+/// phase and handed to the encode phase; a reference encodes as the index
+/// this returns for it.
+#[derive(Debug, Default)]
+pub struct HirpdagNodeIndex {
+    index_of_creation_id: std::collections::HashMap<u64, u64>,
+}
+
+impl HirpdagNodeIndex {
+    pub fn new(index_of_creation_id: std::collections::HashMap<u64, u64>) -> Self {
+        Self {
+            index_of_creation_id,
+        }
+    }
+
+    /// The node table index of the node with this creation id.
+    ///
+    /// `type_name` names the referencing type in the error, which the
+    /// generated code cannot produce: everything the encode walk reaches was
+    /// registered by the collect walk over the same fields.
+    pub fn index_of(
+        &self,
+        creation_id: u64,
+        type_name: &'static str,
+    ) -> Result<u64, HirpdagSerializeError> {
+        self.index_of_creation_id
+            .get(&creation_id)
+            .copied()
+            .ok_or(HirpdagSerializeError::NotCollected(type_name))
+    }
+}
+
+/// How a value is represented inside an archive.
+///
+/// The archive is plain data: a value's [`Archive`](Self::Archive) form is
+/// the same value with every hirpdag reference replaced by the `u64` index
+/// of the node it names.  Only that form is handed to serde, so the byte
+/// format never has to know about references and a reference never has a
+/// serde impl that could expand a DAG into a tree.
+///
+/// The two directions run in the two phases either side of serde:
+/// [`hirpdag_to_archive`](Self::hirpdag_to_archive) after the collect phase
+/// has indexed every node, and
+/// [`hirpdag_from_archive`](Self::hirpdag_from_archive) as the decoded node
+/// table is walked back into interned nodes.  Both take their state as an
+/// argument, so neither needs any ambient state.
+///
+/// `R` is what a reference resolves against: the reconstructed nodes so far
+/// (`[HirpdagNodeRef]` for a generated module).  Follows the same shape as
+/// [`HirpdagCollect`]: identity for leaf values, structural for containers,
+/// generated for hirpdag types.
+pub trait HirpdagArchived<R: ?Sized>: Sized {
+    /// This value's form inside an archive.
+    type Archive: serde::Serialize + serde::de::DeserializeOwned;
+
+    /// Encode, resolving every reference to its node table index.
+    fn hirpdag_to_archive(
+        &self,
+        index: &HirpdagNodeIndex,
+    ) -> Result<Self::Archive, HirpdagSerializeError>;
+
+    /// Decode, resolving every node index against the nodes in `nodes`.
+    fn hirpdag_from_archive(
+        archived: Self::Archive,
+        nodes: &R,
+    ) -> Result<Self, HirpdagDeserializeError>;
+}
+
+impl<R: ?Sized, P> HirpdagArchived<R> for P
+where
+    P: IsNumber + Copy + serde::Serialize + serde::de::DeserializeOwned,
+{
+    type Archive = P;
+    fn hirpdag_to_archive(&self, _index: &HirpdagNodeIndex) -> Result<P, HirpdagSerializeError> {
+        Ok(*self)
+    }
+    fn hirpdag_from_archive(archived: P, _nodes: &R) -> Result<P, HirpdagDeserializeError> {
+        Ok(archived)
+    }
+}
+
+impl<R: ?Sized> HirpdagArchived<R> for String {
+    type Archive = String;
+    fn hirpdag_to_archive(
+        &self,
+        _index: &HirpdagNodeIndex,
+    ) -> Result<String, HirpdagSerializeError> {
+        Ok(self.clone())
+    }
+    fn hirpdag_from_archive(
+        archived: String,
+        _nodes: &R,
+    ) -> Result<String, HirpdagDeserializeError> {
+        Ok(archived)
+    }
+}
+
+impl<R: ?Sized, T: HirpdagArchived<R>> HirpdagArchived<R> for Option<T> {
+    type Archive = Option<T::Archive>;
+    fn hirpdag_to_archive(
+        &self,
+        index: &HirpdagNodeIndex,
+    ) -> Result<Self::Archive, HirpdagSerializeError> {
+        self.as_ref()
+            .map(|v| v.hirpdag_to_archive(index))
+            .transpose()
+    }
+    fn hirpdag_from_archive(
+        archived: Self::Archive,
+        nodes: &R,
+    ) -> Result<Self, HirpdagDeserializeError> {
+        archived
+            .map(|v| T::hirpdag_from_archive(v, nodes))
+            .transpose()
+    }
+}
+
+impl<R: ?Sized, T: HirpdagArchived<R>> HirpdagArchived<R> for Vec<T> {
+    type Archive = Vec<T::Archive>;
+    fn hirpdag_to_archive(
+        &self,
+        index: &HirpdagNodeIndex,
+    ) -> Result<Self::Archive, HirpdagSerializeError> {
+        self.iter().map(|v| v.hirpdag_to_archive(index)).collect()
+    }
+    fn hirpdag_from_archive(
+        archived: Self::Archive,
+        nodes: &R,
+    ) -> Result<Self, HirpdagDeserializeError> {
+        archived
+            .into_iter()
+            .map(|v| T::hirpdag_from_archive(v, nodes))
+            .collect()
     }
 }

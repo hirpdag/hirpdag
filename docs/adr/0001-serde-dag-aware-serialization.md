@@ -4,6 +4,11 @@ status: accepted
 
 # Use serde for DAG-aware serialization, with postcard binary and JSON text formats
 
+> Amended by ADR-0005: references are no longer encoded inside serde
+> implementations, so the thread-local sessions this ADR introduced are gone.
+> Everything else here — serde as the trait layer, postcard and JSON, the node
+> table, the schema fingerprint — stands.
+
 Hirpdag needs serialization that always preserves DAG sharing, has a primary binary
 format plus a secondary text format, supports multiple roots per file, and derives
 almost everything from the `#[hirpdag]` struct while keeping hirpdag's code small.
