@@ -93,6 +93,5 @@ decoded, so:
 * The collect walk is recursive; extremely deep chains could overflow the
   stack.
 
-See `docs/design/serialization.md` and
-`docs/adr/0001-serde-dag-aware-serialization.md` in the repository for the
-full design rationale.
+See `docs/design/serialization.md` in the repository for the full design, and
+`docs/adr/` for the decisions behind it.

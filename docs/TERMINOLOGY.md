@@ -228,7 +228,7 @@ A stable hash of a module's type definitions (names, fields and their types, var
 Source: `hirpdag/src/base/serialize.rs` — `HirpdagSchemaFingerprint`
 
 ### `HirpdagArchive`
-The interface a module presents to the archive machinery: its node and roots types, and its schema fingerprint.  Implemented by the generated `HirpdagArchiveSchema`.  See `docs/adr/0004-archive-machinery-in-runtime-crate.md` and `docs/adr/0005-archive-as-plain-data.md`.
+The interface a module presents to the archive machinery: its node and roots types, and its schema fingerprint.  Implemented by the generated `HirpdagArchiveSchema`.  See `docs/design/serialization.md`.
 
 ### `HirpdagArchiveMember`
 One data type's place in its module's archive: its name for error messages, and how to recover it from a reconstructed node.  Implemented by the generated ref type of every `#[hirpdag]` struct.

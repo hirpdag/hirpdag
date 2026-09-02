@@ -1,14 +1,12 @@
 ---
 status: accepted
+amended-by: [0005-archive-as-plain-data]
 ---
 
 # Keep the archive machinery in the runtime crate, behind `HirpdagArchive`
 
-> Amended by ADR-0005: the two session slots this ADR left in the generated
-> code are gone, along with the `Interned` type and `intern` method of
-> `HirpdagArchive`. The rest — the machinery in the runtime crate, behind a
-> trait a module implements — stands, and this change is what the resulting
-> test surface was for.
+ADR-0005 removed the session slots this ADR left in the generated code, along
+with `HirpdagArchive`'s `Interned` type and `intern` method; the rest stands.
 
 ADR-0001 chose serde with a DAG-aware archive layer, and `#[hirpdag_module]`
 emitted the whole of that layer into each user crate: the collect context, the
