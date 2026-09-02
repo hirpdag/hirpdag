@@ -1,6 +1,8 @@
 # Design: DAG-aware Serialization / Deserialization
 
-Status: implemented (see `docs/adr/0001-serde-dag-aware-serialization.md`)
+Status: implemented (see `docs/adr/0001-serde-dag-aware-serialization.md`,
+`docs/adr/0004-archive-machinery-in-runtime-crate.md` and
+`docs/adr/0005-archive-as-plain-data.md`)
 
 ## Requirements
 
@@ -26,9 +28,9 @@ Candidates from [rust_serialization_benchmark](https://github.com/djkoloski/rust
 ### A. serde as the trait layer + postcard (binary) + serde_json (text), selected
 
 - The DAG-awareness problem is *orthogonal to the byte format*: it is solved by an
-  archive structure (topologically ordered node table + `u64` indices) and by custom
-  `Serialize`/`Deserialize` impls on the generated ref types. serde lets us write that
-  logic once and get every serde format for free.
+  archive structure (topologically ordered node table + `u64` indices) that is built
+  before the bytes are written and taken apart after they are read. serde lets us
+  write that logic once and get every serde format for free.
 - `#[derive(serde::Serialize, serde::Deserialize)]` can be appended to the
   already-generated data structs and enums, so hirpdag holds almost no code for
   field encoding, which is exactly the "only customize HirpdagRef + surrounding
@@ -76,12 +78,13 @@ size of all options.
 ### Archive layout (logical structure, same for binary and JSON)
 
 ```text
-HirpdagArchive
+Archive
 ├── version: u32                  format version (starts at 1)
-├── nodes: NodeSeq                node table, topological order (children first)
-│     └── [ HirpdagArchiveNode ]  tagged union over all #[hirpdag] struct types
-│           e.g. Expr(HirpdagStructExpr) | Variables(HirpdagStructVariables)
-└── roots: HirpdagArchiveRoots    one Vec per #[hirpdag(root)] type, each ref
+├── nodes: Vec<HirpdagArchiveNode>  node table, topological order (children first)
+│     └── HirpdagArchiveNode      tagged union over all #[hirpdag] struct types
+│           e.g. Expr(HirpdagArchiveStructExpr)
+│              | Variables(HirpdagArchiveStructVariables)
+└── roots: HirpdagArchiveRootIndices  one Vec per #[hirpdag(root)] type, each ref
                                   encoded as a u64 node index
 ```
 
@@ -91,9 +94,8 @@ HirpdagArchive
   `index < nodes.len()` for roots): a single forward pass reconstructs everything,
   forward references are rejected, and cycles are unrepresentable by construction.
 - Node types that are `#[hirpdag]` *enums* (e.g. `ExprKind`) are not hashconsed and
-  have no table; they are inlined into their parent node's payload by the serde
-  derive, recursively, until a ref type is reached. Only struct types appear in the
-  node table.
+  have no table; they are inlined into their parent node's payload, recursively,
+  until a ref type is reached. Only struct types appear in the node table.
 - Binary: `postcard` (enum tags and `u64` indices are varints). The header is a
   PNG-style 8-byte magic prefix (`b"\x89HPDG\r\x1a\n"`, which is a high-bit byte
   marking the file as binary, the format name readable as text, and
@@ -103,39 +105,49 @@ HirpdagArchive
   plus a human-readable schema name (package name and type list) for debuggability.
   Decoding verifies the hash and fails with a `SchemaMismatch` error naming both
   schemas if the archive was written by different type definitions.
-- Text: the same `HirpdagArchive` through `serde_json`. Refs appear as plain numbers,
-  nodes as `{"Expr": {...}}`-style tagged objects. Field order (`nodes` before
-  `roots`) must be preserved if a JSON file is edited by hand.
+- Text: the same archive through `serde_json`. Refs appear as plain numbers, nodes as
+  `{"Expr": {...}}`-style tagged objects. Indices are resolved after the whole archive
+  is decoded, so the order of an archive's three fields does not matter in a JSON file
+  edited by hand.
 
-### How refs are encoded: session context
+### How refs are encoded: the archived form
 
-serde's `Serialize`/`Deserialize` traits carry no user state, so the (de)serialization
-session state lives in a thread-local scoped context, generated per hirpdag module by
-the module attribute (mirroring how each module already gets its own table statics):
+serde's `Serialize`/`Deserialize` traits carry no user state, so a ref cannot resolve
+its index from inside a serde impl. It does not have to: the reference-to-index
+translation is a phase of its own, either side of serde, and what serde sees is plain
+data with no hirpdag types in it.
 
-- **Serialize session.** A `creation_id → u64 index` map. `hirpdag_get_creation_id()`
-  is globally unique per interned node across all types, so one map suffices.
-- **Deserialize session.** A `Vec<HirpdagNodeRef>` (a private tagged enum over the
-  module's struct types) of already-reconstructed nodes, indexed by node index.
+```text
+roots --collect--> node table --encode--> archive --serde--> bytes
+bytes --serde--> archive --decode (resolve + intern)--> roots
+```
 
-Generated `impl Serialize for Foo` (the ref wrapper) looks up its creation ID in the
-session map and writes the `u64`; a missing entry (or no active session) is an error.
-That is what makes serialization *always* DAG-aware: there is no accidental
-tree-expansion path. `impl Deserialize for Foo` reads a `u64`, bounds-checks it,
-resolves it in the session vec, and type-checks the variant.
+Every hirpdag type names an *archived form*: the same value with each `HirpdagRef`
+replaced by the `u64` index of the node it names. `HirpdagArchived<R>` in
+`hirpdag::base` names it and converts both ways, with the same shape as
+`HirpdagCollect`: identity for numbers and `String`, structural for `Option`/`Vec`,
+`u64` for a ref, and generated for the data types (`HirpdagArchiveStructFoo`,
+`HirpdagArchiveEnumKind`, `HirpdagArchiveRootIndices`). Only the archived form derives
+serde; the live types do not, so a ref cannot be serialized on its own at all — the
+accidental tree-expansion path is a compile error rather than a runtime one.
 
-Sessions are established only inside the generated entry points below. Per-thread
-scoping means concurrent (de)serialization on different threads works; re-entrant use
-on one thread is an error.
+The two conversions take the state they need as an argument — the node index on the
+way out, the nodes reconstructed so far on the way in — so nothing about an archive is
+ambient. Archives nest, and run concurrently, without arrangement.
+
+`R` is what a ref resolves against: `[HirpdagNodeRef]`, the module's reconstructed
+nodes. It is a type parameter because the leaf and container impls are shared across
+modules, so a call has to say which module's node table it means; each module
+generates a `hirpdag_archive_encode` / `hirpdag_archive_decode` pair that says it once.
 
 ### Serialization algorithm
 
-1. `hirpdag_serialize_*(roots)` opens a session and runs the collect phase: a
-   post-order DFS from each root in order. Dedup by creation ID; on first visit,
-   register the node's data (a clone of the interned `HirpdagStructFoo`) in the node
-   list and record its index.
-2. Emit phase: serialize `HirpdagArchive`, which is the node list in order (ref
-   fields resolve through the now-complete session map), then the roots.
+1. Collect phase: a post-order DFS from each root in order. Dedup by creation ID; on
+   first visit, register the interned node in the node table and record its index.
+2. Encode phase: convert each node, and then the roots, into their archived form,
+   resolving every ref against the index the collect phase built.
+3. Hand the archive — version, node table, roots, all plain data — to postcard or
+   serde_json.
 
 Output is deterministic for a given DAG and root order (no hash-map iteration order
 leaks into the output; the node list is in DFS completion order).
@@ -147,13 +159,17 @@ impls for data structs, enums, and ref types.
 
 ### Deserialization algorithm
 
-1. Check magic/version, open a session.
-2. Deserialize `nodes` via a custom `NodeSeq` visitor: each `HirpdagArchiveNode` is
-   deserialized (its ref fields resolve against the session), then immediately
-   re-interned via `hirpdag_hashcons()` and the resulting ref is pushed into the
-   session vec, so node *i+1* can reference it. Interning recomputes meta and
-   assigns fresh creation IDs, and dedups against nodes already live in the process.
-3. Deserialize `roots`, resolve, return the typed `HirpdagArchiveRoots`.
+1. Check magic and fingerprint, then decode the archive with postcard or serde_json.
+   This is a plain deserialize: the version is checked as the first field, and the
+   node table comes back as archived data holding `u64` indices.
+2. Decode phase: walk the node table in order. Each node's indices resolve against the
+   nodes reconstructed before it (a forward reference is indistinguishable from an
+   out-of-range index, and both are rejected), and the resolved data is immediately
+   re-interned via `hirpdag_hashcons()`, so node *i+1* can reference it. Interning
+   recomputes meta and assigns fresh creation IDs, and dedups against nodes already
+   live in the process.
+3. Resolve the roots against the full node table and return the typed
+   `HirpdagArchiveRoots`.
 
 Re-interning uses the raw hashcons path (`spawn`-equivalent), not `new()`: the
 serialized data was produced from already-normalized nodes, so normalizers must not
@@ -167,6 +183,12 @@ Consequences:
 - Round-tripping in one process yields pointer-equal nodes.
 
 ## Implementation plan
+
+> This records the original v1 plan, and the phases below describe the first
+> implementation rather than the current one. Two later ADRs changed it:
+> ADR-0004 moved the archive machinery out of the macro and into
+> `hirpdag::base::archive`, and ADR-0005 replaced the thread-local sessions with
+> an archived form converted either side of serde.
 
 ### Phase 1: `hirpdag` crate base support (~150 LOC)
 

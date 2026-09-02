@@ -217,13 +217,35 @@ fn truncated_input_rejected() {
 }
 
 #[test]
-fn ref_serialize_outside_session_fails() {
-    // Serializing a hirpdag ref without going through hirpdag_serialize
-    // would silently expand the DAG into a tree; it must be an error instead.
-    let item = Item::new("no_session_item".to_string(), vec![]);
-    let result = hirpdag::serde_json::to_string(&item);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("session"));
+fn concurrent_archives_do_not_interfere() {
+    // An archive carries the state it needs from phase to phase itself, with
+    // nothing ambient, so any number of them can be in flight at once.
+    //
+    // Serializing a ref on its own -- which would silently expand the DAG
+    // into a tree -- is not an error to test for here: refs have no serde
+    // impls at all, so `serde_json::to_string(&item)` does not compile.
+    let threads: Vec<_> = (0..8)
+        .map(|t| {
+            std::thread::spawn(move || {
+                let leaf = Item::new(format!("concurrent_leaf_{}", t), vec![]);
+                let root = Item::new(
+                    format!("concurrent_root_{}", t),
+                    vec![leaf.clone(), leaf.clone()],
+                );
+                let roots = HirpdagArchiveRoots {
+                    item: vec![root.clone()],
+                    ..Default::default()
+                };
+                let bytes = hirpdag_serialize(&roots).unwrap();
+                let out = hirpdag_deserialize(&bytes).unwrap();
+                assert_eq!(out.item[0], root);
+                assert_eq!(out.item[0].deps[0], leaf);
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
 }
 
 #[test]
@@ -243,12 +265,13 @@ fn forward_or_out_of_range_index_rejected() {
     // forward references and out-of-range indices are both rejected.
     let text = r#"{"version":1,"nodes":[{"Item":{"name":"x","deps":[5]}}],"roots":{}}"#;
     let err = hirpdag_deserialize_json(text).unwrap_err();
-    match err {
-        hirpdag::base::HirpdagDeserializeError::Format(msg) => {
-            assert!(msg.contains("invalid"), "unexpected message: {}", msg)
+    assert_eq!(
+        err,
+        hirpdag::base::HirpdagDeserializeError::InvalidNodeIndex {
+            index: 5,
+            available: 0
         }
-        other => panic!("expected Format error, got {:?}", other),
-    }
+    );
 }
 
 #[test]
@@ -256,12 +279,10 @@ fn node_type_mismatch_rejected() {
     // The roots claim node 0 is a Node, but node 0 is an Item.
     let text = r#"{"version":1,"nodes":[{"Item":{"name":"x","deps":[]}}],"roots":{"node":[0]}}"#;
     let err = hirpdag_deserialize_json(text).unwrap_err();
-    match err {
-        hirpdag::base::HirpdagDeserializeError::Format(msg) => {
-            assert!(msg.contains("type mismatch"), "unexpected message: {}", msg)
-        }
-        other => panic!("expected Format error, got {:?}", other),
-    }
+    assert_eq!(
+        err,
+        hirpdag::base::HirpdagDeserializeError::NodeTypeMismatch { expected: "Node" }
+    );
 }
 
 #[test]
