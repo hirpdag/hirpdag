@@ -1,5 +1,6 @@
 ---
 status: accepted
+amends: [0001-serde-dag-aware-serialization, 0004-archive-machinery-in-runtime-crate]
 ---
 
 # Encode references to indices outside serde, so an archive carries no ambient state

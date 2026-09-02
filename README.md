@@ -221,9 +221,8 @@ let out = hirpdag_deserialize(&bytes).unwrap();
 assert_eq!(out.expr[0], e);
 ```
 
-See `docs/design/serialization.md` and
-`docs/adr/0001-serde-dag-aware-serialization.md` for the format and design
-rationale.
+See `docs/design/serialization.md` for the format and how it works, and
+`docs/adr/` for the decisions behind it.
 
 ## Benchmark Results
 

@@ -247,6 +247,4 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
     `hirpdag_serialize_json`/`hirpdag_deserialize_json` (text). Each unique node
     is written exactly once into a topologically ordered node table with u64
     indices; deserialization re-interns through the hashcons table. See
-    `docs/design/serialization.md`, `docs/adr/0001-serde-dag-aware-serialization.md`,
-    `docs/adr/0004-archive-machinery-in-runtime-crate.md` and
-    `docs/adr/0005-archive-as-plain-data.md`.
+    `docs/design/serialization.md`, and `docs/adr/` for the decisions behind it.

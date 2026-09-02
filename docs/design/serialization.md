@@ -1,8 +1,8 @@
 # Design: DAG-aware Serialization / Deserialization
 
-Status: implemented (see `docs/adr/0001-serde-dag-aware-serialization.md`,
-`docs/adr/0004-archive-machinery-in-runtime-crate.md` and
-`docs/adr/0005-archive-as-plain-data.md`)
+Status: implemented. This describes the archive as it stands; the decisions
+behind it, and what was considered instead, are in `docs/adr/` (0001, 0004 and
+0005).
 
 ## Requirements
 
@@ -182,98 +182,28 @@ Consequences:
   merges rather than duplicates.
 - Round-tripping in one process yields pointer-equal nodes.
 
-## Implementation plan
+## Where the code lives
 
-> This records the original v1 plan, and the phases below describe the first
-> implementation rather than the current one. Two later ADRs changed it:
-> ADR-0004 moved the archive machinery out of the macro and into
-> `hirpdag::base::archive`, and ADR-0005 replaced the thread-local sessions with
-> an archived form converted either side of serde.
-
-### Phase 1: `hirpdag` crate base support (~150 LOC)
-
-- `Cargo.toml`: add `serde` (with `derive`), `postcard` (with `use-std`) and
-  `serde_json` as dependencies (unconditional, with no feature matrix; a feature gate
-  can be added later if a user needs it). Re-export all three from `hirpdag` so
-  generated code can reference `hirpdag::serde` via `#[serde(crate = "...")]` without
-  users adding the dependencies themselves.
-- New `hirpdag/src/base/serialize.rs`:
-  - `trait HirpdagCollect<C> { fn hirpdag_collect(&self, ctx: &mut C); }` with no-op
-    impls for `IsNumber` types, `String`, and structural impls for `Option<T>`,
-    `Vec<T>` (mirrors `rewrite.rs`).
-  - Two distinct error enums, mirroring serde's `ser::Error`/`de::Error` split:
-    `HirpdagSerializeError { SessionActive, Format(String) }` and
-    `HirpdagDeserializeError { BadMagic, SessionActive, Format(String) }`, with
-    `Display`/`Error` impls. Version, index and type-mismatch failures surface as
-    `Format` messages via serde's custom-error path.
-  - Small helpers to write/check the magic prefix and version.
-
-### Phase 2: `hirpdag_derive` per-type generation
-
-- `DATA_TYPES` registry: store `(name, kind)` where kind distinguishes struct
-  (hashconsed, gets a table + node-table variant) from enum (inline payload).
-- `expand_hirpdag_struct` also emits:
-  - `#[derive(Serialize, Deserialize)]` (crate-pathed to `hirpdag::serde`) on
-    `HirpdagStructFoo`.
-  - `impl Serialize for Foo`: session lookup of creation ID, then emit `u64`.
-  - `impl<'de> Deserialize<'de> for Foo`: read `u64`, then session resolve plus
-    variant check.
-  - `impl<C: …> HirpdagCollect<…> for Foo`: dedup by creation ID, recurse into
-    fields first, then register `(**self).clone()` as a node.
-  - `impl HirpdagCollect for HirpdagStructFoo`: `self.field.hirpdag_collect(ctx)`
-    per field (same fold style as `get_fields_rewrite`).
-- `expand_hirpdag_enum` also emits the serde derive and a per-variant
-  `HirpdagCollect` impl.
-
-Generation is unconditional (no attribute flag, no feature matrix): less generated
-code, no cfg plumbing; serde+postcard are small, ubiquitous dependencies. An opt-out
-attribute (`#[hirpdag(no_serialize)]`) can be added later if a user needs it.
-
-### Phase 3: `hirpdag_derive` module-level generation
-
-- `enum HirpdagArchiveNode { Foo(HirpdagStructFoo), … }` (struct types only) with the
-  serde derive.
-- `enum HirpdagNodeRef { Foo(Foo), … }` (private): the deserialize session's
-  heterogeneous store of reconstructed nodes.
-- `pub struct HirpdagArchiveRoots { foo: Vec<Foo>, … }`: one snake_case-named vector
-  per `#[hirpdag(root)]` struct type. Derives serde (each ref serializes as a `u64`
-  index) plus `Default` and `#[serde(default)]`, so a subset of root types can be set
-  with struct update syntax and empty vectors can be omitted from hand-written JSON.
-  This is the input of the serialize entry points and the output of the deserialize
-  entry points. Types without `root` can still appear as interior nodes.
-- `HirpdagCollectCtx { seen: HashMap<u64 /*creation_id*/, u64 /*index*/>,
-  nodes: Vec<HirpdagArchiveNode> }`.
-- Thread-local serialize session (`creation_id → index` map) and deserialize session
-  (`Vec<HirpdagNodeRef>`), with RAII guards so sessions are cleaned up on error paths.
-- `struct NodeSeq` with custom serde impls: serialize emits the collected node vec as
-  a seq; deserialize is a `SeqAccess` visitor that interns each element immediately
-  and appends the resulting ref to the session (this is what enables the single
-  forward pass).
-- Public entry points (generated only when the module has at least one
-  `#[hirpdag(root)]` type; the session/collect infrastructure is generated whenever
-  the module has struct types):
-  - `hirpdag_serialize(roots: &HirpdagArchiveRoots) -> Result<Vec<u8>, HirpdagSerializeError>`
-  - `hirpdag_deserialize(bytes: &[u8]) -> Result<HirpdagArchiveRoots, HirpdagDeserializeError>`
-  - `hirpdag_serialize_json` / `hirpdag_deserialize_json`
-
-### Phase 4: tests (`test_suite`)
-
-- Round trip of the README `Expr` DAG (binary and JSON): equal roots, and
-  pointer-equality with the originals in-process.
-- **Sharing preserved.** Serialize a Fibonacci-style DAG (`fibonacci.rs` bench
-  shape); assert the archive node count equals the unique node count and the byte
-  size grows linearly with N.
-- Multiple roots of different types, including roots sharing subgraphs; shared nodes
-  appear once.
-- Deserialize twice → both results pointer-equal (hashcons merge).
-- Error cases: bad magic, truncated input, forward/out-of-range node index, root
-  variant mismatch, ref (de)serialization outside a session.
-- Two hirpdag modules in one binary (`modules.rs` shape) don't cross-talk.
-
-### Phase 5: docs
-
-- Book chapter: format description, DAG-awareness guarantees, examples, caveats.
-- README example snippet.
+- `hirpdag/src/base/serialize.rs` — the format-agnostic pieces: the magic prefix,
+  the format version marker, the schema fingerprint and header helpers, the two
+  error types, and the two traversal traits (`HirpdagCollect` for the collect walk,
+  `HirpdagArchived` for the archived form) with their leaf and container impls.
+- `hirpdag/src/base/archive.rs` — the archive itself: the `HirpdagArchive` and
+  `HirpdagArchiveMember` interfaces a module implements, the collect context, ref
+  resolution, and the four entry points. Its unit tests drive all of it through a
+  hand-written schema standing in for a generated module, so a bug in the archive
+  fails a test in the crate that owns it.
+- `hirpdag_derive/src/lib.rs` — per module: the interned-node enum, the node table
+  entry enum, the encode/decode helpers, the `HirpdagArchive` impl and the four
+  entry points. Per data type: the archived form and its two conversions, the
+  collect impl, and (for structs) the `HirpdagArchiveMember` impl.
+- `test_suite/tests/serialization.rs` — end-to-end over a generated module: round
+  trips in both formats, sharing preserved through a Fibonacci-shaped DAG, multiple
+  and mixed-type roots, re-interning on a second load, hand-written JSON, concurrent
+  archives, and the error paths (bad magic, truncated input, unsupported version,
+  invalid index, node type mismatch, schema mismatch).
+- `test_suite/benches/serde_roundtrip.rs` — build, serialize and deserialize a
+  round trip, in both formats, across the configuration presets.
 
 ## Caveats / future work
 
