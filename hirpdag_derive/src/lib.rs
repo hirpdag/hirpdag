@@ -8,17 +8,19 @@ extern crate proc_macro;
 extern crate proc_macro2;
 
 mod config;
+mod names;
 
 use crate::config::{HirpdagArgs, HirpdagConfig};
+use crate::names::{DataTypeKind, DataTypeNames};
 
 use proc_macro2::{Ident, Span};
 
 /// A hirpdag data type seen in the module.
 struct DataTypeEntry {
-    name: String,
-    /// Struct types are hashconsed and appear as entries in the serialized
-    /// node table. Enum types are inline payload data within their parent.
-    is_struct: bool,
+    /// Every identifier generated for this type, derived once from its
+    /// declaration. Also carries whether the type is a hashconsed struct (an
+    /// entry in the serialized node table) or an inline payload enum.
+    names: DataTypeNames,
     /// Root types (`#[hirpdag(root)]`) get a vector in the generated
     /// HirpdagArchiveRoots struct used to serialize and deserialize.
     is_root: bool,
@@ -501,13 +503,21 @@ fn expand_hirpdag_struct(
     types: &mut Vec<DataTypeEntry>,
 ) -> proc_macro2::TokenStream {
     let name: &Ident = &input.ident;
-
     let name_str = name.to_string();
-    let name_uppercase_str = name_str.to_ascii_uppercase();
+
+    let names = DataTypeNames::new(name, DataTypeKind::Struct);
+    let DataTypeNames {
+        ref_name: hirpdag_ref_name,
+        struct_data: hirpdag_struct_name,
+        archive_form: hirpdag_archive_struct_name,
+        table: hirpdag_table_name,
+        rewrite_method: hirpdag_rewrite_method_name,
+        builder: hirpdag_builder_name,
+        ..
+    } = names.clone();
 
     types.push(DataTypeEntry {
-        name: name_str.clone(),
-        is_struct: true,
+        names,
         is_root: config.is_root(),
         definition: get_definition_string_struct(
             &name_str,
@@ -515,26 +525,6 @@ fn expand_hirpdag_struct(
             get_fields_named(input_struct),
         ),
     });
-
-    let hirpdag_ref_name_str = name_str.to_string();
-    let hirpdag_ref_name = Ident::new(&hirpdag_ref_name_str, Span::call_site());
-
-    let hirpdag_struct_name_str = format!("HirpdagStruct{}", name_str);
-    let hirpdag_struct_name = Ident::new(&hirpdag_struct_name_str, Span::call_site());
-
-    let hirpdag_archive_struct_name_str = format!("HirpdagArchiveStruct{}", name_str);
-    let hirpdag_archive_struct_name =
-        Ident::new(&hirpdag_archive_struct_name_str, Span::call_site());
-
-    let hirpdag_table_name_str = format!("HIRPDAG_TABLE_{}", name_uppercase_str);
-    let hirpdag_table_name = Ident::new(&hirpdag_table_name_str, Span::call_site());
-
-    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name_str);
-    let hirpdag_rewrite_method_name =
-        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
-
-    let hirpdag_builder_name_str = format!("{}Builder", name_str);
-    let hirpdag_builder_name = Ident::new(&hirpdag_builder_name_str, Span::call_site());
 
     let fields_named = get_fields_named(input_struct);
     let fields_declarations = get_fields_declarations(fields_named);
@@ -583,6 +573,10 @@ fn expand_hirpdag_struct(
             }
         }
 
+        // Named after the declaration verbatim (`HIRPDAG_TABLE_Foo`) rather
+        // than uppercased, so two types differing only in case cannot name the
+        // same table. See hirpdag_derive::names.
+        #[allow(non_upper_case_globals)]
         static #hirpdag_table_name: std::sync::LazyLock<HirpdagHashconsTable<
             #hirpdag_struct_name,
             ImplRef<HirpdagStorage<#hirpdag_struct_name>>,
@@ -938,19 +932,18 @@ fn expand_hirpdag_enum(
         panic!("`#[hirpdag(root)]` can only be applied to structs; enums are not hashconsed");
     }
 
+    let names = DataTypeNames::new(name, DataTypeKind::Enum);
+    let DataTypeNames {
+        archive_form: hirpdag_archive_enum_name,
+        rewrite_method: hirpdag_rewrite_method_name,
+        ..
+    } = names.clone();
+
     types.push(DataTypeEntry {
-        name: name_str.clone(),
-        is_struct: false,
+        names,
         is_root: false,
         definition: get_definition_string_enum(&name_str, input_enum),
     });
-
-    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name_str);
-    let hirpdag_rewrite_method_name =
-        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
-
-    let hirpdag_archive_enum_name_str = format!("HirpdagArchiveEnum{}", name_str);
-    let hirpdag_archive_enum_name = Ident::new(&hirpdag_archive_enum_name_str, Span::call_site());
 
     let variants_declarations = get_variants_declarations(input_enum);
     let variants_compute_meta = get_variants_compute_meta(input_enum);
@@ -1053,18 +1046,18 @@ fn expand_hirpdag_enum(
 /// The rule is handed the node and the recursion driver. The default
 /// implementation passes both to `default_rewrite`, which recurses into the
 /// node's children through the driver.
-fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
+fn get_rewrite_datatype(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let rewrite_datatype = quote! {
     //    #[allow(non_snake_case)]
     //    fn rewrite_MessageA<D: HirpdagRewriteDriver>(&self, x: &MessageA, driver: &D) -> MessageA {
     //        MessageA::default_rewrite(x, driver)
     //    }
     //};
-    let hirpdag_ref_name = Ident::new(name, Span::call_site());
-
-    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
-    let hirpdag_rewrite_method_name =
-        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
+    let DataTypeNames {
+        ref_name: hirpdag_ref_name,
+        rewrite_method: hirpdag_rewrite_method_name,
+        ..
+    } = names;
 
     quote! {
 
@@ -1083,16 +1076,16 @@ fn get_rewrite_datatype(name: &str) -> proc_macro2::TokenStream {
 /// One method of the `HirpdagRewriteDriver` trait: rewrite a node of a single
 /// data type. Drivers implement the traversal strategy (plain recursion,
 /// memoized recursion, ...) and are the only path recursion takes.
-fn get_driver_datatype(name: &str) -> proc_macro2::TokenStream {
+fn get_driver_datatype(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let driver_datatype = quote! {
     //    #[allow(non_snake_case)]
     //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA;
     //};
-    let hirpdag_ref_name = Ident::new(name, Span::call_site());
-
-    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
-    let hirpdag_rewrite_method_name =
-        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
+    let DataTypeNames {
+        ref_name: hirpdag_ref_name,
+        rewrite_method: hirpdag_rewrite_method_name,
+        ..
+    } = names;
 
     quote! {
 
@@ -1104,18 +1097,18 @@ fn get_driver_datatype(name: &str) -> proc_macro2::TokenStream {
 
 /// The `HirpdagRewriteDirect` implementation of one driver method: run the
 /// rule, handing it this same driver so the recursion stays direct.
-fn get_direct_rewrite(name: &str) -> proc_macro2::TokenStream {
+fn get_direct_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let direct_rewrite = quote! {
     //    #[allow(non_snake_case)]
     //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
     //        self.rewriter.rewrite_MessageA(x, self)
     //    }
     //};
-    let hirpdag_ref_name = Ident::new(name, Span::call_site());
-
-    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
-    let hirpdag_rewrite_method_name =
-        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
+    let DataTypeNames {
+        ref_name: hirpdag_ref_name,
+        rewrite_method: hirpdag_rewrite_method_name,
+        ..
+    } = names;
 
     quote! {
 
@@ -1127,14 +1120,15 @@ fn get_direct_rewrite(name: &str) -> proc_macro2::TokenStream {
     }
 }
 
-fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
+fn get_cache_member(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let cache_member = quote! {
     //    cache_MessageA: hirpdag::base::HirpdagMemoizeMap<MessageA, MessageA>,
     //};
-    let hirpdag_ref_name = Ident::new(name, Span::call_site());
-
-    let hirpdag_cache_member_name_str = format!("cache_{}", name);
-    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+    let DataTypeNames {
+        ref_name: hirpdag_ref_name,
+        cache_member: hirpdag_cache_member_name,
+        ..
+    } = names;
 
     quote! {
         #hirpdag_cache_member_name:
@@ -1142,24 +1136,22 @@ fn get_cache_member(name: &str) -> proc_macro2::TokenStream {
     }
 }
 
-fn get_cache_member_new(name: &str) -> proc_macro2::TokenStream {
+fn get_cache_member_new(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let cache_member_new = quote! {
     //    cache_MessageA: hirpdag::base::HirpdagMemoizeMap::new(),
     //};
-    let hirpdag_cache_member_name_str = format!("cache_{}", name);
-    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+    let hirpdag_cache_member_name = &names.cache_member;
 
     quote! {
         #hirpdag_cache_member_name: hirpdag::base::HirpdagMemoizeMap::new(),
     }
 }
 
-fn get_cache_clear(name: &str) -> proc_macro2::TokenStream {
+fn get_cache_clear(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let cache_clear = quote! {
     //    self.cache_MessageA.clear();
     //};
-    let hirpdag_cache_member_name_str = format!("cache_{}", name);
-    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+    let hirpdag_cache_member_name = &names.cache_member;
 
     quote! {
         self.#hirpdag_cache_member_name.clear();
@@ -1168,7 +1160,7 @@ fn get_cache_clear(name: &str) -> proc_macro2::TokenStream {
 
 /// The `HirpdagMemoize` impl that points the cache's per-type API at one type's
 /// table, so `cache.get_or_else(&node, || ..)` resolves to the right map.
-fn get_cache_memoize_impl(name: &str) -> proc_macro2::TokenStream {
+fn get_cache_memoize_impl(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let cache_memoize_impl = quote! {
     //    impl hirpdag::base::HirpdagMemoize<MessageA> for HirpdagMemoizeCache {
     //        fn hirpdag_memoize_map(&self)
@@ -1177,10 +1169,11 @@ fn get_cache_memoize_impl(name: &str) -> proc_macro2::TokenStream {
     //        }
     //    }
     //};
-    let hirpdag_ref_name = Ident::new(name, Span::call_site());
-
-    let hirpdag_cache_member_name_str = format!("cache_{}", name);
-    let hirpdag_cache_member_name = Ident::new(&hirpdag_cache_member_name_str, Span::call_site());
+    let DataTypeNames {
+        ref_name: hirpdag_ref_name,
+        cache_member: hirpdag_cache_member_name,
+        ..
+    } = names;
 
     quote! {
 
@@ -1197,7 +1190,7 @@ fn get_cache_memoize_impl(name: &str) -> proc_macro2::TokenStream {
 
 /// The `HirpdagRewriteMemoized` implementation of one driver method: the cache
 /// serves the node, or runs the rule once and remembers the result.
-fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
+fn get_cache_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let cache_rewrite = quote! {
     //    #[allow(non_snake_case)]
     //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
@@ -1206,11 +1199,11 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
     //        })
     //    }
     //};
-    let hirpdag_ref_name = Ident::new(name, Span::call_site());
-
-    let hirpdag_rewrite_method_name_str = format!("rewrite_{}", name);
-    let hirpdag_rewrite_method_name =
-        Ident::new(&hirpdag_rewrite_method_name_str, Span::call_site());
+    let DataTypeNames {
+        ref_name: hirpdag_ref_name,
+        rewrite_method: hirpdag_rewrite_method_name,
+        ..
+    } = names;
 
     quote! {
 
@@ -1231,49 +1224,48 @@ fn get_cache_rewrite(name: &str) -> proc_macro2::TokenStream {
 fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_macro2::TokenStream {
     let rewrite_methods: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_rewrite_datatype(&entry.name))
+        .map(|entry| get_rewrite_datatype(&entry.names))
         .collect();
 
     let driver_methods: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_driver_datatype(&entry.name))
+        .map(|entry| get_driver_datatype(&entry.names))
         .collect();
 
     let direct_methods: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_direct_rewrite(&entry.name))
+        .map(|entry| get_direct_rewrite(&entry.names))
         .collect();
 
     let cache_members: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_cache_member(&entry.name))
+        .map(|entry| get_cache_member(&entry.names))
         .collect();
 
     let cache_members_new: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_cache_member_new(&entry.name))
+        .map(|entry| get_cache_member_new(&entry.names))
         .collect();
 
     let cache_clears: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_cache_clear(&entry.name))
+        .map(|entry| get_cache_clear(&entry.names))
         .collect();
 
     let cache_memoize_impls: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_cache_memoize_impl(&entry.name))
+        .map(|entry| get_cache_memoize_impl(&entry.names))
         .collect();
 
     let cache_methods: proc_macro2::TokenStream = types
         .iter()
-        .map(|entry| get_cache_rewrite(&entry.name))
+        .map(|entry| get_cache_rewrite(&entry.names))
         .collect();
 
-    // (name, is_root) for each hashconsed struct type in the module.
-    let struct_types: Vec<(String, bool)> = types
+    // The hashconsed struct types of the module, in declaration order.
+    let struct_types: Vec<&DataTypeEntry> = types
         .iter()
-        .filter(|entry| entry.is_struct)
-        .map(|entry| (entry.name.clone(), entry.is_root))
+        .filter(|entry| entry.names.is_struct())
         .collect();
 
     // A call to reset each struct type's global interning table. Emitted into
@@ -1281,11 +1273,8 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
     // crate's `reset-tables` feature).
     let reset_table_calls: proc_macro2::TokenStream = struct_types
         .iter()
-        .map(|(name, _)| {
-            let table_ident = Ident::new(
-                &format!("HIRPDAG_TABLE_{}", name.to_ascii_uppercase()),
-                Span::call_site(),
-            );
+        .map(|entry| {
+            let table_ident = &entry.names.table;
             quote! { #table_ident.reset(); }
         })
         .collect();
@@ -1308,7 +1297,10 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         // source file name, so package name + type names identify the
         // hirpdag_end for debugging purposes.
         let pkg = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
-        let type_names: Vec<&str> = types.iter().map(|entry| entry.name.as_str()).collect();
+        let type_names: Vec<String> = types
+            .iter()
+            .map(|entry| entry.names.ref_name.to_string())
+            .collect();
         let mut name = format!("{}:{}", pkg, type_names.join(","));
         const SCHEMA_NAME_MAX: usize = 128;
         const ELLIPSIS: &str = "...";
@@ -1529,28 +1521,14 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
 
 /// Converts a CamelCase type name to a snake_case field name.
 /// e.g. "MessageA" -> "message_a".
-fn to_snake_case(name: &str) -> String {
-    let mut out = String::new();
-    for (i, c) in name.chars().enumerate() {
-        if c.is_ascii_uppercase() {
-            if i != 0 {
-                out.push('_');
-            }
-            out.push(c.to_ascii_lowercase());
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 /// Generates the module-level serialization items: the interned-node enum, its
 /// archived counterpart (the node table entry), the two helpers that pin
 /// archiving to this module's node table, and the `HirpdagArchive` impl that
 /// hands all of them to `hirpdag::base::archive`, which holds the traversal
 /// and the entry points.
 ///
-/// `struct_types` is (name, is_root) for each hashconsed struct type.
+/// `struct_types` is the hashconsed struct types of the module, in
+/// declaration order.
 ///
 /// The schema is generated whenever the module has struct types (the
 /// per-struct impls generated by `#[hirpdag]` refer to it). The
@@ -1558,7 +1536,7 @@ fn to_snake_case(name: &str) -> String {
 /// least one type is marked `#[hirpdag(root)]`; a module with no root types
 /// archives `HirpdagNoRoots` and gets no entry points.
 fn get_serialization_items(
-    struct_types: &[(String, bool)],
+    struct_types: &[&DataTypeEntry],
     schema_hash: u64,
     schema_name: &str,
 ) -> proc_macro2::TokenStream {
@@ -1566,7 +1544,7 @@ fn get_serialization_items(
         // No hashconsed types in this module; nothing to serialize.
         return proc_macro2::TokenStream::new();
     }
-    let has_roots = struct_types.iter().any(|(_, is_root)| *is_root);
+    let has_roots = struct_types.iter().any(|entry| entry.is_root);
 
     let mut archive_variants = proc_macro2::TokenStream::new();
     let mut noderef_variants = proc_macro2::TokenStream::new();
@@ -1578,12 +1556,14 @@ fn get_serialization_items(
     let mut roots_fields_to_archive = proc_macro2::TokenStream::new();
     let mut roots_fields_from_archive = proc_macro2::TokenStream::new();
 
-    for (name, is_root) in struct_types {
-        let ref_name = Ident::new(name, Span::call_site());
-        let struct_name = Ident::new(&format!("HirpdagStruct{}", name), Span::call_site());
-
-        let archive_struct_name =
-            Ident::new(&format!("HirpdagArchiveStruct{}", name), Span::call_site());
+    for entry in struct_types {
+        let DataTypeNames {
+            ref_name,
+            struct_data: struct_name,
+            archive_form: archive_struct_name,
+            roots_field: field_name,
+            ..
+        } = &entry.names;
 
         archive_variants.extend(quote! {
             #ref_name(#archive_struct_name),
@@ -1608,8 +1588,7 @@ fn get_serialization_items(
             )),
         });
 
-        if *is_root {
-            let field_name = Ident::new(&to_snake_case(name), Span::call_site());
+        if entry.is_root {
             roots_field_declarations.extend(quote! {
                 pub #field_name: Vec<#ref_name>,
             });
@@ -1762,15 +1741,15 @@ fn get_serialization_items(
 /// The per-root-type pieces of the roots items, one entry per
 /// `#[hirpdag(root)]` type in each.
 struct RootsItems {
-    /// `pub foo: Vec<Foo>,`
+    /// `pub root_Foo: Vec<Foo>,`
     field_declarations: proc_macro2::TokenStream,
-    /// `for root in &self.foo { ... }`
+    /// `for root in &self.root_Foo { ... }`
     fields_collect: proc_macro2::TokenStream,
-    /// `pub foo: HirpdagArchiveOf<Vec<Foo>>,`
+    /// `pub root_Foo: HirpdagArchiveOf<Vec<Foo>>,`
     archive_field_declarations: proc_macro2::TokenStream,
-    /// `foo: hirpdag_archive_encode(&self.foo, index)?,`
+    /// `root_Foo: hirpdag_archive_encode(&self.root_Foo, index)?,`
     fields_to_archive: proc_macro2::TokenStream,
-    /// `foo: hirpdag_archive_decode::<Vec<Foo>>(archived.foo, nodes)?,`
+    /// `root_Foo: hirpdag_archive_decode::<Vec<Foo>>(archived.root_Foo, nodes)?,`
     fields_from_archive: proc_macro2::TokenStream,
 }
 
@@ -1793,14 +1772,15 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
 
     quote! {
         /// The roots of a serialized archive: one vector per
-        /// `#[hirpdag(root)]` type. Input of the serialize entry points and
-        /// output of the deserialize entry points.
+        /// `#[hirpdag(root)]` type, named `root_` plus the type's name.
+        /// Input of the serialize entry points and output of the deserialize
+        /// entry points.
         ///
         /// Implements `Default`, so a subset of root types can be set with
         /// struct update syntax:
-        /// `HirpdagArchiveRoots { foo: vec![x], ..Default::default() }`.
+        /// `HirpdagArchiveRoots { root_Foo: vec![x], ..Default::default() }`.
         #[derive(Clone, Debug, Default, PartialEq, Eq)]
-        #[allow(dead_code)]
+        #[allow(dead_code, non_snake_case)]
         pub struct HirpdagArchiveRoots {
             #roots_field_declarations
         }
@@ -1815,12 +1795,15 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
         /// per `#[hirpdag(root)]` type.
         ///
         /// `#[serde(default)]`, so a root type whose vector is empty can be
-        /// left out of hand-written JSON.
+        /// left out of hand-written JSON, and `deny_unknown_fields`, so a name
+        /// that is *not* a root of this module is an error rather than a
+        /// silently empty vector. The two compose: `default` governs what may
+        /// be omitted, `deny_unknown_fields` what may be added.
         #[doc(hidden)]
         #[derive(Clone, Debug, Default)]
         #[derive(hirpdag::serde::Serialize, hirpdag::serde::Deserialize)]
-        #[serde(crate = "hirpdag::serde", default)]
-        #[allow(dead_code)]
+        #[serde(crate = "hirpdag::serde", default, deny_unknown_fields)]
+        #[allow(dead_code, non_snake_case)]
         pub struct HirpdagArchiveRootIndices {
             #roots_archive_field_declarations
         }

@@ -191,7 +191,8 @@ nodes, not the tree expansion.
 
 Struct types that may be serialization roots are marked `#[hirpdag(root)]`.
 `#[hirpdag_module]` generates a `HirpdagArchiveRoots` struct (one vector per root
-type; multiple roots of different types share one file) and the entry points
+type, named `root_<Type>`; multiple roots of different types share one file) and
+the entry points
 `hirpdag_serialize`/`hirpdag_deserialize` (compact binary via [postcard]) and
 `hirpdag_serialize_json`/`hirpdag_deserialize_json` (text via [serde_json]).
 
@@ -210,7 +211,7 @@ let a: Expr = Expr::new(ExprKind::Var("a".to_string()));
 let e: Expr = Expr::new(ExprKind::Mul(vec![a.clone(), a.clone()]));
 
 let bytes: Vec<u8> = hirpdag_serialize(&HirpdagArchiveRoots {
-    expr: vec![e.clone()],
+    root_Expr: vec![e.clone()],
     ..Default::default()
 }).unwrap();
 
@@ -218,7 +219,7 @@ let out = hirpdag_deserialize(&bytes).unwrap();
 
 // Deserialized nodes are re-interned through the hashcons table,
 // so in-process round trips are pointer-equal.
-assert_eq!(out.expr[0], e);
+assert_eq!(out.root_Expr[0], e);
 ```
 
 See `docs/design/serialization.md` for the format and how it works, and

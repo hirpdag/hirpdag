@@ -84,8 +84,9 @@ Archive
 │     └── HirpdagArchiveNode      tagged union over all #[hirpdag] struct types
 │           e.g. Expr(HirpdagArchiveStructExpr)
 │              | Variables(HirpdagArchiveStructVariables)
-└── roots: HirpdagArchiveRootIndices  one Vec per #[hirpdag(root)] type, each ref
-                                  encoded as a u64 node index
+└── roots: HirpdagArchiveRootIndices  one Vec per #[hirpdag(root)] type, named
+                                  root_<Type>, each ref encoded as a u64 node
+                                  index
 ```
 
 - A node's `HirpdagRef` fields are encoded as `u64` indices into `nodes`.

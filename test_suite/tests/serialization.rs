@@ -50,19 +50,19 @@ fn binary_round_trip_pointer_equal() {
     );
 
     let roots = HirpdagArchiveRoots {
-        item: vec![parent.clone()],
+        root_Item: vec![parent.clone()],
         ..Default::default()
     };
     let bytes = hirpdag_serialize(&roots).unwrap();
     let out = hirpdag_deserialize(&bytes).unwrap();
 
-    assert_eq!(out.item.len(), 1);
-    assert!(out.node.is_empty());
-    assert!(out.pair.is_empty());
+    assert_eq!(out.root_Item.len(), 1);
+    assert!(out.root_Node.is_empty());
+    assert!(out.root_Pair.is_empty());
     // Hirpdag equality is pointer equality: the deserialized root re-interned
     // to the exact same node.
-    assert_eq!(out.item[0], parent);
-    assert_eq!(out.item[0].deps[0], out.item[0].deps[2]);
+    assert_eq!(out.root_Item[0], parent);
+    assert_eq!(out.root_Item[0].deps[0], out.root_Item[0].deps[2]);
 }
 
 #[test]
@@ -71,14 +71,14 @@ fn json_round_trip_pointer_equal() {
     let parent = Item::new("json_parent".to_string(), vec![a.clone(), a.clone()]);
 
     let roots = HirpdagArchiveRoots {
-        item: vec![parent.clone()],
+        root_Item: vec![parent.clone()],
         ..Default::default()
     };
     let text = hirpdag_serialize_json(&roots).unwrap();
     let out = hirpdag_deserialize_json(&text).unwrap();
 
     assert_eq!(out, roots);
-    assert_eq!(out.item[0], parent);
+    assert_eq!(out.root_Item[0], parent);
 }
 
 #[test]
@@ -88,12 +88,12 @@ fn enum_payload_round_trip() {
     let sum = Node::new(Kind::Sum(vec![n1.clone(), n2.clone(), n1.clone()]));
 
     let roots = HirpdagArchiveRoots {
-        node: vec![sum.clone()],
+        root_Node: vec![sum.clone()],
         ..Default::default()
     };
     let bytes = hirpdag_serialize(&roots).unwrap();
     let out = hirpdag_deserialize(&bytes).unwrap();
-    let sum2 = &out.node[0];
+    let sum2 = &out.root_Node[0];
     assert_eq!(*sum2, sum);
     match &sum2.kind {
         Kind::Sum(items) => {
@@ -119,7 +119,7 @@ fn sharing_preserved_fibonacci() {
     }
 
     let roots = HirpdagArchiveRoots {
-        node: vec![curr.clone()],
+        root_Node: vec![curr.clone()],
         ..Default::default()
     };
     let text = hirpdag_serialize_json(&roots).unwrap();
@@ -129,7 +129,7 @@ fn sharing_preserved_fibonacci() {
     assert_eq!(node_count, depth + 2);
 
     let out = hirpdag_deserialize_json(&text).unwrap();
-    assert_eq!(out.node[0], curr);
+    assert_eq!(out.root_Node[0], curr);
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn multiple_roots_share_nodes() {
     let r2 = Item::new("multi_r2".to_string(), vec![shared.clone()]);
 
     let roots = HirpdagArchiveRoots {
-        item: vec![r1.clone(), r2.clone()],
+        root_Item: vec![r1.clone(), r2.clone()],
         ..Default::default()
     };
     let text = hirpdag_serialize_json(&roots).unwrap();
@@ -148,11 +148,11 @@ fn multiple_roots_share_nodes() {
     assert_eq!(value["nodes"].as_array().unwrap().len(), 3);
 
     let out = hirpdag_deserialize_json(&text).unwrap();
-    assert_eq!(out.item.len(), 2);
-    assert_eq!(out.item[0], r1);
-    assert_eq!(out.item[1], r2);
+    assert_eq!(out.root_Item.len(), 2);
+    assert_eq!(out.root_Item[0], r1);
+    assert_eq!(out.root_Item[1], r2);
     // The shared subgraph is the same node in both deserialized roots.
-    assert_eq!(out.item[0].deps[0], out.item[1].deps[0]);
+    assert_eq!(out.root_Item[0].deps[0], out.root_Item[1].deps[0]);
 }
 
 #[test]
@@ -162,8 +162,8 @@ fn mixed_type_roots() {
     let p = Pair::new(i.clone(), i.clone(), Label::new("mixed_tag".to_string()));
 
     let roots = HirpdagArchiveRoots {
-        pair: vec![p.clone()],
-        item: vec![i.clone()],
+        root_Pair: vec![p.clone()],
+        root_Item: vec![i.clone()],
         ..Default::default()
     };
     let text = hirpdag_serialize_json(&roots).unwrap();
@@ -172,11 +172,11 @@ fn mixed_type_roots() {
     assert_eq!(value["nodes"].as_array().unwrap().len(), 3);
 
     let out = hirpdag_deserialize_json(&text).unwrap();
-    assert_eq!(out.pair[0], p);
-    assert_eq!(out.item[0], i);
-    assert_eq!(out.pair[0].tag, Label::new("mixed_tag".to_string()));
+    assert_eq!(out.root_Pair[0], p);
+    assert_eq!(out.root_Item[0], i);
+    assert_eq!(out.root_Pair[0].tag, Label::new("mixed_tag".to_string()));
     // The Item root and the Pair's children are the same interned node.
-    assert_eq!(out.pair[0].left, out.item[0]);
+    assert_eq!(out.root_Pair[0].left, out.root_Item[0]);
 }
 
 #[test]
@@ -184,13 +184,13 @@ fn deserialize_twice_merges() {
     let leaf = Item::new("merge_leaf".to_string(), vec![]);
     let root = Item::new("merge_root".to_string(), vec![leaf]);
     let roots = HirpdagArchiveRoots {
-        item: vec![root.clone()],
+        root_Item: vec![root.clone()],
         ..Default::default()
     };
     let bytes = hirpdag_serialize(&roots).unwrap();
 
-    let r1 = hirpdag_deserialize(&bytes).unwrap().item[0].clone();
-    let r2 = hirpdag_deserialize(&bytes).unwrap().item[0].clone();
+    let r1 = hirpdag_deserialize(&bytes).unwrap().root_Item[0].clone();
+    let r2 = hirpdag_deserialize(&bytes).unwrap().root_Item[0].clone();
     // Re-interning through the hashcons table merges with existing nodes.
     assert_eq!(r1, r2);
     assert_eq!(r1, root);
@@ -205,7 +205,7 @@ fn bad_magic_rejected() {
 #[test]
 fn truncated_input_rejected() {
     let roots = HirpdagArchiveRoots {
-        item: vec![Item::new("trunc_item".to_string(), vec![])],
+        root_Item: vec![Item::new("trunc_item".to_string(), vec![])],
         ..Default::default()
     };
     let bytes = hirpdag_serialize(&roots).unwrap();
@@ -233,13 +233,13 @@ fn concurrent_archives_do_not_interfere() {
                     vec![leaf.clone(), leaf.clone()],
                 );
                 let roots = HirpdagArchiveRoots {
-                    item: vec![root.clone()],
+                    root_Item: vec![root.clone()],
                     ..Default::default()
                 };
                 let bytes = hirpdag_serialize(&roots).unwrap();
                 let out = hirpdag_deserialize(&bytes).unwrap();
-                assert_eq!(out.item[0], root);
-                assert_eq!(out.item[0].deps[0], leaf);
+                assert_eq!(out.root_Item[0], root);
+                assert_eq!(out.root_Item[0].deps[0], leaf);
             })
         })
         .collect();
@@ -277,12 +277,30 @@ fn forward_or_out_of_range_index_rejected() {
 #[test]
 fn node_type_mismatch_rejected() {
     // The roots claim node 0 is a Node, but node 0 is an Item.
-    let text = r#"{"version":1,"nodes":[{"Item":{"name":"x","deps":[]}}],"roots":{"node":[0]}}"#;
+    let text =
+        r#"{"version":1,"nodes":[{"Item":{"name":"x","deps":[]}}],"roots":{"root_Node":[0]}}"#;
     let err = hirpdag_deserialize_json(text).unwrap_err();
     assert_eq!(
         err,
         hirpdag::base::HirpdagDeserializeError::NodeTypeMismatch { expected: "Node" }
     );
+}
+
+#[test]
+fn unknown_roots_field_rejected() {
+    // A roots key that is not a root of this module is an error, not a
+    // silently empty vector. Archives written before roots fields were named
+    // `root_<Type>` carry the old snake-cased names, and without
+    // `deny_unknown_fields` serde would ignore them, `#[serde(default)]` would
+    // fill in empty vectors, and the roots would be lost without a word.
+    let text = r#"{"version":1,"nodes":[{"Item":{"name":"x","deps":[]}}],"roots":{"item":[0]}}"#;
+    let err = hirpdag_deserialize_json(text).unwrap_err();
+    match err {
+        hirpdag::base::HirpdagDeserializeError::Format(msg) => {
+            assert!(msg.contains("item"), "error should name the field: {}", msg);
+        }
+        other => panic!("expected Format, got {:?}", other),
+    }
 }
 
 #[test]
@@ -295,11 +313,11 @@ fn handwritten_json_accepted() {
             {"Item": {"name": "hand_leaf", "deps": []}},
             {"Item": {"name": "hand_root", "deps": [0, 0]}}
         ],
-        "roots": {"item": [1]}
+        "roots": {"root_Item": [1]}
     }"#;
     let out = hirpdag_deserialize_json(text).unwrap();
     assert_eq!(
-        out.item[0],
+        out.root_Item[0],
         Item::new(
             "hand_root".to_string(),
             vec![
@@ -324,7 +342,7 @@ mod other_schema {
 #[test]
 fn schema_mismatch_rejected() {
     let roots = HirpdagArchiveRoots {
-        item: vec![Item::new("schema_item".to_string(), vec![])],
+        root_Item: vec![Item::new("schema_item".to_string(), vec![])],
         ..Default::default()
     };
     let bytes = hirpdag_serialize(&roots).unwrap();
@@ -370,7 +388,7 @@ fn schema_match_accepted_across_modules_with_same_shape() {
     // fingerprint present (covered by other tests too); this pins down that
     // the fingerprint only rejects *different* definitions.
     let roots = HirpdagArchiveRoots {
-        item: vec![Item::new("schema_same".to_string(), vec![])],
+        root_Item: vec![Item::new("schema_same".to_string(), vec![])],
         ..Default::default()
     };
     let bytes = hirpdag_serialize(&roots).unwrap();
