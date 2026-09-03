@@ -9,10 +9,6 @@ mod reference;
 pub use crate::reference::Reference;
 pub use crate::reference::ReferenceWeak;
 mod table;
-pub use crate::table::BuildTable;
-pub use crate::table::BuildTableDefault;
-pub use crate::table::BuildThreadUnsafeTable;
-pub use crate::table::BuildThreadUnsafeTableDefault;
 pub use crate::table::Table;
 pub use crate::table::ThreadUnsafeTable;
 
@@ -45,10 +41,8 @@ pub use crate::table::vec_sorted_threadunsafe::TableVecSortedWeak;
 
 pub use crate::table::hashmap_fallback_threadunsafe::TableHashmapFallbackWeak;
 
-pub use crate::table::shared_sharded::BuildTableSharedSharded;
 pub use crate::table::shared_sharded::TableSharedSharded;
 
-pub use crate::table::shared_mutex::BuildTableSharedMutex;
 pub use crate::table::shared_mutex::TableSharedMutex;
 
 // Table backends built on third-party collection crates, behind the opt-in
@@ -61,22 +55,14 @@ pub use crate::table::shared_mutex::TableSharedMutex;
 pub use crate::table::tov_weak_table_threadunsafe::TableTovWeakTable;
 
 #[cfg(feature = "third-party-tables")]
-pub use crate::table::dashmap_strong::BuildTableSharedDashMap;
-#[cfg(feature = "third-party-tables")]
 pub use crate::table::dashmap_strong::TableSharedDashMap;
 
-#[cfg(feature = "third-party-tables")]
-pub use crate::table::flurry_strong::BuildTableSharedFlurry;
 #[cfg(feature = "third-party-tables")]
 pub use crate::table::flurry_strong::TableSharedFlurry;
 
 #[cfg(feature = "third-party-tables")]
-pub use crate::table::skipmap_strong::BuildTableSharedSkipMap;
-#[cfg(feature = "third-party-tables")]
 pub use crate::table::skipmap_strong::TableSharedSkipMap;
 
-#[cfg(feature = "third-party-tables")]
-pub use crate::table::arcswap_strong::BuildTableSharedArcSwap;
 #[cfg(feature = "third-party-tables")]
 pub use crate::table::arcswap_strong::TableSharedArcSwap;
 
@@ -101,18 +87,9 @@ mod tests {
             T: ThreadUnsafeTable<TestData, R> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
-            let table_builder = BuildThreadUnsafeTableDefault::<T>::default();
-            let tsb =
-                BuildTableSharedSharded::<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>::with_builders(
-                    table_builder,
-                    hash_builder,
-                );
-
-            test_tableshared::<
-                R,
-                TableSharedSharded<TestData, R, T, HB>,
-                BuildTableSharedSharded<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>,
-            >(tsb);
+            test_tableshared::<R, TableSharedSharded<TestData, R, T, HB>>(|| {
+                TableSharedSharded::with_hasher(hash_builder.clone())
+            });
         }
 
         fn test_tableshared_mutex<R, T, HB>(hash_builder: HB)
@@ -121,18 +98,9 @@ mod tests {
             T: ThreadUnsafeTable<TestData, R> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
-            let table_builder = BuildThreadUnsafeTableDefault::<T>::default();
-            let tsb =
-                BuildTableSharedMutex::<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>::with_builders(
-                    table_builder,
-                    hash_builder,
-                );
-
-            test_tableshared::<
-                R,
-                TableSharedMutex<TestData, R, T, HB>,
-                BuildTableSharedMutex<TestData, R, T, BuildThreadUnsafeTableDefault<T>, HB>,
-            >(tsb);
+            test_tableshared::<R, TableSharedMutex<TestData, R, T, HB>>(|| {
+                TableSharedMutex::with_hasher(hash_builder.clone())
+            });
         }
         fn test_tableshared_all<R, T>()
         where
@@ -266,40 +234,34 @@ mod tests {
 
         #[test]
         fn dashmap() {
-            let b = BuildTableSharedDashMap::<Data, Ref, DefHasher>::default();
-            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, DefHasher>, _>(b);
-
-            let b_bad =
-                BuildTableSharedDashMap::<Data, Ref, BadHasher>::with_hasher(BadHasher::default());
-            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, BadHasher>, _>(b_bad);
+            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, DefHasher>>(Default::default);
+            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, BadHasher>>(|| {
+                TableSharedDashMap::with_hasher(BadHasher::default())
+            });
 
             concurrent_stress(TableSharedDashMap::<Data, Ref, DefHasher>::default());
         }
 
         #[test]
         fn flurry() {
-            let b = BuildTableSharedFlurry::<Data, Ref, DefHasher>::default();
-            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, DefHasher>, _>(b);
-
-            let b_bad =
-                BuildTableSharedFlurry::<Data, Ref, BadHasher>::with_hasher(BadHasher::default());
-            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, BadHasher>, _>(b_bad);
+            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, DefHasher>>(Default::default);
+            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, BadHasher>>(|| {
+                TableSharedFlurry::with_hasher(BadHasher::default())
+            });
 
             concurrent_stress(TableSharedFlurry::<Data, Ref, DefHasher>::default());
         }
 
         #[test]
         fn skipmap() {
-            let b = BuildTableSharedSkipMap::<Data, Ref>::default();
-            test_tableshared::<Ref, TableSharedSkipMap<Data, Ref>, _>(b);
+            test_tableshared::<Ref, TableSharedSkipMap<Data, Ref>>(Default::default);
 
             concurrent_stress(TableSharedSkipMap::<Data, Ref>::default());
         }
 
         #[test]
         fn arcswap() {
-            let b = BuildTableSharedArcSwap::<Data, Ref, DefHasher>::default();
-            test_tableshared::<Ref, TableSharedArcSwap<Data, Ref, DefHasher>, _>(b);
+            test_tableshared::<Ref, TableSharedArcSwap<Data, Ref, DefHasher>>(Default::default);
 
             concurrent_stress(TableSharedArcSwap::<Data, Ref, DefHasher>::default());
         }

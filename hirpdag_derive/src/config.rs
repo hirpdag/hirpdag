@@ -23,9 +23,6 @@ pub enum HirpdagArg {
     /// Hashconsing table sharing type specified by user.
     TableSharedType(String),
 
-    /// Builder for Hashconsing table sharing type specified by user.
-    BuildTableSharedType(String),
-
     /// Named preset selecting the reference and table types together.
     Preset(String),
 }
@@ -54,9 +51,10 @@ const PRESETS: &[&str] = &[
 
 /// The type strings that select a hash-consing implementation.
 ///
-/// `reference_type`, `reference_weak_type`, `tableshared_type` and
-/// `build_tableshared_type` are always emitted, as the aliases `ImplRef<D>`,
-/// `ImplRefWeak<D>`, `ImplTableShared<D>` and `ImplBuildTableShared<D>`.
+/// `reference_type`, `reference_weak_type` and `tableshared_type` are always
+/// emitted, as the aliases `ImplRef<D>`, `ImplRefWeak<D>` and
+/// `ImplTableShared<D>`. The shared table builds itself from those type
+/// parameters (it is `Default`), so no factory is named here.
 /// `ImplRef` / `ImplRefWeak` are the strong/weak reference pair, the vocabulary
 /// any table implementation draws on to name whichever reference-counting
 /// implementation it was configured with, so both are available whether or not a
@@ -76,7 +74,6 @@ struct ConfigTypes {
     reference_weak_type: String,
     aliases: Vec<(String, String)>,
     tableshared_type: String,
-    build_tableshared_type: String,
 }
 
 impl ConfigTypes {
@@ -105,30 +102,23 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
             reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
             aliases: vec![("ImplTable".to_string(), inner_table)],
-            tableshared_type: "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>".to_string(),
-            build_tableshared_type: "hirpdag::hirpdag_hashconsing::BuildTableSharedSharded<D, ImplRef<D>, ImplTable<D>, hirpdag::hirpdag_hashconsing::BuildThreadUnsafeTableDefault<ImplTable<D>>, std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>>".to_string(),
+            tableshared_type:
+                "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>"
+                    .to_string(),
         }
     }
     // A `ConfigTypes` for a preset backed by a third-party concurrent collection
     // named `TableShared{shared_base}`. These store the mapping directly and are
-    // not generic over an inner `ThreadUnsafeTable`, so they declare no `ImplTable` alias.
-    // `hashed` backends take a default-hasher generic argument; ordered /
-    // self-hashing backends (skipmap) do not.
-    fn concurrent(base: &str, shared_base: &str, hashed: bool) -> ConfigTypes {
-        let hasher = if hashed {
-            ", std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>"
-        } else {
-            ""
-        };
+    // not generic over an inner `ThreadUnsafeTable`, so they declare no `ImplTable`
+    // alias. The hashed backends take their hasher from their own default type
+    // parameter; the ordered one (skipmap) has none.
+    fn concurrent(base: &str, shared_base: &str) -> ConfigTypes {
         ConfigTypes {
             reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
             reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
             aliases: Vec::new(),
             tableshared_type: format!(
                 "hirpdag::hirpdag_hashconsing::TableShared{shared_base}<D, ImplRef<D>>"
-            ),
-            build_tableshared_type: format!(
-                "hirpdag::hirpdag_hashconsing::BuildTableShared{shared_base}<D, ImplRef<D>{hasher}>"
             ),
         }
     }
@@ -158,10 +148,10 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         // reference. See the `table::*_strong` / `table::shared_*` /
         // `table::tov_weak_table_threadunsafe` modules.
         "arc_tovweaktable" => sharded("RefArc", tovweaktable),
-        "arc_dashmap" => concurrent("RefArc", "DashMap", true),
-        "arc_flurry" => concurrent("RefArc", "Flurry", true),
-        "arc_skipmap" => concurrent("RefArc", "SkipMap", false),
-        "arc_arcswap" => concurrent("RefArc", "ArcSwap", true),
+        "arc_dashmap" => concurrent("RefArc", "DashMap"),
+        "arc_flurry" => concurrent("RefArc", "Flurry"),
+        "arc_skipmap" => concurrent("RefArc", "SkipMap"),
+        "arc_arcswap" => concurrent("RefArc", "ArcSwap"),
         _ => return None,
     })
 }
@@ -192,9 +182,6 @@ impl syn::parse::Parse for HirpdagArg {
             "table_type" => Handler::String(|s: &syn::LitStr| Ok(Self::TableType(s.value()))),
             "tableshared_type" => {
                 Handler::String(|s: &syn::LitStr| Ok(Self::TableSharedType(s.value())))
-            }
-            "build_tableshared_type" => {
-                Handler::String(|s: &syn::LitStr| Ok(Self::BuildTableSharedType(s.value())))
             }
             "preset" => Handler::String(|s: &syn::LitStr| {
                 let name = s.value();
@@ -282,9 +269,6 @@ impl HirpdagConfig {
                 }
                 HirpdagArg::TableType(name) => config.types.set_alias("ImplTable", name.clone()),
                 HirpdagArg::TableSharedType(name) => config.types.tableshared_type = name.clone(),
-                HirpdagArg::BuildTableSharedType(name) => {
-                    config.types.build_tableshared_type = name.clone()
-                }
                 HirpdagArg::Preset(name) => {
                     config.types = preset_types(name).expect("preset validated at parse time");
                 }
@@ -321,8 +305,5 @@ impl HirpdagConfig {
     }
     pub fn tableshared_type(&self) -> TokenStream {
         self.types.tableshared_type.parse().unwrap()
-    }
-    pub fn build_tableshared_type(&self) -> TokenStream {
-        self.types.build_tableshared_type.parse().unwrap()
     }
 }

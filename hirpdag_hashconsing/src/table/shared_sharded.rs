@@ -32,10 +32,40 @@ where
     T: ThreadUnsafeTable<D, R>,
     HB: std::hash::BuildHasher + Default + Clone,
 {
+    /// An empty table, one freshly built inner table per shard, hashing with
+    /// `hash_builder`.
+    ///
+    /// [`Default`] covers the usual case; this is for a hasher carrying state
+    /// its type cannot produce by default, such as a specific seed.
+    pub fn with_hasher(hash_builder: HB) -> Self
+    where
+        T: Default,
+    {
+        Self {
+            inner: std::array::from_fn(|_| std::sync::Mutex::new(T::default())),
+            hash_builder,
+
+            phantom_d: std::marker::PhantomData,
+            phantom_r: std::marker::PhantomData,
+        }
+    }
+
     fn get_shard(&self, hash: u64) -> &std::sync::Mutex<T> {
         let mask = (N_SHARDS - 1) as u64;
         let index = hash & mask;
         &self.inner[index as usize]
+    }
+}
+
+impl<D, R, T, HB> Default for TableSharedSharded<D, R, T, HB>
+where
+    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
+    R: Reference<D>,
+    T: ThreadUnsafeTable<D, R> + Default,
+    HB: std::hash::BuildHasher + Default + Clone,
+{
+    fn default() -> Self {
+        Self::with_hasher(HB::default())
     }
 }
 
@@ -77,98 +107,6 @@ where
     fn reset(&self) {
         for shard in &self.inner {
             shard.lock().unwrap().reset();
-        }
-    }
-}
-
-pub struct BuildTableSharedSharded<D, R, T, TB, HB> {
-    table_builder: TB,
-    hash_builder: HB,
-
-    phantom_d: std::marker::PhantomData<D>,
-    phantom_r: std::marker::PhantomData<R>,
-    phantom_t: std::marker::PhantomData<T>,
-}
-
-impl<D, R, T, TB, HB> BuildTableSharedSharded<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    pub fn with_builders(table_builder: TB, hash_builder: HB) -> Self {
-        Self {
-            table_builder,
-            hash_builder,
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<D, R, T, TB, HB> Clone for BuildTableSharedSharded<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            table_builder: self.table_builder.clone(),
-            hash_builder: self.hash_builder.clone(),
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<D, R, T, TB, HB> Default for BuildTableSharedSharded<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    fn default() -> Self {
-        Self {
-            table_builder: TB::default(),
-            hash_builder: HB::default(),
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<D, R, T, TB, HB> BuildTable<D, R> for BuildTableSharedSharded<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    type TableSharedType = TableSharedSharded<D, R, T, HB>;
-
-    fn build_tableshared(&self) -> TableSharedSharded<D, R, T, HB> {
-        let shards: [std::sync::Mutex<T>; N_SHARDS] =
-            std::array::from_fn(|_| std::sync::Mutex::new(self.table_builder.build_table()));
-        TableSharedSharded::<D, R, T, HB> {
-            inner: shards,
-            hash_builder: self.hash_builder.clone(),
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
         }
     }
 }

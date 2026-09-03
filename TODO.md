@@ -123,7 +123,11 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
 ### Code cleanup
 
 - [P1] General refactoring and cleanup:
-  - Try to reduce use of generic and builders for hashconsing implementations.
+  - ~~Try to reduce use of generic and builders for hashconsing implementations.~~
+  - DONE: The `BuildTable` / `BuildThreadUnsafeTable` families are gone. Each
+    `Table` implementation constructs itself (`Default`, plus `with_hasher`
+    where a hasher applies), `HirpdagHashconsTable::new()` takes no builder,
+    and the `build_tableshared_type` macro argument no longer exists.
 
 ### Features
 

@@ -17,6 +17,44 @@ where
     phantom_r: std::marker::PhantomData<R>,
 }
 
+impl<D, R, T, HB> TableSharedMutex<D, R, T, HB>
+where
+    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
+    R: Reference<D>,
+    T: ThreadUnsafeTable<D, R>,
+    HB: std::hash::BuildHasher + Default + Clone,
+{
+    /// An empty table wrapping a freshly built inner table, hashing with
+    /// `hash_builder`.
+    ///
+    /// [`Default`] covers the usual case; this is for a hasher carrying state
+    /// its type cannot produce by default, such as a specific seed.
+    pub fn with_hasher(hash_builder: HB) -> Self
+    where
+        T: Default,
+    {
+        Self {
+            inner: std::sync::Mutex::new(T::default()),
+            hash_builder,
+
+            phantom_d: std::marker::PhantomData,
+            phantom_r: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<D, R, T, HB> Default for TableSharedMutex<D, R, T, HB>
+where
+    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
+    R: Reference<D>,
+    T: ThreadUnsafeTable<D, R> + Default,
+    HB: std::hash::BuildHasher + Default + Clone,
+{
+    fn default() -> Self {
+        Self::with_hasher(HB::default())
+    }
+}
+
 #[inline]
 fn make_hash<K: std::hash::Hash + ?Sized>(
     hash_builder: &impl std::hash::BuildHasher,
@@ -52,94 +90,5 @@ where
     #[cfg(feature = "reset-tables")]
     fn reset(&self) {
         self.inner.lock().unwrap().reset();
-    }
-}
-
-pub struct BuildTableSharedMutex<D, R, T, TB, HB> {
-    table_builder: TB,
-    hash_builder: HB,
-
-    phantom_d: std::marker::PhantomData<D>,
-    phantom_r: std::marker::PhantomData<R>,
-    phantom_t: std::marker::PhantomData<T>,
-}
-
-impl<D, R, T, TB, HB> BuildTableSharedMutex<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    pub fn with_builders(table_builder: TB, hash_builder: HB) -> Self {
-        Self {
-            table_builder,
-            hash_builder,
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<D, R, T, TB, HB> Clone for BuildTableSharedMutex<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    fn clone(&self) -> Self {
-        Self {
-            table_builder: self.table_builder.clone(),
-            hash_builder: self.hash_builder.clone(),
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<D, R, T, TB, HB> Default for BuildTableSharedMutex<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    fn default() -> Self {
-        Self {
-            table_builder: TB::default(),
-            hash_builder: HB::default(),
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
-            phantom_t: std::marker::PhantomData,
-        }
-    }
-}
-impl<D, R, T, TB, HB> BuildTable<D, R> for BuildTableSharedMutex<D, R, T, TB, HB>
-where
-    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
-    R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
-    TB: BuildThreadUnsafeTable<D, R, ThreadUnsafeTable = T> + Default + Clone,
-    HB: std::hash::BuildHasher + Default + Clone,
-{
-    type TableSharedType = TableSharedMutex<D, R, T, HB>;
-
-    fn build_tableshared(&self) -> TableSharedMutex<D, R, T, HB> {
-        TableSharedMutex::<D, R, T, HB> {
-            inner: std::sync::Mutex::new(self.table_builder.build_table()),
-            hash_builder: self.hash_builder.clone(),
-
-            phantom_d: std::marker::PhantomData,
-            phantom_r: std::marker::PhantomData,
-        }
     }
 }

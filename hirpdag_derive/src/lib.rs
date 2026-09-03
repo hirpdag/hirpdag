@@ -47,8 +47,8 @@ fn fnv1a_64(data: &str) -> u64 {
 /// other items pass through unchanged, and the module-level machinery
 /// (rewriting, serialization) is appended. Attribute arguments select the
 /// hash-consing configuration: a named `preset = "..."` or the explicit
-/// `reference_type`, `reference_weak_type`, `table_type`,
-/// `tableshared_type`, and `build_tableshared_type` strings.
+/// `reference_type`, `reference_weak_type`, `table_type` and
+/// `tableshared_type` strings.
 ///
 /// ```ignore
 /// #[hirpdag_module]
@@ -587,9 +587,7 @@ fn expand_hirpdag_struct(
             #hirpdag_struct_name,
             ImplRef<HirpdagStorage<#hirpdag_struct_name>>,
             ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>>> =
-                std::sync::LazyLock::new(|| HirpdagHashconsTable::new(
-                  ImplBuildTableShared::<HirpdagStorage::<#hirpdag_struct_name>>::default()
-                ));
+                std::sync::LazyLock::new(HirpdagHashconsTable::new);
 
         #[derive(Hash, Clone, Debug, PartialEq, Eq)]
         pub struct #hirpdag_ref_name(HirpdagRef<#hirpdag_struct_name, ImplRef<HirpdagStorage<#hirpdag_struct_name>>>);
@@ -1333,7 +1331,6 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
     let reference_type: proc_macro2::TokenStream = config.reference_type();
     let reference_weak_type: proc_macro2::TokenStream = config.reference_weak_type();
     let tableshared_type: proc_macro2::TokenStream = config.tableshared_type();
-    let build_tableshared_type: proc_macro2::TokenStream = config.build_tableshared_type();
     // Extra `type <name><D> = <rhs>;` helper aliases the config's shared-table
     // strings refer to (e.g. `ImplTable`). Concurrent-collection backends, which
     // are not generic over an inner table, declare none.
@@ -1348,7 +1345,6 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         type ImplRefWeak<D> = #reference_weak_type;
         #(#helper_alias_defs)*
         type ImplTableShared<D> = #tableshared_type;
-        type ImplBuildTableShared<D> = #build_tableshared_type;
 
         /// The rewrite rules: one method per data type in this module.
         ///
