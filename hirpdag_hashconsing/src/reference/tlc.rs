@@ -1,7 +1,8 @@
 //! Reference counting with thread-local buffering of count updates.
 //!
-//! This explores the TODO idea of thread-local reference counts which are
-//! periodically flushed back to the main counter.
+//! Counts are kept per thread and periodically flushed back to the shared
+//! counter, so clone/drop pairs on one thread need not touch the shared
+//! cacheline at all.
 //!
 //! Buffering *increments* thread-locally is unsound with cross-thread handle
 //! transfer: a handle whose increment is still buffered on thread A can be

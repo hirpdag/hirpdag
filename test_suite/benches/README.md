@@ -79,6 +79,34 @@ and held.
   DAG-aware node-table dedup on write and re-interning through the hashcons
   table on read.
 
+## Measurements
+
+Each benchmark binary registers two criterion groups.
+
+- `benches_time` (`Fibonacci`, `Churn`, ...) measures wall-clock time, with the
+  sample counts criterion needs to smooth out latency jitter.
+
+- `benches_mem` (`FibonacciMem`, ...) measures the *peak heap size* reached
+  while the routine ran: the high-water mark of live bytes (allocated minus
+  freed), tracked by the `AllocBytes` criterion measurement in
+  [`support/mod.rs`](support/mod.rs) over a global allocator that forwards to
+  the system one. Allocation sizes are deterministic for a given workload, so
+  these groups run the minimum criterion allows (flat sampling, a nanosecond
+  warm-up and measurement window, so each of the ten samples is a single
+  invocation) and disable plots, which cannot be drawn from zero-variance
+  samples. The approach follows
+  [this gist](https://gist.github.com/DerSaidin/af295f89c047a049e4fc3193f520f12c).
+
+  A peak is only meaningful if the run starts from an empty interning table,
+  otherwise a preset that retains nodes across runs (the `leak_*` presets)
+  finds them already interned and appears to allocate almost nothing. The
+  `reset-tables` feature (on by default here) empties each type's table in
+  place through its existing lock; `bench_each_config_mem!` calls it in an
+  `iter_batched` setup step outside the measurement. The timing groups do not
+  use it, so they are unaffected.
+
+  Not every benchmark has a memory group yet; see the repository `TODO.md`.
+
 ## Running
 
 ```sh

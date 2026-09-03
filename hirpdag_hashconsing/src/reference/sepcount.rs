@@ -25,6 +25,12 @@
 //! Slots are allocated from a global pool in contiguous chunks and recycled
 //! through a free list. Chunks are never returned to the OS (the pool is an
 //! arena); the peak number of live objects bounds the pool size.
+//!
+//! Background on why `Arc` co-locates its counts with the data, and what that
+//! costs on read-mostly shared data:
+//!
+//! - <https://users.rust-lang.org/t/why-does-arc-use-one-contiguous-allocation-for-data-and-counters/113319>
+//! - <https://ddanilov.me/shared-ptr-is-evil/>
 
 use crate::reference::*;
 
