@@ -83,37 +83,25 @@ and held.
 
 Each benchmark binary registers two criterion groups.
 
-- `benches_time` (`Fibonacci`, `Churn`, ...) measures wall-clock time, with the
-  sample counts criterion needs to smooth out latency jitter.
+- `benches_time` measures wall-clock time, with the sample counts criterion
+  needs to smooth out latency jitter.
 
-- `benches_mem` (`FibonacciMem`, ...) measures the *peak heap size* reached
-  while the routine ran: the high-water mark of live bytes (allocated minus
-  freed), tracked by the `AllocBytes` criterion measurement in
-  [`support/mod.rs`](support/mod.rs) over a global allocator that forwards to
-  the system one. Allocation sizes are deterministic for a given workload, so
-  these groups run the minimum criterion allows (flat sampling, a nanosecond
-  warm-up and measurement window, so each of the ten samples is a single
-  invocation) and disable plots, which cannot be drawn from zero-variance
-  samples. The approach follows
+- `benches_mem` measures peak heap size (the high-water mark of allocated minus
+  freed bytes) via the `AllocBytes` measurement in
+  [`support/mod.rs`](support/mod.rs). Allocation sizes are deterministic, so
+  these groups run criterion's minimum (flat sampling, one invocation per
+  sample) and skip plots. Approach taken from
   [this gist](https://gist.github.com/DerSaidin/af295f89c047a049e4fc3193f520f12c).
 
-  A peak is only meaningful if the run starts from an empty interning table,
-  otherwise a preset that retains nodes across runs (the `leak_*` presets)
-  finds them already interned and appears to allocate almost nothing. This is
-  what the `reset-tables` feature is for: it generates a
-  `hirpdag_reset_tables()` that empties each type's table in place through the
-  table's existing lock, and `bench_each_config_mem!` calls it in an
-  `iter_batched` setup step outside the measurement. The timing groups do not
-  use it, so they are unaffected.
+  A peak only means anything if the run starts from an empty interning table,
+  or a preset that retains nodes across runs (`leak_*`) finds everything
+  already interned. Hence the `reset-tables` feature:
+  `bench_each_config_mem!` calls the `hirpdag_reset_tables()` it generates from
+  an `iter_batched` setup step, outside the measurement. It is on by default,
+  and `--no-default-features` fails to compile the benchmarks rather than
+  reporting misleading peaks.
 
-  `hirpdag_test_suite` enables `reset-tables` by default and it forwards to the
-  same opt-in feature in `hirpdag` / `hirpdag_hashconsing`, so plain
-  `cargo bench` measures memory correctly with nothing extra passed. Keep it
-  on: `bench_each_config_mem!` calls `hirpdag_reset_tables()` unconditionally,
-  so `--no-default-features` fails to compile the benchmarks rather than
-  silently reporting misleading peaks.
-
-  Not every benchmark has a memory group yet; see the repository `TODO.md`.
+  Not every benchmark has a memory group yet; see `TODO.md`.
 
 ## Running
 
