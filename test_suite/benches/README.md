@@ -99,11 +99,19 @@ Each benchmark binary registers two criterion groups.
 
   A peak is only meaningful if the run starts from an empty interning table,
   otherwise a preset that retains nodes across runs (the `leak_*` presets)
-  finds them already interned and appears to allocate almost nothing. The
-  `reset-tables` feature (on by default here) empties each type's table in
-  place through its existing lock; `bench_each_config_mem!` calls it in an
+  finds them already interned and appears to allocate almost nothing. This is
+  what the `reset-tables` feature is for: it generates a
+  `hirpdag_reset_tables()` that empties each type's table in place through the
+  table's existing lock, and `bench_each_config_mem!` calls it in an
   `iter_batched` setup step outside the measurement. The timing groups do not
   use it, so they are unaffected.
+
+  `hirpdag_test_suite` enables `reset-tables` by default and it forwards to the
+  same opt-in feature in `hirpdag` / `hirpdag_hashconsing`, so plain
+  `cargo bench` measures memory correctly with nothing extra passed. Keep it
+  on: `bench_each_config_mem!` calls `hirpdag_reset_tables()` unconditionally,
+  so `--no-default-features` fails to compile the benchmarks rather than
+  silently reporting misleading peaks.
 
   Not every benchmark has a memory group yet; see the repository `TODO.md`.
 
@@ -122,12 +130,3 @@ cargo bench -p hirpdag_test_suite --bench churn -- LeakHashLinear
 # Include the third-party concurrent-table backends.
 cargo bench -p hirpdag_test_suite --features third-party-tables
 ```
-
-The `reset-tables` feature exists for the memory groups: it is what gives each
-measured run an empty interning table (see [Measurements](#measurements)).
-`hirpdag_test_suite` enables it by default, and it forwards to the same opt-in
-feature in `hirpdag` / `hirpdag_hashconsing`, so plain `cargo bench` measures
-memory correctly with nothing extra passed. Keep it on when benchmarking:
-`bench_each_config_mem!` calls the `hirpdag_reset_tables()` that the feature
-generates, so `--no-default-features` fails to compile the benchmarks rather
-than silently reporting misleading peaks.
