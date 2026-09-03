@@ -79,6 +79,30 @@ and held.
   DAG-aware node-table dedup on write and re-interning through the hashcons
   table on read.
 
+## Measurements
+
+Each benchmark binary registers two criterion groups.
+
+- `benches_time` measures wall-clock time, with the sample counts criterion
+  needs to smooth out latency jitter.
+
+- `benches_mem` measures peak heap size (the high-water mark of allocated minus
+  freed bytes) via the `AllocBytes` measurement in
+  [`support/mod.rs`](support/mod.rs). Allocation sizes are deterministic, so
+  these groups run criterion's minimum (flat sampling, one invocation per
+  sample) and skip plots. Approach taken from
+  [this gist](https://gist.github.com/DerSaidin/af295f89c047a049e4fc3193f520f12c).
+
+  A peak only means anything if the run starts from an empty interning table,
+  or a preset that retains nodes across runs (`leak_*`) finds everything
+  already interned. Hence the `reset-tables` feature:
+  `bench_each_config_mem!` calls the `hirpdag_reset_tables()` it generates from
+  an `iter_batched` setup step, outside the measurement. It is on by default,
+  and `--no-default-features` fails to compile the benchmarks rather than
+  reporting misleading peaks.
+
+  Not every benchmark has a memory group yet; see `TODO.md`.
+
 ## Running
 
 ```sh
