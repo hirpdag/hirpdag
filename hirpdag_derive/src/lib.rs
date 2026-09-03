@@ -1741,15 +1741,15 @@ fn get_serialization_items(
 /// The per-root-type pieces of the roots items, one entry per
 /// `#[hirpdag(root)]` type in each.
 struct RootsItems {
-    /// `pub root_Foo: Vec<Foo>,`
+    /// `pub roots_Foo: Vec<Foo>,`
     field_declarations: proc_macro2::TokenStream,
-    /// `for root in &self.root_Foo { ... }`
+    /// `for root in &self.roots_Foo { ... }`
     fields_collect: proc_macro2::TokenStream,
-    /// `pub root_Foo: HirpdagArchiveOf<Vec<Foo>>,`
+    /// `pub roots_Foo: HirpdagArchiveOf<Vec<Foo>>,`
     archive_field_declarations: proc_macro2::TokenStream,
-    /// `root_Foo: hirpdag_archive_encode(&self.root_Foo, index)?,`
+    /// `roots_Foo: hirpdag_archive_encode(&self.roots_Foo, index)?,`
     fields_to_archive: proc_macro2::TokenStream,
-    /// `root_Foo: hirpdag_archive_decode::<Vec<Foo>>(archived.root_Foo, nodes)?,`
+    /// `roots_Foo: hirpdag_archive_decode::<Vec<Foo>>(archived.roots_Foo, nodes)?,`
     fields_from_archive: proc_macro2::TokenStream,
 }
 
@@ -1772,13 +1772,13 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
 
     quote! {
         /// The roots of a serialized archive: one vector per
-        /// `#[hirpdag(root)]` type, named `root_` plus the type's name.
+        /// `#[hirpdag(root)]` type, named `roots_` plus the type's name.
         /// Input of the serialize entry points and output of the deserialize
         /// entry points.
         ///
         /// Implements `Default`, so a subset of root types can be set with
         /// struct update syntax:
-        /// `HirpdagArchiveRoots { root_Foo: vec![x], ..Default::default() }`.
+        /// `HirpdagArchiveRoots { roots_Foo: vec![x], ..Default::default() }`.
         #[derive(Clone, Debug, Default, PartialEq, Eq)]
         #[allow(dead_code, non_snake_case)]
         pub struct HirpdagArchiveRoots {

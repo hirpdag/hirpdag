@@ -199,7 +199,7 @@ Every item generated for a data type is named after that type.  The name is carr
 | `FooBuilder` | Its [builder](#builder--to_builder--build). |
 | `rewrite_Foo` | Its method on `HirpdagRewriter` and `HirpdagRewriteDriver`. |
 | `cache_Foo` | Its table on `HirpdagMemoizeCache`. |
-| `root_Foo` | Its vector on `HirpdagArchiveRoots`, for a `#[hirpdag(root)]` struct. |
+| `roots_Foo` | Its vector on `HirpdagArchiveRoots`, for a `#[hirpdag(root)]` struct. |
 | `HirpdagStructFoo` | The inner struct holding the fields. |
 | `HirpdagArchiveStructFoo` / `HirpdagArchiveEnumFoo` | Its [archived form](#archived-form). |
 | `HIRPDAG_TABLE_Foo` | Its global hash-consing table. |
@@ -230,7 +230,7 @@ Source: `hirpdag/src/base/archive.rs`
 The list of every unique node in an archive, in post-order DFS order — children before parents.  A node reached by several paths appears once, which is how an archive preserves DAG sharing.  A `HirpdagRef` is written as a `u64` index into this table; because children always precede parents, a forward reference is invalid and cycles are unrepresentable.
 
 ### Root
-A node an archive starts from.  A struct type opts in with `#[hirpdag(root)]` and gets a vector named `root_<Type>` in the generated `HirpdagArchiveRoots`, which is the input of the serialize entry points and the output of the deserialize ones.  Those field names are part of the JSON text format; a name that is not a root of the module is rejected rather than ignored.
+A node an archive starts from.  A struct type opts in with `#[hirpdag(root)]` and gets a vector named `roots_<Type>` in the generated `HirpdagArchiveRoots`, which is the input of the serialize entry points and the output of the deserialize ones.  Those field names are part of the JSON text format; a name that is not a root of the module is rejected rather than ignored.
 
 ### Archived Form
 The plain-data twin of a hirpdag value: the same value with every `HirpdagRef` replaced by the `u64` index of the node it names.  Only this form meets serde, so the byte format never has to know about references and a reference has no serde implementation that could expand a DAG into a tree.  Named by `HirpdagArchived::Archive`, and generated per type (`HirpdagArchiveStructFoo`, `HirpdagArchiveEnumKind`, `HirpdagArchiveRootIndices`).

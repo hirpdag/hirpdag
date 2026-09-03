@@ -20,7 +20,7 @@ collision surfaced as a duplicate-definition error inside expanded code, where
 the name the user has to reason about does not appear in their source.
 
 We decided to build every generated name by prefixing or suffixing the declared
-name verbatim: `HIRPDAG_TABLE_Foo` and `root_Foo`. The mapping is then injective
+name verbatim: `HIRPDAG_TABLE_Foo` and `roots_Foo`. The mapping is then injective
 in every family, because the prefix is fixed and the suffix is the declaration,
 so no two declarations can collide and there is nothing left to validate. The
 generated code carries `#[allow(non_upper_case_globals)]` on the static and
@@ -55,7 +55,7 @@ where this decision is enforced and tested.
 The roots field name is part of the **JSON** text format: `HirpdagArchiveRootIndices`
 derives serde's `Serialize`/`Deserialize`, so its field names appear literally in
 the output. A JSON archive written before this change carries `"roots":{"foo":…}`
-and needs `"roots":{"root_Foo":…}` now. The binary format is unaffected, because
+and needs `"roots":{"roots_Foo":…}` now. The binary format is unaffected, because
 postcard is positional; the schema fingerprint is also unaffected, because a type's
 definition string does not include its generated names — and the JSON format omits
 the fingerprint by design, so nothing would have caught the change.
@@ -63,7 +63,7 @@ the fingerprint by design, so nothing would have caught the change.
 To keep that from being silent, `HirpdagArchiveRootIndices` gained
 `deny_unknown_fields` alongside its existing `default`. Without it, an old archive
 would deserialize successfully with every roots vector empty: serde ignores the
-unknown `"foo"`, and `default` fills in an empty `root_Foo`. With it, the old name
+unknown `"foo"`, and `default` fills in an empty `roots_Foo`. With it, the old name
 is an error that names the field. The two attributes compose — `default` governs
 what may be omitted, `deny_unknown_fields` what may be added — so a root type whose
 vector is empty can still be left out of hand-written JSON.

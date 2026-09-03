@@ -65,7 +65,7 @@ pub struct DataTypeNames {
     /// The builder type: `FooBuilder`.
     pub builder: Ident,
     /// This type's field on `HirpdagArchiveRoots`, when it is a
-    /// `#[hirpdag(root)]`: `root_Foo`.
+    /// `#[hirpdag(root)]`: `roots_Foo`.
     pub roots_field: Ident,
 }
 
@@ -87,7 +87,7 @@ impl DataTypeNames {
             rewrite_method: derived(format!("rewrite_{name}")),
             cache_member: derived(format!("cache_{name}")),
             builder: derived(format!("{name}Builder")),
-            roots_field: derived(format!("root_{name}")),
+            roots_field: derived(format!("roots_{name}")),
         }
     }
 
@@ -116,7 +116,7 @@ mod tests {
         assert_eq!(n.rewrite_method.to_string(), "rewrite_MessageA");
         assert_eq!(n.cache_member.to_string(), "cache_MessageA");
         assert_eq!(n.builder.to_string(), "MessageABuilder");
-        assert_eq!(n.roots_field.to_string(), "root_MessageA");
+        assert_eq!(n.roots_field.to_string(), "roots_MessageA");
         assert!(n.is_struct());
     }
 

@@ -20,7 +20,7 @@ names), plus entry points:
   human-readable JSON.
 
 Types without `#[hirpdag(root)]` can still appear anywhere *inside* the DAG;
-they just cannot be roots. Each root type gets a field named `root_` plus the
+they just cannot be roots. Each root type gets a field named `roots_` plus the
 type's name, carried through verbatim so that two types differing only in case
 cannot name the same field (see
 [ADR-0006](https://github.com/hirpdag/hirpdag/blob/main/docs/adr/0006-generated-names-from-the-declared-name.md)).
@@ -35,12 +35,12 @@ struct Expr { ... }
 struct Variables { ... }
 
 let bytes = hirpdag_serialize(&HirpdagArchiveRoots {
-    root_Expr: vec![e1, e2],
-    root_Variables: vec![vars],
+    roots_Expr: vec![e1, e2],
+    roots_Variables: vec![vars],
 })?;
 
 let out = hirpdag_deserialize(&bytes)?;
-let e1_again: &Expr = &out.root_Expr[0];
+let e1_again: &Expr = &out.roots_Expr[0];
 ```
 
 The error types are distinct (`HirpdagSerializeError` /
@@ -51,7 +51,7 @@ The error types are distinct (`HirpdagSerializeError` /
 
 The archive is a version, then a node table, then the typed roots
 (`HirpdagArchiveRoots`, serialized as one index vector per root type, keyed by
-the `root_<Type>` field name in JSON). Nodes
+the `roots_<Type>` field name in JSON). Nodes
 are written in post-order DFS order (children before parents), and
 `#[hirpdag]` struct fields that reference other nodes are encoded as `u64`
 indices into the node table. `#[hirpdag]` enum values are not hashconsed and

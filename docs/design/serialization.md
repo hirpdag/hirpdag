@@ -85,7 +85,7 @@ Archive
 │           e.g. Expr(HirpdagArchiveStructExpr)
 │              | Variables(HirpdagArchiveStructVariables)
 └── roots: HirpdagArchiveRootIndices  one Vec per #[hirpdag(root)] type, named
-                                  root_<Type>, each ref encoded as a u64 node
+                                  roots_<Type>, each ref encoded as a u64 node
                                   index
 ```
 
