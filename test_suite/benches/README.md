@@ -122,3 +122,12 @@ cargo bench -p hirpdag_test_suite --bench churn -- LeakHashLinear
 # Include the third-party concurrent-table backends.
 cargo bench -p hirpdag_test_suite --features third-party-tables
 ```
+
+The `reset-tables` feature exists for the memory groups: it is what gives each
+measured run an empty interning table (see [Measurements](#measurements)).
+`hirpdag_test_suite` enables it by default, and it forwards to the same opt-in
+feature in `hirpdag` / `hirpdag_hashconsing`, so plain `cargo bench` measures
+memory correctly with nothing extra passed. Keep it on when benchmarking:
+`bench_each_config_mem!` calls the `hirpdag_reset_tables()` that the feature
+generates, so `--no-default-features` fails to compile the benchmarks rather
+than silently reporting misleading peaks.
