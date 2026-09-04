@@ -44,7 +44,7 @@ pub enum DataTypeKind {
 /// no tokens. Only [`archive_form`](Self::archive_form), which differs between
 /// the two kinds, is resolved by kind at construction, so no call site can
 /// pick the wrong one.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DataTypeNames {
     /// Whether the declaration is a hashconsed struct or an inline enum.
     pub kind: DataTypeKind,
