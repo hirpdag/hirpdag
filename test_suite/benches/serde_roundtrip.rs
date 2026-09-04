@@ -53,7 +53,7 @@ impl core::fmt::Display for BenchSerdeParams {
 
 hirpdag_bench_configs! {
     // `root` makes Tree a serialization root (generates the
-    // HirpdagArchiveRoots.tree field and the serialize entry points).
+    // HirpdagArchiveRoots.roots_Tree field and the serialize entry points).
     #[hirpdag(root)]
     struct Tree {
         kind: TreeKind,
@@ -80,7 +80,7 @@ hirpdag_bench_configs! {
     pub fn serde_roundtrip(params: &crate::BenchSerdeParams) {
         let root = build_dag(params.nodes);
         let roots = HirpdagArchiveRoots {
-            tree: vec![root],
+            roots_Tree: vec![root],
             ..Default::default()
         };
         match params.format {

@@ -17,6 +17,7 @@ subsystem works *now*, read the design doc for it.
 | [0003](0003-rewrite-driver.md) | Separate rewrite rules from the traversal that drives them | accepted |
 | [0004](0004-archive-machinery-in-runtime-crate.md) | Keep the archive machinery in the runtime crate, behind `HirpdagArchive` | accepted, amended by 0005 |
 | [0005](0005-archive-as-plain-data.md) | Encode references to node indices outside serde, so an archive carries no ambient state | accepted |
+| [0006](0006-generated-names-from-the-declared-name.md) | Derive generated names from the declared name verbatim, never by transforming its case | accepted |
 
 Design docs, which do describe the current code:
 
