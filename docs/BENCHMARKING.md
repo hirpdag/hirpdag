@@ -18,8 +18,9 @@ compared across reference-counting and table implementations. `cargo bench
 
 ## What a run measures
 
-Timing every benchmark in every preset takes about an hour, which is too slow to
-run while working on a change. A default run therefore covers:
+Timing every benchmark in every preset is about 180 measurements -- the better
+part of an hour, too slow to run while working on a change. A default run is
+roughly ten minutes, and covers:
 
 | Group | Presets | Parameter sets |
 | --- | --- | --- |
@@ -57,6 +58,10 @@ The list accepts either the preset name (`arc_hash_linear`) or the label
 criterion reports (`ArcHashLinear`); an unknown name is an error rather than a
 silently empty run. Every benchmark binary prints the scope it is running with
 on startup.
+
+`all` is roughly three times the default run: it triples the timed measurements,
+and leaves the memory groups where they already were. The memory groups are a
+small part of either -- all 182 of them together are under a minute.
 
 Criterion's own flags still apply on top, so a run whose numbers are going to be
 published can ask for a longer measurement than the default 5s window. Filter to
