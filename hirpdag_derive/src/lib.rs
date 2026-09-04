@@ -16,6 +16,7 @@ use crate::names::{DataTypeKind, DataTypeNames};
 use proc_macro2::{Ident, Span};
 
 /// A hirpdag data type seen in the module.
+#[derive(Debug)]
 struct DataTypeEntry {
     /// Every identifier generated for this type, derived once from its
     /// declaration. Also carries whether the type is a hashconsed struct (an
@@ -74,7 +75,10 @@ pub fn hirpdag_module(
     let attrs = syn::parse_macro_input!(attr as HirpdagArgs);
     let config = HirpdagConfig::from(&attrs);
     let module = syn::parse_macro_input!(input as syn::ItemMod);
-    expand_hirpdag_module(&config, &module)
+    // The one ambient read: cargo sets this for the rustc invocation the macro
+    // runs in. Everything below is a function of its arguments.
+    let package = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
+    expand_hirpdag_module(&config, &module, &package)
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }
@@ -82,6 +86,7 @@ pub fn hirpdag_module(
 fn expand_hirpdag_module(
     config: &HirpdagConfig,
     module: &syn::ItemMod,
+    package: &str,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let (_, items) = module.content.as_ref().ok_or_else(|| {
         syn::Error::new_spanned(
@@ -89,7 +94,7 @@ fn expand_hirpdag_module(
             "#[hirpdag_module] requires an inline module: `mod name { ... }`",
         )
     })?;
-    let body = expand_module_items(config, items)?;
+    let (body, _types) = expand_module_items(config, items, package)?;
     let (inner_attrs, outer_attrs): (Vec<_>, Vec<_>) = module
         .attrs
         .iter()
@@ -109,10 +114,17 @@ fn expand_hirpdag_module(
 /// inert `#[hirpdag]` attribute become hash-consed data types, other items
 /// pass through unchanged, and the module-level code for the given
 /// configuration is appended.
+///
+/// Returns the expanded body together with what the scan learned about the
+/// module: one [`DataTypeEntry`] per `#[hirpdag]` declaration, in declaration
+/// order. The entries are what the module-level expansion is built from, and
+/// they are returned rather than written into a caller's vector so that this
+/// function is a value the tests can hold.
 fn expand_module_items(
     config: &HirpdagConfig,
     items: &[syn::Item],
-) -> syn::Result<proc_macro2::TokenStream> {
+    package: &str,
+) -> syn::Result<(proc_macro2::TokenStream, Vec<DataTypeEntry>)> {
     let mut types: Vec<DataTypeEntry> = Vec::new();
     let mut body = proc_macro2::TokenStream::new();
     for item in items {
@@ -125,17 +137,19 @@ fn expand_module_items(
                 syn::Item::Enum(e) => e.into(),
                 _ => unreachable!("take_hirpdag_attr only matches structs and enums"),
             };
-            body.extend(match &input.data {
-                syn::Data::Struct(s) => expand_hirpdag_struct(&type_config, &input, s, &mut types),
-                syn::Data::Enum(e) => expand_hirpdag_enum(&type_config, &input, e, &mut types),
+            let (tokens, entry) = match &input.data {
+                syn::Data::Struct(s) => expand_hirpdag_struct(&type_config, &input, s)?,
+                syn::Data::Enum(e) => expand_hirpdag_enum(&type_config, &input, e)?,
                 _ => unreachable!(),
-            });
+            };
+            body.extend(tokens);
+            types.push(entry);
         } else {
             body.extend(quote! { #item });
         }
     }
-    body.extend(expand_hirpdag_end(config, &types));
-    Ok(body)
+    body.extend(expand_hirpdag_end(config, &types, package));
+    Ok((body, types))
 }
 
 /// If the item is a struct or enum with a `#[hirpdag]` attribute, removes
@@ -202,10 +216,21 @@ fn get_definition_string_enum(name: &str, input_enum: &syn::DataEnum) -> String 
     s
 }
 
-fn get_fields_named(input_struct: &syn::DataStruct) -> &syn::FieldsNamed {
+/// The named fields of a `#[hirpdag]` struct.
+///
+/// Tuple and unit structs are rejected here rather than panicking: a panic in a
+/// proc macro reaches the user as "custom attribute panicked" with no span,
+/// while this points at the declaration.
+fn get_fields_named<'a>(
+    input: &syn::DeriveInput,
+    input_struct: &'a syn::DataStruct,
+) -> syn::Result<&'a syn::FieldsNamed> {
     match &input_struct.fields {
-        syn::Fields::Named(n) => n,
-        _ => panic!("`#[Hirpdag]` can only be applied to named structs and enums"),
+        syn::Fields::Named(n) => Ok(n),
+        _ => Err(syn::Error::new_spanned(
+            &input.ident,
+            "`#[hirpdag]` can only be applied to structs with named fields",
+        )),
     }
 }
 
@@ -500,8 +525,7 @@ fn expand_hirpdag_struct(
     config: &HirpdagConfig,
     input: &syn::DeriveInput,
     input_struct: &syn::DataStruct,
-    types: &mut Vec<DataTypeEntry>,
-) -> proc_macro2::TokenStream {
+) -> syn::Result<(proc_macro2::TokenStream, DataTypeEntry)> {
     let name: &Ident = &input.ident;
     let name_str = name.to_string();
 
@@ -516,17 +540,14 @@ fn expand_hirpdag_struct(
         ..
     } = names.clone();
 
-    types.push(DataTypeEntry {
+    let fields_named = get_fields_named(input, input_struct)?;
+
+    let entry = DataTypeEntry {
         names,
         is_root: config.is_root(),
-        definition: get_definition_string_struct(
-            &name_str,
-            config.is_root(),
-            get_fields_named(input_struct),
-        ),
-    });
+        definition: get_definition_string_struct(&name_str, config.is_root(), fields_named),
+    };
 
-    let fields_named = get_fields_named(input_struct);
     let fields_declarations = get_fields_declarations(fields_named);
     let fields_parameters = get_fields_parameters(fields_named);
     let fields_list = get_fields_list(fields_named);
@@ -545,7 +566,7 @@ fn expand_hirpdag_struct(
 
     let default_normalizer = get_default_normalizer(config, fields_named);
 
-    quote! {
+    let tokens = quote! {
         use hirpdag::base::*;
 
         #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -776,7 +797,9 @@ fn expand_hirpdag_struct(
                 #fields_collect
             }
         }
-    }
+    };
+
+    Ok((tokens, entry))
 }
 
 fn get_variants_declarations(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
@@ -922,14 +945,16 @@ fn expand_hirpdag_enum(
     config: &HirpdagConfig,
     input: &syn::DeriveInput,
     input_enum: &syn::DataEnum,
-    types: &mut Vec<DataTypeEntry>,
-) -> proc_macro2::TokenStream {
+) -> syn::Result<(proc_macro2::TokenStream, DataTypeEntry)> {
     let name: &Ident = &input.ident;
 
     let name_str = name.to_string();
 
     if config.is_root() {
-        panic!("`#[hirpdag(root)]` can only be applied to structs; enums are not hashconsed");
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "`#[hirpdag(root)]` can only be applied to structs; enums are not hashconsed",
+        ));
     }
 
     let names = DataTypeNames::new(name, DataTypeKind::Enum);
@@ -939,11 +964,11 @@ fn expand_hirpdag_enum(
         ..
     } = names.clone();
 
-    types.push(DataTypeEntry {
+    let entry = DataTypeEntry {
         names,
         is_root: false,
         definition: get_definition_string_enum(&name_str, input_enum),
-    });
+    };
 
     let variants_declarations = get_variants_declarations(input_enum);
     let variants_compute_meta = get_variants_compute_meta(input_enum);
@@ -954,7 +979,7 @@ fn expand_hirpdag_enum(
     let variants_from_archive =
         get_variants_from_archive(input_enum, name, &hirpdag_archive_enum_name);
 
-    quote! {
+    let tokens = quote! {
         use hirpdag::base::*;
 
         #[derive(Hash, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1037,7 +1062,9 @@ fn expand_hirpdag_enum(
                 })
             }
         }
-    }
+    };
+
+    Ok((tokens, entry))
 }
 
 /// One method of the user-facing `HirpdagRewriter` trait: the rewrite rule for
@@ -1221,7 +1248,11 @@ fn get_cache_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
 /// the `#[hirpdag]` types in the module: the Impl* type aliases, the
 /// HirpdagRewriter trait, memoized rewriting, and the serialization
 /// machinery.
-fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_macro2::TokenStream {
+fn expand_hirpdag_end(
+    config: &HirpdagConfig,
+    types: &[DataTypeEntry],
+    package: &str,
+) -> proc_macro2::TokenStream {
     let rewrite_methods: proc_macro2::TokenStream = types
         .iter()
         .map(|entry| get_rewrite_datatype(&entry.names))
@@ -1292,16 +1323,15 @@ fn expand_hirpdag_end(config: &HirpdagConfig, types: &[DataTypeEntry]) -> proc_m
         fnv1a_64(&definitions.join("\n"))
     };
     let schema_name = {
-        // The package being compiled (cargo sets this for the rustc
-        // invocation the macro runs in). Stable proc macros cannot get the
-        // source file name, so package name + type names identify the
-        // hirpdag_end for debugging purposes.
-        let pkg = std::env::var("CARGO_PKG_NAME").unwrap_or_default();
+        // Stable proc macros cannot get the source file name, so the package
+        // being compiled plus the type names identify the schema for debugging
+        // purposes. The package name is passed in (read from the environment at
+        // the attribute) so that expansion stays a function of its arguments.
         let type_names: Vec<String> = types
             .iter()
             .map(|entry| entry.names.ref_name.to_string())
             .collect();
-        let mut name = format!("{}:{}", pkg, type_names.join(","));
+        let mut name = format!("{}:{}", package, type_names.join(","));
         const SCHEMA_NAME_MAX: usize = 128;
         const ELLIPSIS: &str = "...";
         if name.len() > SCHEMA_NAME_MAX {
@@ -1867,5 +1897,148 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
         ) -> Result<HirpdagArchiveRoots, hirpdag::base::HirpdagDeserializeError> {
             hirpdag::base::archive_deserialize_json::<HirpdagArchiveSchema>(text)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(args: &str) -> HirpdagConfig {
+        HirpdagConfig::from(&syn::parse_str::<HirpdagArgs>(args).expect("attribute args parse"))
+    }
+
+    /// The items of an inline module, as `#[hirpdag_module]` sees them.
+    fn items(src: &str) -> Vec<syn::Item> {
+        let module: syn::ItemMod = syn::parse_str(src).expect("module parse");
+        module.content.expect("inline module").1
+    }
+
+    /// What the scan learned about a module: one entry per `#[hirpdag]`
+    /// declaration, in declaration order.
+    fn scan(src: &str) -> Vec<DataTypeEntry> {
+        expand_module_items(&config(""), &items(src), "test_pkg")
+            .expect("expansion")
+            .1
+    }
+
+    const MODULE: &str = r#"
+        mod datamodel {
+            #[hirpdag(root)]
+            struct Item {
+                name: String,
+                deps: Vec<Item>,
+            }
+
+            #[hirpdag]
+            enum Kind {
+                Num(u32),
+                Sum(Vec<Node>),
+            }
+
+            #[hirpdag]
+            struct Node {
+                kind: Kind,
+            }
+
+            pub fn not_a_data_type() {}
+        }
+    "#;
+
+    #[test]
+    fn scan_records_every_declaration_in_order() {
+        let seen: Vec<(String, bool, bool)> = scan(MODULE)
+            .iter()
+            .map(|e| (e.names.ref_name.to_string(), e.names.is_struct(), e.is_root))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                ("Item".to_string(), true, true),
+                ("Kind".to_string(), false, false),
+                ("Node".to_string(), true, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn items_without_the_attribute_are_not_data_types() {
+        // `not_a_data_type` is in the module but not in the scan.
+        assert_eq!(scan(MODULE).len(), 3);
+    }
+
+    #[test]
+    fn definition_strings_describe_the_declaration() {
+        let types = scan(MODULE);
+        assert_eq!(
+            types[0].definition,
+            "root struct Item;name:String;deps:Vec < Item >"
+        );
+        assert_eq!(types[1].definition, "enum Kind;Num(u32);Sum(Vec < Node >)");
+        assert_eq!(types[2].definition, "struct Node;kind:Kind");
+    }
+
+    #[test]
+    fn the_root_marker_is_part_of_the_definition() {
+        let plain = scan("mod m { #[hirpdag] struct S { a: u32 } }");
+        let root = scan("mod m { #[hirpdag(root)] struct S { a: u32 } }");
+        assert_eq!(plain[0].definition, "struct S;a:u32");
+        assert_eq!(root[0].definition, "root struct S;a:u32");
+        assert_ne!(plain[0].definition, root[0].definition);
+    }
+
+    #[test]
+    fn a_tuple_struct_is_rejected_with_a_message_naming_the_problem() {
+        let err = expand_module_items(
+            &config(""),
+            &items("mod m { #[hirpdag] struct T(i32); }"),
+            "test_pkg",
+        )
+        .expect_err("tuple structs are not hashconsable");
+        assert!(
+            err.to_string().contains("named fields"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn a_root_enum_is_rejected() {
+        let err = expand_module_items(
+            &config(""),
+            &items("mod m { #[hirpdag(root)] enum E { A(u32) } }"),
+            "test_pkg",
+        )
+        .expect_err("enums are not hashconsed, so they cannot be roots");
+        assert!(
+            err.to_string().contains("can only be applied to structs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn a_non_inline_module_is_rejected() {
+        let module: syn::ItemMod = syn::parse_str("mod m;").expect("module parse");
+        let err = expand_hirpdag_module(&config(""), &module, "test_pkg")
+            .expect_err("there is nothing to expand");
+        assert!(
+            err.to_string().contains("inline module"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The package name is passed in rather than read from the environment, so
+    /// the expansion is a function of its arguments.
+    #[test]
+    fn the_package_name_reaches_the_schema_name() {
+        let (tokens, _) = expand_module_items(
+            &config(""),
+            &items("mod m { #[hirpdag] struct S { a: u32 } }"),
+            "some_package",
+        )
+        .expect("expansion");
+        assert!(
+            tokens.to_string().contains("\"some_package:S\""),
+            "schema name not found in the expansion"
+        );
     }
 }
