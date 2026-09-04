@@ -1,15 +1,33 @@
 // Shared benchmark support.
 //
-// `hirpdag_bench_configs!` expands the given items (the `#[hirpdag]` type
-// definitions and the benchmark implementation) once per hash-consing
-// configuration preset, each in a `#[hirpdag_module]` module named after
-// the preset. `bench_each_config!` registers a criterion benchmark for a
-// function from each of those modules; its module/label list must stay in
-// sync with the preset list in `hirpdag_bench_configs!`.
+// `hirpdag_each_config!` holds the list of hash-consing configuration presets.
+// `hirpdag_bench_configs!` drives it to expand the given items (the `#[hirpdag]`
+// type definitions and the benchmark implementation) once per preset, each in a
+// `#[hirpdag_module]` module named after it, and the `bench_*` macros drive it
+// to register a criterion benchmark for a function from each of those modules.
+//
+// Every benchmark is compiled for every preset, but a run does not measure
+// every one of them: timing a benchmark parameter set costs seconds, so
+//
+//   * the timed groups measure `KEY_CONFIGS` (two presets),
+//   * except `primes`, the config-sweep benchmark, which times every preset,
+//   * and the memory groups measure every preset, because a peak-heap
+//     measurement is deterministic and takes one iteration per sample.
+//
+// `HIRPDAG_BENCH_SCOPE` overrides that: `all` measures every preset (and every
+// parameter set) in every group, `key` narrows every group to `KEY_CONFIGS`,
+// and a comma-separated preset list measures exactly those. See `Coverage`,
+// `config_enabled` and `time_params` below, and `docs/BENCHMARKING.md`.
 //
 // This module also provides an *allocation-size* measurement so the same
 // benchmark bodies can be run under criterion both for wall-clock time and
 // for the number of bytes allocated. See `AllocBytes` below.
+
+// Every bench binary compiles this whole module, but no single benchmark uses
+// all of it: only the config-sweep benchmark registers with
+// `bench_all_configs!`, and only benchmarks with more parameter sets than the
+// timed groups run call `time_params`.
+#![allow(dead_code, unused_macros)]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -195,105 +213,351 @@ impl criterion::measurement::ValueFormatter for AllocBytesFormatter {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Which configurations a run measures
+// -----------------------------------------------------------------------------
+
+/// The presets every benchmark is *compiled* for, and which any run may
+/// therefore select. Must stay in sync with the module lists in
+/// `hirpdag_bench_configs!` and `hirpdag_each_config!`.
+pub const CORE_CONFIGS: &[&str] = &[
+    "arc_hash_linear",
+    "arc_hash_sorted",
+    "leak_hash_linear",
+    "sep_hash_linear",
+    "seppad_hash_linear",
+    "sepu32_hash_linear",
+    "tlc_hash_linear",
+];
+
+/// Presets compiled only with the `third-party-tables` feature.
+pub const THIRD_PARTY_CONFIGS: &[&str] = &[
+    "arc_tovweaktable",
+    "arc_dashmap",
+    "arc_flurry",
+    "arc_skipmap",
+    "arc_arcswap",
+];
+
+/// Whether [`THIRD_PARTY_CONFIGS`] are compiled into this binary.
+pub const THIRD_PARTY_COMPILED: bool = cfg!(feature = "third-party-tables");
+
+/// The presets a *timed* benchmark measures by default.
+///
+/// Timing one benchmark parameter set takes seconds, so running every preset
+/// for every benchmark costs the better part of an hour. These two are the pair
+/// that bounds the interesting axis: `arc_hash_linear` is the default preset
+/// (atomic reference counting, weak entries evicted from the table), and
+/// `leak_hash_linear` is the same table with no reference counting and no frees
+/// at all, so the gap between them is what the lifecycle machinery costs. The
+/// remaining presets vary within that gap, and a run that wants them says so
+/// (see [`Coverage`] and `HIRPDAG_BENCH_SCOPE`).
+pub const KEY_CONFIGS: &[&str] = &["arc_hash_linear", "leak_hash_linear"];
+
+/// How much of the preset list a benchmark group covers when the run does not
+/// ask for something specific.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum Coverage {
+    /// [`KEY_CONFIGS`] only. What the timed groups use, because their cost is
+    /// linear in the number of presets.
+    Key,
+    /// Every compiled-in preset. What the memory groups use (a peak-heap
+    /// measurement is deterministic, so it is ten single-iteration samples --
+    /// cheap enough to cover the whole list), and what the designated
+    /// config-sweep benchmark uses for timing too.
+    Full,
+}
+
+/// Environment variable selecting which presets a run measures.
+pub const SCOPE_ENV: &str = "HIRPDAG_BENCH_SCOPE";
+
+/// Parsed value of [`SCOPE_ENV`].
+enum Scope {
+    /// Unset: each group measures what its [`Coverage`] asks for.
+    Default,
+    /// `key`: [`KEY_CONFIGS`] everywhere, including the groups that would
+    /// otherwise cover every preset.
+    Key,
+    /// `all`: every preset everywhere, and every benchmark parameter set.
+    All,
+    /// A comma-separated preset list: exactly those, everywhere. Holds the
+    /// names as written; matching normalizes both sides.
+    Only(Vec<String>),
+}
+
+/// Compare preset names ignoring case and `_`, so both the preset name
+/// (`arc_hash_linear`) and the label criterion reports (`ArcHashLinear`) are
+/// accepted in [`SCOPE_ENV`].
+fn normalize(name: &str) -> String {
+    name.chars()
+        .filter(|c| *c != '_')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn scope() -> &'static Scope {
+    static SCOPE: std::sync::OnceLock<Scope> = std::sync::OnceLock::new();
+    SCOPE.get_or_init(|| {
+        let scope = parse_scope();
+        describe_scope(&scope);
+        scope
+    })
+}
+
+fn parse_scope() -> Scope {
+    let raw = match std::env::var(SCOPE_ENV) {
+        Ok(raw) => raw,
+        Err(_) => return Scope::Default,
+    };
+    let raw = raw.trim();
+    if raw.is_empty() || raw.eq_ignore_ascii_case("default") {
+        return Scope::Default;
+    }
+    if raw.eq_ignore_ascii_case("key") {
+        return Scope::Key;
+    }
+    if raw.eq_ignore_ascii_case("all") {
+        return Scope::All;
+    }
+    let names: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect();
+    assert!(!names.is_empty(), "{}: no presets named", SCOPE_ENV);
+    // A typo here would silently measure nothing, so reject unknown names
+    // rather than running an empty benchmark suite.
+    for name in &names {
+        if CORE_CONFIGS.iter().any(|c| normalize(c) == normalize(name)) {
+            continue;
+        }
+        if THIRD_PARTY_CONFIGS
+            .iter()
+            .any(|c| normalize(c) == normalize(name))
+        {
+            assert!(
+                THIRD_PARTY_COMPILED,
+                "{}: preset `{}` needs `--features third-party-tables`",
+                SCOPE_ENV, name
+            );
+            continue;
+        }
+        panic!(
+            "{}: unknown preset `{}`; known presets: {}",
+            SCOPE_ENV,
+            name,
+            CORE_CONFIGS
+                .iter()
+                .chain(THIRD_PARTY_CONFIGS)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    Scope::Only(names)
+}
+
+/// Print, once per benchmark binary, which presets this run measures. Without
+/// this a trimmed default run looks like benchmarks silently went missing.
+fn describe_scope(scope: &Scope) {
+    let what = match scope {
+        Scope::Default => format!(
+            "timed groups: {}; memory groups and the config sweep: every preset",
+            KEY_CONFIGS.join(", ")
+        ),
+        Scope::Key => format!("every group: {}", KEY_CONFIGS.join(", ")),
+        Scope::All => "every group: every preset, every parameter set".to_string(),
+        Scope::Only(names) => format!("every group: {}", names.join(", ")),
+    };
+    eprintln!("hirpdag benches: {what} (set {SCOPE_ENV}=all|key|<preset,...> to change)");
+}
+
+/// Whether `preset` is measured by a group with this `coverage`.
+pub fn config_enabled(preset: &str, coverage: Coverage) -> bool {
+    match scope() {
+        Scope::Default => coverage == Coverage::Full || KEY_CONFIGS.contains(&preset),
+        Scope::Key => KEY_CONFIGS.contains(&preset),
+        Scope::All => true,
+        Scope::Only(names) => names.iter().any(|n| normalize(n) == normalize(preset)),
+    }
+}
+
+/// The benchmark parameter sets a *timed* group runs: the first `key` entries
+/// of `all`, or all of them when the run asked for every configuration. Order
+/// each benchmark's parameter list so the representative sets come first.
+///
+/// Memory groups pass every parameter set instead: one iteration per sample
+/// makes the extra sets nearly free.
+pub fn time_params<T>(all: &[T], key: usize) -> &[T] {
+    match scope() {
+        Scope::All => all,
+        _ => &all[..key.min(all.len())],
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Criterion configuration
+// -----------------------------------------------------------------------------
+
+/// Configuration shared by the wall-clock groups.
+///
+/// These workloads run for milliseconds per iteration and are not latency
+/// jittery, so a short window is enough; raise it for a run whose numbers are
+/// going to be published, with
+/// `cargo bench -- --measurement-time 15 --warm-up-time 3`.
+pub fn time_criterion() -> criterion::Criterion {
+    criterion::Criterion::default()
+        .sample_size(10)
+        .warm_up_time(core::time::Duration::from_secs(2))
+        .measurement_time(core::time::Duration::from_secs(5))
+}
+
+/// Configuration shared by the memory (peak-heap) groups.
+///
+/// Allocation sizes are deterministic for a given workload, so this asks for
+/// the minimum number of runs: flat sampling with a measurement window of
+/// nothing, making each of criterion's ten samples a single invocation.
+/// `without_plots()` because criterion cannot render a distribution from
+/// zero-variance samples.
+pub fn mem_criterion() -> criterion::Criterion<AllocBytes> {
+    criterion::Criterion::default()
+        .with_measurement(AllocBytes)
+        .without_plots()
+        .sample_size(10)
+        .warm_up_time(core::time::Duration::from_nanos(1))
+        .measurement_time(core::time::Duration::from_nanos(1))
+}
+
+// -----------------------------------------------------------------------------
+// Per-configuration expansion and registration
+// -----------------------------------------------------------------------------
+
+/// Expands `$callback!(@one <module>, <label>, <preset>, $($args)*)` once per
+/// configuration: the one place the preset list is written, driving both the
+/// module expansion below and the benchmark registration macros. It must stay
+/// in sync with `CORE_CONFIGS` / `THIRD_PARTY_CONFIGS` above, which is what
+/// `HIRPDAG_BENCH_SCOPE` is validated against.
+macro_rules! hirpdag_each_config {
+    ($callback:ident, $($args:tt)*) => {
+        $callback!(@one arc_hash_linear, "ArcHashLinear", "arc_hash_linear", $($args)*);
+        $callback!(@one arc_hash_sorted, "ArcHashSorted", "arc_hash_sorted", $($args)*);
+        $callback!(@one leak_hash_linear, "LeakHashLinear", "leak_hash_linear", $($args)*);
+        $callback!(@one sep_hash_linear, "SepHashLinear", "sep_hash_linear", $($args)*);
+        $callback!(@one seppad_hash_linear, "SepPadHashLinear", "seppad_hash_linear", $($args)*);
+        $callback!(@one sepu32_hash_linear, "SepU32HashLinear", "sepu32_hash_linear", $($args)*);
+        $callback!(@one tlc_hash_linear, "TlcHashLinear", "tlc_hash_linear", $($args)*);
+        // Tables backed by third-party collection crates (feature-gated).
+        #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_tovweaktable, "ArcTovWeakTable", "arc_tovweaktable", $($args)*);
+        #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_dashmap, "ArcDashMap", "arc_dashmap", $($args)*);
+        #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_flurry, "ArcFlurry", "arc_flurry", $($args)*);
+        #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_skipmap, "ArcSkipMap", "arc_skipmap", $($args)*);
+        #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_arcswap, "ArcArcSwap", "arc_arcswap", $($args)*);
+    };
+}
+
+/// Expands the given items once per configuration preset, each in a
+/// `#[hirpdag_module]` module named after the preset. Drives
+/// `hirpdag_each_config!` so the preset list is written once; the label that
+/// list carries is only used on the registration side, and is ignored here.
 macro_rules! hirpdag_bench_configs {
-    (@one $module:ident, $preset:literal, $($items:item)*) => {
+    (@one $module:ident, $label:literal, $preset:literal, $($items:item)*) => {
         #[hirpdag::hirpdag_module(preset = $preset)]
         mod $module {
             $($items)*
         }
     };
     ($($items:item)*) => {
-        hirpdag_bench_configs!(@one arc_hash_linear, "arc_hash_linear", $($items)*);
-        hirpdag_bench_configs!(@one arc_hash_sorted, "arc_hash_sorted", $($items)*);
-        hirpdag_bench_configs!(@one leak_hash_linear, "leak_hash_linear", $($items)*);
-        hirpdag_bench_configs!(@one sep_hash_linear, "sep_hash_linear", $($items)*);
-        hirpdag_bench_configs!(@one seppad_hash_linear, "seppad_hash_linear", $($items)*);
-        hirpdag_bench_configs!(@one sepu32_hash_linear, "sepu32_hash_linear", $($items)*);
-        hirpdag_bench_configs!(@one tlc_hash_linear, "tlc_hash_linear", $($items)*);
-        // Tables backed by third-party collection crates (feature-gated).
-        #[cfg(feature = "third-party-tables")]
-        hirpdag_bench_configs!(@one arc_tovweaktable, "arc_tovweaktable", $($items)*);
-        #[cfg(feature = "third-party-tables")]
-        hirpdag_bench_configs!(@one arc_dashmap, "arc_dashmap", $($items)*);
-        #[cfg(feature = "third-party-tables")]
-        hirpdag_bench_configs!(@one arc_flurry, "arc_flurry", $($items)*);
-        #[cfg(feature = "third-party-tables")]
-        hirpdag_bench_configs!(@one arc_skipmap, "arc_skipmap", $($items)*);
-        #[cfg(feature = "third-party-tables")]
-        hirpdag_bench_configs!(@one arc_arcswap, "arc_arcswap", $($items)*);
+        hirpdag_each_config!(hirpdag_bench_configs, $($items)*);
     };
 }
 
+/// Registers one (configuration, parameter set) benchmark, if the run measures
+/// that configuration. The `time` form measures wall-clock time; the `mem` form
+/// measures peak heap, and precedes each measured invocation with
+/// `hirpdag_reset_tables()` in an `iter_batched` setup step (run *outside* the
+/// measurement) so every build starts from an empty interning table. Without
+/// that, presets which retain nodes across runs (`leak_*`) would find them
+/// already interned from a previous invocation and appear to allocate almost
+/// nothing.
+macro_rules! bench_one_config {
+    (@one $module:ident, $label:literal, $preset:literal, time,
+     $coverage:expr, $group:expr, $params:expr, $function:ident) => {
+        if crate::support::config_enabled($preset, $coverage) {
+            $group.bench_with_input(
+                criterion::BenchmarkId::new($label, $params),
+                &$params,
+                |b, params| b.iter(|| crate::$module::$function(std::hint::black_box(params))),
+            );
+        }
+    };
+    (@one $module:ident, $label:literal, $preset:literal, mem,
+     $coverage:expr, $group:expr, $params:expr, $function:ident) => {
+        if crate::support::config_enabled($preset, $coverage) {
+            $group.bench_with_input(
+                criterion::BenchmarkId::new($label, $params),
+                &$params,
+                |b, params| {
+                    b.iter_batched(
+                        || crate::$module::hirpdag_reset_tables(),
+                        |_| crate::$module::$function(std::hint::black_box(params)),
+                        criterion::BatchSize::PerIteration,
+                    )
+                },
+            );
+        }
+    };
+}
+
+/// Times `$function` in the [`Coverage::Key`] presets: what most benchmarks
+/// use, so that a default `cargo bench` stays minutes rather than an hour.
 macro_rules! bench_each_config {
-    (@one $group:expr, $params:expr, $function:ident, $module:ident, $label:literal) => {
-        $group.bench_with_input(
-            criterion::BenchmarkId::new($label, $params),
-            &$params,
-            |b, params| b.iter(|| crate::$module::$function(std::hint::black_box(params))),
-        );
-    };
     ($group:expr, $params:expr, $function:ident) => {
-        bench_each_config!(@one $group, $params, $function, arc_hash_linear, "ArcHashLinear");
-        bench_each_config!(@one $group, $params, $function, arc_hash_sorted, "ArcHashSorted");
-        bench_each_config!(@one $group, $params, $function, leak_hash_linear, "LeakHashLinear");
-        bench_each_config!(@one $group, $params, $function, sep_hash_linear, "SepHashLinear");
-        bench_each_config!(@one $group, $params, $function, seppad_hash_linear, "SepPadHashLinear");
-        bench_each_config!(@one $group, $params, $function, sepu32_hash_linear, "SepU32HashLinear");
-        bench_each_config!(@one $group, $params, $function, tlc_hash_linear, "TlcHashLinear");
-        // Tables backed by third-party collection crates (feature-gated).
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config!(@one $group, $params, $function, arc_tovweaktable, "ArcTovWeakTable");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config!(@one $group, $params, $function, arc_dashmap, "ArcDashMap");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config!(@one $group, $params, $function, arc_flurry, "ArcFlurry");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
+        hirpdag_each_config!(
+            bench_one_config,
+            time,
+            crate::support::Coverage::Key,
+            $group,
+            $params,
+            $function
+        );
     };
 }
 
-/// Like [`bench_each_config!`], but for the memory (peak-heap) measurement.
-///
-/// Each measured invocation is preceded by `hirpdag_reset_tables()` in an
-/// `iter_batched` setup step (run *outside* the measurement) with
-/// `BatchSize::PerIteration`, so every build starts from an empty interning
-/// table. Without this, presets that retain nodes across runs (`leak_*`) would
-/// find them already interned from a previous invocation and appear to allocate
-/// almost nothing.
-macro_rules! bench_each_config_mem {
-    (@one $group:expr, $params:expr, $function:ident, $module:ident, $label:literal) => {
-        $group.bench_with_input(
-            criterion::BenchmarkId::new($label, $params),
-            &$params,
-            |b, params| {
-                b.iter_batched(
-                    || crate::$module::hirpdag_reset_tables(),
-                    |_| crate::$module::$function(std::hint::black_box(params)),
-                    criterion::BatchSize::PerIteration,
-                )
-            },
+/// Times `$function` in *every* configuration. Reserved for the designated
+/// config-sweep benchmark (`primes`), which exists to compare the hash-consing
+/// implementations against each other; every other benchmark measures the key
+/// presets and widens only on request.
+macro_rules! bench_all_configs {
+    ($group:expr, $params:expr, $function:ident) => {
+        hirpdag_each_config!(
+            bench_one_config,
+            time,
+            crate::support::Coverage::Full,
+            $group,
+            $params,
+            $function
         );
     };
+}
+
+/// Measures peak heap for `$function` in every configuration: unlike timing,
+/// this is ten single-iteration samples of a deterministic quantity, so full
+/// coverage is cheap and every benchmark gets it.
+macro_rules! bench_each_config_mem {
     ($group:expr, $params:expr, $function:ident) => {
-        bench_each_config_mem!(@one $group, $params, $function, arc_hash_linear, "ArcHashLinear");
-        bench_each_config_mem!(@one $group, $params, $function, arc_hash_sorted, "ArcHashSorted");
-        bench_each_config_mem!(@one $group, $params, $function, leak_hash_linear, "LeakHashLinear");
-        bench_each_config_mem!(@one $group, $params, $function, sep_hash_linear, "SepHashLinear");
-        bench_each_config_mem!(@one $group, $params, $function, seppad_hash_linear, "SepPadHashLinear");
-        bench_each_config_mem!(@one $group, $params, $function, sepu32_hash_linear, "SepU32HashLinear");
-        bench_each_config_mem!(@one $group, $params, $function, tlc_hash_linear, "TlcHashLinear");
-        // Tables backed by third-party collection crates (feature-gated).
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config_mem!(@one $group, $params, $function, arc_tovweaktable, "ArcTovWeakTable");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config_mem!(@one $group, $params, $function, arc_dashmap, "ArcDashMap");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config_mem!(@one $group, $params, $function, arc_flurry, "ArcFlurry");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config_mem!(@one $group, $params, $function, arc_skipmap, "ArcSkipMap");
-        #[cfg(feature = "third-party-tables")]
-        bench_each_config_mem!(@one $group, $params, $function, arc_arcswap, "ArcArcSwap");
+        hirpdag_each_config!(
+            bench_one_config,
+            mem,
+            crate::support::Coverage::Full,
+            $group,
+            $params,
+            $function
+        );
     };
 }

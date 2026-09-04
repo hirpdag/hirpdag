@@ -56,9 +56,12 @@ hirpdag_bench_configs! {
 
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
+// One parameter set, so the timed and memory groups cover the same sweep.
+const CONFIGS: [usize; 1] = [2000];
+
 fn bench_fibonacci_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("Fibonacci");
-    for n in [2000usize].iter() {
+    for n in CONFIGS.iter() {
         let params = BenchFibParams { n: *n };
         bench_each_config!(group, params, build_fibonacci);
     }
@@ -68,7 +71,7 @@ fn bench_fibonacci_time(c: &mut Criterion) {
 fn bench_fibonacci_mem(c: &mut Criterion<support::AllocBytes>) {
     let mut group = c.benchmark_group("FibonacciMem");
     group.sampling_mode(SamplingMode::Flat);
-    for n in [2000usize].iter() {
+    for n in CONFIGS.iter() {
         let params = BenchFibParams { n: *n };
         bench_each_config_mem!(group, params, build_fibonacci);
     }
@@ -77,24 +80,16 @@ fn bench_fibonacci_mem(c: &mut Criterion<support::AllocBytes>) {
 
 criterion_group! {
     name = benches_time;
-    config = Criterion::default()
-        .sample_size(10)
-        .measurement_time(core::time::Duration::from_secs(15));
+    config = support::time_criterion();
     targets = bench_fibonacci_time
 }
 
 // Memory (peak-heap) benchmark; see `support::AllocBytes` and
 // `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
-// setup. `without_plots()` because criterion cannot render a distribution from
-// zero-variance samples.
+// setup.
 criterion_group! {
     name = benches_mem;
-    config = Criterion::default()
-        .with_measurement(support::AllocBytes)
-        .without_plots()
-        .sample_size(10)
-        .warm_up_time(core::time::Duration::from_nanos(1))
-        .measurement_time(core::time::Duration::from_nanos(1));
+    config = support::mem_criterion();
     targets = bench_fibonacci_mem
 }
 

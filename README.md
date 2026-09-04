@@ -225,6 +225,21 @@ assert_eq!(out.roots_Expr[0], e);
 See `docs/design/serialization.md` for the format and how it works, and
 `docs/adr/` for the decisions behind it.
 
+## Benchmarks
+
+The benchmark suite is in `test_suite/benches/`, and runs every workload against
+the different hash-consing configurations:
+
+```
+$ cargo bench                          # default scope: minutes
+$ HIRPDAG_BENCH_SCOPE=all cargo bench  # every preset, every parameter set
+```
+
+A default run times two key presets for most benchmarks (and every preset for
+`primes`, the config sweep), and measures peak heap for every preset. See
+[docs/BENCHMARKING.md](docs/BENCHMARKING.md) for the scope flag, the memory
+measurement, and how to compare runs.
+
 ## Benchmark Results
 
 ![Primes2000_p1](https://raw.github.com/hirpdag/hirpdag/main/docs/benchmark_results/primes2000_p1_violin.svg)

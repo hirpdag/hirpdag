@@ -98,27 +98,52 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn bench_serde_roundtrip(c: &mut Criterion) {
+const NODES: usize = 2000;
+const FORMATS: [SerdeFormat; 2] = [SerdeFormat::Binary, SerdeFormat::Json];
+
+fn bench_serde_roundtrip_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("SerdeRoundTrip");
-    for nodes in [2000usize].iter() {
-        for format in [SerdeFormat::Binary, SerdeFormat::Json].iter() {
-            let params = BenchSerdeParams {
-                nodes: *nodes,
-                format: *format,
-            };
-            bench_each_config!(group, params, serde_roundtrip);
-        }
+    for format in FORMATS.iter() {
+        let params = BenchSerdeParams {
+            nodes: NODES,
+            format: *format,
+        };
+        bench_each_config!(group, params, serde_roundtrip);
+    }
+    group.finish();
+}
+
+// Peak heap covers the transient cost the timing hides: the serialized buffer
+// (much larger for JSON than for postcard) and the node table built on the way
+// in, both live at once alongside the graph itself.
+fn bench_serde_roundtrip_mem(c: &mut Criterion<support::AllocBytes>) {
+    let mut group = c.benchmark_group("SerdeRoundTripMem");
+    group.sampling_mode(SamplingMode::Flat);
+    for format in FORMATS.iter() {
+        let params = BenchSerdeParams {
+            nodes: NODES,
+            format: *format,
+        };
+        bench_each_config_mem!(group, params, serde_roundtrip);
     }
     group.finish();
 }
 
 criterion_group! {
-    name = benches;
-    config = Criterion::default()
-        .sample_size(10)
-        .measurement_time(core::time::Duration::from_secs(15));
-    targets = bench_serde_roundtrip
+    name = benches_time;
+    config = support::time_criterion();
+    targets = bench_serde_roundtrip_time
 }
-criterion_main!(benches);
+
+// Memory (peak-heap) benchmark; see `support::AllocBytes` and
+// `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
+// setup.
+criterion_group! {
+    name = benches_mem;
+    config = support::mem_criterion();
+    targets = bench_serde_roundtrip_mem
+}
+
+criterion_main!(benches_time, benches_mem);
