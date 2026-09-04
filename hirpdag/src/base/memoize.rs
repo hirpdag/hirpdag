@@ -81,15 +81,23 @@ where
     V: Clone,
     HB: std::hash::BuildHasher,
 {
-    fn get_shard(&self, key: &K) -> &std::sync::Mutex<std::collections::HashMap<K, V>> {
-        let hash = self.hash_builder.hash_one(key);
+    /// The shard `key` belongs to, selected by the low bits of its hash.
+    ///
+    /// Split from the hashing so a caller that touches the same key twice
+    /// (see [`get_or_else`](Self::get_or_else)) can hash it once and reuse the
+    /// shard for both visits.
+    fn shard_for_hash(&self, hash: u64) -> &std::sync::Mutex<std::collections::HashMap<K, V>> {
         let mask = (N_SHARDS - 1) as u64;
         &self.shards[(hash & mask) as usize]
     }
 
     /// The value remembered for `key`, if there is one.
     pub fn get(&self, key: &K) -> Option<V> {
-        self.get_shard(key).lock().unwrap().get(key).cloned()
+        self.shard_for_hash(self.hash_builder.hash_one(key))
+            .lock()
+            .unwrap()
+            .get(key)
+            .cloned()
     }
 
     /// The value remembered for `key`, computing and remembering it first if
@@ -107,11 +115,18 @@ where
     where
         F: FnOnce() -> V,
     {
-        if let Some(hit) = self.get(key) {
+        let shard = self.shard_for_hash(self.hash_builder.hash_one(key));
+
+        // Bind the lookup to a local so the lock is released before `compute`
+        // runs: it is free to recurse into this table, including into this
+        // very shard.
+        let hit = shard.lock().unwrap().get(key).cloned();
+        if let Some(hit) = hit {
             return hit;
         }
+
         let value = compute();
-        self.get_shard(key)
+        shard
             .lock()
             .unwrap()
             .entry(key.clone())
@@ -134,8 +149,14 @@ where
             .sum()
     }
 
+    /// Whether the table remembers nothing at all.
+    ///
+    /// Stops at the first shard with an entry, rather than locking every shard
+    /// to count what it holds.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.shards
+            .iter()
+            .all(|shard| shard.lock().unwrap().is_empty())
     }
 }
 
@@ -187,6 +208,7 @@ mod tests {
         assert_eq!(map.len(), 1);
         assert_eq!(map.get(&7), Some("seven".to_string()));
         assert_eq!(map.get(&8), None);
+        assert!(!map.is_empty());
 
         map.clear();
         assert!(map.is_empty());
@@ -204,6 +226,11 @@ mod tests {
         }
         assert_eq!(sum_to(&map, 32), 32 * 33 / 2);
         assert_eq!(map.len(), 33);
+        // Entries are spread over the shards; `is_empty` has to check them all
+        // before it can say the table is empty.
+        assert!(!map.is_empty());
+        map.clear();
+        assert!(map.is_empty());
     }
 
     #[test]

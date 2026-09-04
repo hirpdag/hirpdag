@@ -38,13 +38,15 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
   - Evicting is always safe for correctness (the value can be recomputed), so
     the trade-off is recompute cost vs. retained memory; measure it.
 
-- [P1] Avoid re-hashing on the `get_or_else` miss path.
-  - A miss hashes the key twice for shard selection (`get`, then `get_shard`)
-    plus twice more inside the shard's `HashMap`, and takes the shard lock
-    twice.
-  - Compute the hash once and reuse it for both the shard index and the map
-    lookup (hashbrown's raw entry API, or a `HashMap` keyed by precomputed
-    hash).
+- [P2] Reuse the computed hash inside the shard's `HashMap`.
+  - Shard selection now hashes the key once per `get_or_else` call and reuses
+    the shard for the lookup and the insert, but the shard's `HashMap` still
+    hashes the key again for each of those two visits.
+  - Passing the hash through needs hashbrown's raw entry API or a `HashMap`
+    keyed by precomputed hash; measure whether it pays for the extra machinery
+    before taking it on.
+  - The two lock acquisitions are inherent: no lock may be held while `compute`
+    runs, because a computation is free to recurse into the same shard.
 
 - [P1] Use a cheaper hasher than SipHash for node keys.
   - `DefaultHasher` is the default `BuildHasher` here, but node keys hash by
@@ -80,8 +82,6 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
   - `clear()` empties every type's table; add per-type clear, and consider
     keeping allocated capacity across passes (or `shrink_to_fit` on demand)
     so repeated rewrites do not rebuild the tables from scratch.
-  - `len()` locks every shard, and `is_empty()` goes through `len()` instead of
-    stopping at the first non-empty shard.
 
 - [P2] Optional hit/miss instrumentation.
   - Feature-gated counters per table (hits, misses, races lost, evictions) so
