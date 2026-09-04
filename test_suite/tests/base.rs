@@ -48,10 +48,9 @@ impl HirpdagRewriter for MessageAExtendLeaf {
             return MessageA::new(x.a, x.b.clone(), Some(self.doot.clone()), x.d);
         }
 
-        // In the case where we don't want to make changes to extend the leaf,
-        // we want to apply the default rewrite which will apply the rewrite
-        // transitively to all applicable members. Recursion goes through the
-        // driver, so the memoizing wrapper gets to cache each node it reaches.
+        // Nodes that already have a child fall through to the default rewrite,
+        // which recurses through the driver so the memoizing wrapper caches each
+        // node it reaches.
         x.default_rewrite(driver)
     }
 }

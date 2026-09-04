@@ -54,17 +54,16 @@ const PRESETS: &[&str] = &[
 /// `reference_type`, `reference_weak_type` and `tableshared_type` are always
 /// emitted, as the aliases `ImplRef<D>`, `ImplRefWeak<D>` and
 /// `ImplTableShared<D>`. The shared table builds itself from those type
-/// parameters (it is `Default`), so no factory is named here.
-/// `ImplRef` / `ImplRefWeak` are the strong/weak reference pair, the vocabulary
-/// any table implementation draws on to name whichever reference-counting
-/// implementation it was configured with, so both are available whether or not a
-/// given table happens to use the weak side.
+/// parameters (it is `Default`), so no factory is named here. `ImplRef` and
+/// `ImplRefWeak` are the strong/weak reference pair a table names its
+/// configured reference counting through, so both are emitted whether or not a
+/// given table uses the weak side.
 ///
-/// `aliases` is a list of extra `type <name><D> = <rhs>;` declarations a config
-/// emits so its shared-table strings can stay short by referring to a named
-/// helper instead of respelling a long concrete type. The lock-based backends
-/// declare `ImplTable` (they are generic over an inner table); the
-/// concurrent-collection backends store the mapping directly and declare none.
+/// `aliases` are extra `type <name><D> = <rhs>;` declarations, letting a
+/// config's shared-table strings name a helper instead of respelling a long
+/// concrete type. The lock-based backends declare `ImplTable` (they are generic
+/// over an inner table); the concurrent-collection backends store the mapping
+/// directly and declare none.
 ///
 /// Every string is spliced into a `type …<D> = …;` alias, so they share a `D`
 /// data-type parameter and may refer to each other through these alias names.

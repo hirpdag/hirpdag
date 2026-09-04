@@ -234,12 +234,8 @@ fn get_fields_named<'a>(
     }
 }
 
+/// The fields as struct declarations: `a: i32, b: String, c: Option<MessageA>,`.
 fn get_fields_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let fields_declarations = quote! {
-    //    a: i32,
-    //    b: String,
-    //    c: Option<#hirpdag_ref_name>,
-    //};
     let fields_declarations = fields_named.named.clone();
     quote! { #fields_declarations }
 }
@@ -255,10 +251,8 @@ fn get_fields_parameters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenS
     quote! { #parameters }
 }
 
+/// The field names as an argument list: `a, b, c,`.
 fn get_fields_list(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let fields_list = quote! {
-    //    a, b, c
-    //};
     fields_named
         .named
         .iter()
@@ -267,12 +261,8 @@ fn get_fields_list(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream 
         .collect()
 }
 
+/// Each field's meta contribution: `self.a.hirpdag_compute_meta(),`.
 fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let fields_compute_meta = quote! {
-    //    self.a.hirpdag_compute_meta(),
-    //    self.b.hirpdag_compute_meta(),
-    //    self.c.hirpdag_compute_meta(),
-    //};
     fields_named
         .named
         .iter()
@@ -292,16 +282,6 @@ fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
 /// Equality is cheap for the common cases: child `HirpdagRef` fields compare by
 /// pointer, and leaf fields compare by value.
 fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let body = quote! {
-    //    let hirpdag_rw_a = driver.rewrite(&self.a);
-    //    let hirpdag_rw_b = driver.rewrite(&self.b);
-    //    let hirpdag_rw_c = driver.rewrite(&self.c);
-    //    if hirpdag_rw_a == self.a && hirpdag_rw_b == self.b && hirpdag_rw_c == self.c {
-    //        self.clone()
-    //    } else {
-    //        Self::new(hirpdag_rw_a, hirpdag_rw_b, hirpdag_rw_c)
-    //    }
-    //};
     let field_names: Vec<&syn::Ident> = fields_named
         .named
         .iter()
@@ -345,13 +325,10 @@ fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::Tok
     }
 }
 
-/// The fields of a struct's archived form: the same names, with each type
-/// replaced by its archived form (references become `u64` node indices).
+/// The fields of a struct's archived form (`pub a: HirpdagArchiveOf<i32>,`):
+/// the same names, with each type replaced by its archived form (references
+/// become `u64` node indices).
 fn get_archive_fields_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let archive_fields_declarations = quote! {
-    //    pub a: HirpdagArchiveOf<i32>,
-    //    pub b: HirpdagArchiveOf<Option<MessageA>>,
-    //};
     fields_named
         .named
         .iter()
@@ -363,12 +340,9 @@ fn get_archive_fields_declarations(fields_named: &syn::FieldsNamed) -> proc_macr
         .collect()
 }
 
-/// Field initialisers of a struct's archived form.
+/// Field initialisers of a struct's archived form:
+/// `a: hirpdag_archive_encode(&self.a, index)?,`.
 fn get_fields_to_archive(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let fields_to_archive = quote! {
-    //    a: hirpdag_archive_encode(&self.a, index)?,
-    //    b: hirpdag_archive_encode(&self.b, index)?,
-    //};
     fields_named
         .named
         .iter()
@@ -379,12 +353,9 @@ fn get_fields_to_archive(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenS
         .collect()
 }
 
-/// Field initialisers rebuilding a struct from its archived form.
+/// Field initialisers rebuilding a struct from its archived form:
+/// `a: hirpdag_archive_decode::<i32>(archived.a, nodes)?,`.
 fn get_fields_from_archive(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let fields_from_archive = quote! {
-    //    a: hirpdag_archive_decode::<i32>(archived.a, nodes)?,
-    //    b: hirpdag_archive_decode::<Option<MessageA>>(archived.b, nodes)?,
-    //};
     fields_named
         .named
         .iter()
@@ -398,12 +369,8 @@ fn get_fields_from_archive(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
         .collect()
 }
 
+/// Each field's collect call: `HirpdagCollect::hirpdag_collect(&self.a, ctx);`.
 fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let fields_collect = quote! {
-    //    hirpdag::base::HirpdagCollect::hirpdag_collect(&self.a, ctx);
-    //    hirpdag::base::HirpdagCollect::hirpdag_collect(&self.b, ctx);
-    //    hirpdag::base::HirpdagCollect::hirpdag_collect(&self.c, ctx);
-    //};
     fields_named
         .named
         .iter()
@@ -416,12 +383,8 @@ fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
         .collect()
 }
 
+/// The builder's fields, each optional until set: `a: Option<i32>,`.
 fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let builder_field_declarations = quote! {
-    //    a: Option<i32>,
-    //    b: Option<String>,
-    //    c: Option<Option<MessageA>>,
-    //};
     fields_named
         .named
         .iter()
@@ -433,12 +396,8 @@ fn get_builder_field_declarations(fields_named: &syn::FieldsNamed) -> proc_macro
         .collect()
 }
 
+/// The builder's setters: `pub fn a(mut self, value: i32) -> Self { .. }`.
 fn get_builder_setters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let builder_setters = quote! {
-    //    pub fn a(mut self, value: i32) -> Self { self.a = Some(value); self }
-    //    pub fn b(mut self, value: String) -> Self { self.b = Some(value); self }
-    //    pub fn c(mut self, value: Option<MessageA>) -> Self { self.c = Some(value); self }
-    //};
     fields_named
         .named
         .iter()
@@ -455,12 +414,8 @@ fn get_builder_setters(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStr
         .collect()
 }
 
+/// The builder's initial field values: `a: None,`.
 fn get_builder_none_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let builder_none_fields = quote! {
-    //    a: None,
-    //    b: None,
-    //    c: None,
-    //};
     fields_named
         .named
         .iter()
@@ -471,12 +426,9 @@ fn get_builder_none_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
         .collect()
 }
 
+/// The builder's field values taken from an existing node:
+/// `a: Some(node.a.clone()),`.
 fn get_builder_from_node_fields(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let builder_from_node_fields = quote! {
-    //    a: Some(node.a.clone()),
-    //    b: Some(node.b.clone()),
-    //    c: Some(node.c.clone()),
-    //};
     fields_named
         .named
         .iter()
@@ -487,12 +439,9 @@ fn get_builder_from_node_fields(fields_named: &syn::FieldsNamed) -> proc_macro2:
         .collect()
 }
 
+/// The builder's fields as `new` arguments, each required:
+/// `self.a.expect("Builder field 'a' not set"),`.
 fn get_builder_build_args(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
-    //let builder_build_args = quote! {
-    //    self.a.expect("Builder field 'a' not set"),
-    //    self.b.expect("Builder field 'b' not set"),
-    //    self.c.expect("Builder field 'c' not set"),
-    //};
     fields_named
         .named
         .iter()
@@ -802,22 +751,14 @@ fn expand_hirpdag_struct(
     Ok((tokens, entry))
 }
 
+/// The variants as declarations: `Foo(i32), Bar(String),`.
 fn get_variants_declarations(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
-    //let variants_declarations = quote! {
-    //    Foo(i32),
-    //    Bar(String),
-    //    Baz(Option<MessageA>),
-    //};
     let variants_declarations = input_enum.variants.clone();
     quote! { #variants_declarations }
 }
 
+/// Each variant's meta contribution: `Foo(x) => x.hirpdag_compute_meta(),`.
 fn get_variants_compute_meta(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
-    //let variants_compute_meta = quote! {
-    //    Foo(a) => a.hirpdag_compute_meta(),
-    //    Bar(a) => a.hirpdag_compute_meta(),
-    //    Baz(a) => a.hirpdag_compute_meta(),
-    //};
     input_enum
         .variants
         .iter()
@@ -828,12 +769,9 @@ fn get_variants_compute_meta(input_enum: &syn::DataEnum) -> proc_macro2::TokenSt
         .collect()
 }
 
+/// Each variant's collect arm:
+/// `Foo(x) => HirpdagCollect::hirpdag_collect(x, ctx),`.
 fn get_variants_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
-    //let variants_collect = quote! {
-    //    Foo(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
-    //    Bar(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
-    //    Baz(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
-    //};
     input_enum
         .variants
         .iter()
@@ -846,12 +784,8 @@ fn get_variants_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream 
         .collect()
 }
 
+/// Each variant's rewrite arm: `Foo(x) => Foo(driver.rewrite(&x)),`.
 fn get_variants_rewrite(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
-    //let variants_rewrite = quote! {
-    //    Foo(x) => Foo(driver.rewrite(&x)),
-    //    Bar(x) => Bar(driver.rewrite(&x)),
-    //    Baz(x) => Baz(driver.rewrite(&x)),
-    //};
     input_enum
         .variants
         .iter()
@@ -874,13 +808,9 @@ fn get_variant_type(variant: &syn::Variant) -> &syn::Type {
     }
 }
 
-/// The variants of an enum's archived form: the same names, with each payload
-/// type replaced by its archived form.
+/// The variants of an enum's archived form (`Foo(HirpdagArchiveOf<i32>),`):
+/// the same names, with each payload type replaced by its archived form.
 fn get_variants_archive_declarations(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
-    //let variants_archive_declarations = quote! {
-    //    Foo(HirpdagArchiveOf<i32>),
-    //    Bar(HirpdagArchiveOf<Option<MessageA>>),
-    //};
     input_enum
         .variants
         .iter()
@@ -892,16 +822,13 @@ fn get_variants_archive_declarations(input_enum: &syn::DataEnum) -> proc_macro2:
         .collect()
 }
 
-/// Match arms encoding each variant into the enum's archived form.
+/// Match arms encoding each variant into the enum's archived form:
+/// `Kind::Foo(x) => ArchiveKind::Foo(hirpdag_archive_encode(x, index)?),`.
 fn get_variants_to_archive(
     input_enum: &syn::DataEnum,
     name: &Ident,
     archive_name: &Ident,
 ) -> proc_macro2::TokenStream {
-    //let variants_to_archive = quote! {
-    //    MessageKind::Foo(x) => HirpdagArchiveEnumMessageKind::Foo(
-    //        hirpdag_archive_encode(x, index)?),
-    //};
     input_enum
         .variants
         .iter()
@@ -916,16 +843,13 @@ fn get_variants_to_archive(
         .collect()
 }
 
-/// Match arms rebuilding each variant from the enum's archived form.
+/// Match arms rebuilding each variant from the enum's archived form:
+/// `ArchiveKind::Foo(x) => Kind::Foo(hirpdag_archive_decode::<i32>(x, nodes)?),`.
 fn get_variants_from_archive(
     input_enum: &syn::DataEnum,
     name: &Ident,
     archive_name: &Ident,
 ) -> proc_macro2::TokenStream {
-    //let variants_from_archive = quote! {
-    //    HirpdagArchiveEnumMessageKind::Foo(x) => MessageKind::Foo(
-    //        hirpdag_archive_decode::<i32>(x, nodes)?),
-    //};
     input_enum
         .variants
         .iter()
@@ -1074,12 +998,6 @@ fn expand_hirpdag_enum(
 /// implementation passes both to `default_rewrite`, which recurses into the
 /// node's children through the driver.
 fn get_rewrite_datatype(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let rewrite_datatype = quote! {
-    //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA<D: HirpdagRewriteDriver>(&self, x: &MessageA, driver: &D) -> MessageA {
-    //        MessageA::default_rewrite(x, driver)
-    //    }
-    //};
     let DataTypeNames {
         ref_name: hirpdag_ref_name,
         rewrite_method: hirpdag_rewrite_method_name,
@@ -1101,13 +1019,10 @@ fn get_rewrite_datatype(names: &DataTypeNames) -> proc_macro2::TokenStream {
 }
 
 /// One method of the `HirpdagRewriteDriver` trait: rewrite a node of a single
-/// data type. Drivers implement the traversal strategy (plain recursion,
-/// memoized recursion, ...) and are the only path recursion takes.
+/// data type (`fn rewrite_MessageA(&self, x: &MessageA) -> MessageA;`). Drivers
+/// implement the traversal strategy (plain recursion, memoized recursion, ...)
+/// and are the only path recursion takes.
 fn get_driver_datatype(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let driver_datatype = quote! {
-    //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA;
-    //};
     let DataTypeNames {
         ref_name: hirpdag_ref_name,
         rewrite_method: hirpdag_rewrite_method_name,
@@ -1125,12 +1040,6 @@ fn get_driver_datatype(names: &DataTypeNames) -> proc_macro2::TokenStream {
 /// The `HirpdagRewriteDirect` implementation of one driver method: run the
 /// rule, handing it this same driver so the recursion stays direct.
 fn get_direct_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let direct_rewrite = quote! {
-    //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        self.rewriter.rewrite_MessageA(x, self)
-    //    }
-    //};
     let DataTypeNames {
         ref_name: hirpdag_ref_name,
         rewrite_method: hirpdag_rewrite_method_name,
@@ -1147,10 +1056,9 @@ fn get_direct_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
     }
 }
 
+/// One data type's field in the memoize cache:
+/// `cache_MessageA: HirpdagMemoizeMap<MessageA, MessageA>,`.
 fn get_cache_member(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let cache_member = quote! {
-    //    cache_MessageA: hirpdag::base::HirpdagMemoizeMap<MessageA, MessageA>,
-    //};
     let DataTypeNames {
         ref_name: hirpdag_ref_name,
         cache_member: hirpdag_cache_member_name,
@@ -1163,10 +1071,8 @@ fn get_cache_member(names: &DataTypeNames) -> proc_macro2::TokenStream {
     }
 }
 
+/// The initialiser for one cache field: `cache_MessageA: HirpdagMemoizeMap::new(),`.
 fn get_cache_member_new(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let cache_member_new = quote! {
-    //    cache_MessageA: hirpdag::base::HirpdagMemoizeMap::new(),
-    //};
     let hirpdag_cache_member_name = &names.cache_member;
 
     quote! {
@@ -1174,10 +1080,8 @@ fn get_cache_member_new(names: &DataTypeNames) -> proc_macro2::TokenStream {
     }
 }
 
+/// The clear call for one cache field: `self.cache_MessageA.clear();`.
 fn get_cache_clear(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let cache_clear = quote! {
-    //    self.cache_MessageA.clear();
-    //};
     let hirpdag_cache_member_name = &names.cache_member;
 
     quote! {
@@ -1188,14 +1092,6 @@ fn get_cache_clear(names: &DataTypeNames) -> proc_macro2::TokenStream {
 /// The `HirpdagMemoize` impl that points the cache's per-type API at one type's
 /// table, so `cache.get_or_else(&node, || ..)` resolves to the right map.
 fn get_cache_memoize_impl(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let cache_memoize_impl = quote! {
-    //    impl hirpdag::base::HirpdagMemoize<MessageA> for HirpdagMemoizeCache {
-    //        fn hirpdag_memoize_map(&self)
-    //        -> &hirpdag::base::HirpdagMemoizeMap<MessageA, MessageA> {
-    //            &self.cache_MessageA
-    //        }
-    //    }
-    //};
     let DataTypeNames {
         ref_name: hirpdag_ref_name,
         cache_member: hirpdag_cache_member_name,
@@ -1218,14 +1114,6 @@ fn get_cache_memoize_impl(names: &DataTypeNames) -> proc_macro2::TokenStream {
 /// The `HirpdagRewriteMemoized` implementation of one driver method: the cache
 /// serves the node, or runs the rule once and remembers the result.
 fn get_cache_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
-    //let cache_rewrite = quote! {
-    //    #[allow(non_snake_case)]
-    //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        self.memoize_cache.get_or_else(x, || {
-    //            self.rewriter.rewrite_MessageA(x, self)
-    //        })
-    //    }
-    //};
     let DataTypeNames {
         ref_name: hirpdag_ref_name,
         rewrite_method: hirpdag_rewrite_method_name,
@@ -1353,9 +1241,7 @@ fn expand_hirpdag_end(
     let reference_type: proc_macro2::TokenStream = config.reference_type();
     let reference_weak_type: proc_macro2::TokenStream = config.reference_weak_type();
     let tableshared_type: proc_macro2::TokenStream = config.tableshared_type();
-    // Extra `type <name><D> = <rhs>;` helper aliases the config's shared-table
-    // strings refer to (e.g. `ImplTable`). Concurrent-collection backends, which
-    // are not generic over an inner table, declare none.
+    // The config's helper aliases (e.g. `ImplTable`), as `type <name><D> = <rhs>;`.
     let helper_alias_defs: Vec<proc_macro2::TokenStream> = config
         .helper_aliases()
         .into_iter()
