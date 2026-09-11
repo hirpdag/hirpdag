@@ -257,3 +257,73 @@ fn with_cache_reuses_a_primed_cache() {
         "every unique node but the primed one should run its rule once"
     );
 }
+
+// Memoized rewriting, under every hash-consing preset.
+//
+// The cache is keyed by node, and a node is a key only because hash-consing
+// makes it one: `HirpdagRef`'s `Hash` and `Eq` come from the interning the
+// preset's `Table` and `Reference` perform. So "each unique node's rule runs
+// exactly once" is a claim about the cache *and* about the table underneath it,
+// and it is worth making against every preset rather than only the default.
+#[macro_use]
+mod support;
+
+hirpdag_test_configs! {
+    #[hirpdag]
+    pub struct Shared {
+        pub id: u64,
+        pub left: Option<Shared>,
+        pub right: Option<Shared>,
+    }
+
+    /// Counts how many times its per-node rule runs. The counter is shared
+    /// because the rules are moved into the memoizing driver.
+    pub struct CountingIdentity {
+        pub calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl HirpdagRewriter for CountingIdentity {
+        fn rewrite_Shared<D: HirpdagRewriteDriver>(&self, x: &Shared, driver: &D) -> Shared {
+            self.calls
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            x.default_rewrite(driver)
+        }
+    }
+
+    #[test]
+    fn memoized_rewrite_runs_each_rule_once_under_this_preset() {
+        // A Fibonacci-shaped DAG: node k points at k-1 and k-2, which are
+        // shared rather than duplicated, so a path-wise walk is exponential.
+        let n = 18u64;
+        let mut a = Shared::new(0, None, None);
+        let mut b = Shared::new(1, None, None);
+        for k in 2..=n {
+            let next = Shared::new(k, Some(b.clone()), Some(a.clone()));
+            a = b;
+            b = next;
+        }
+        let root = b;
+        let unique_nodes = (n + 1) as usize;
+
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let memoized = HirpdagRewriteMemoized::new(CountingIdentity {
+            calls: calls.clone(),
+        });
+
+        let out = memoized.rewrite(&root);
+        assert_eq!(out, root, "an identity rewrite must not change the DAG");
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::Relaxed),
+            unique_nodes,
+            "each unique node's rule should run exactly once"
+        );
+
+        // A second pass is a cache hit at the root.
+        assert_eq!(memoized.rewrite(&root), root);
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::Relaxed),
+            unique_nodes,
+            "a repeat rewrite should be served from the cache"
+        );
+    }
+}

@@ -9,6 +9,7 @@ extern crate proc_macro2;
 
 mod config;
 mod names;
+mod presets;
 
 use crate::config::{HirpdagArgs, HirpdagConfig};
 use crate::names::{DataTypeKind, DataTypeNames};
@@ -81,6 +82,89 @@ pub fn hirpdag_module(
     expand_hirpdag_module(&config, &module, &package)
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
+}
+
+/// Expands a callback macro once per hash-consing configuration preset.
+///
+/// ```ignore
+/// hirpdag::hirpdag_for_each_preset!(my_callback, <payload tokens>);
+/// ```
+///
+/// emits, for every preset in the roster (`hirpdag_derive::presets`):
+///
+/// ```ignore
+/// my_callback!(arc_hash_linear, "arc_hash_linear", "ArcHashLinear", <payload tokens>);
+/// ```
+///
+/// The payload is passed through verbatim, so the callback decides what it
+/// means. `my_callback` should be a single-arm `macro_rules!` taking
+/// `($module:ident, $preset:literal, $label:literal, <payload>)`.
+///
+/// Presets that need the `third-party-tables` feature are emitted under
+/// `#[cfg(feature = "third-party-tables")]`, which is evaluated in the calling
+/// crate: a crate driving the roster is expected to declare a feature of that
+/// name mirroring hirpdag's. See
+/// `docs/adr/0007-preset-roster-driven-by-a-proc-macro.md`.
+#[proc_macro]
+pub fn hirpdag_for_each_preset(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let call = syn::parse_macro_input!(input as ForEachPresetCall);
+    presets::expand_for_each_preset(&call.callback, &call.payload).into()
+}
+
+/// `hirpdag_for_each_preset!(callback, payload...)`.
+struct ForEachPresetCall {
+    callback: Ident,
+    payload: proc_macro2::TokenStream,
+}
+
+impl syn::parse::Parse for ForEachPresetCall {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let callback: Ident = input.parse().map_err(|_| {
+            syn::Error::new(
+                input.span(),
+                "hirpdag_for_each_preset! expects the name of a callback macro first",
+            )
+        })?;
+        let payload = if input.is_empty() {
+            proc_macro2::TokenStream::new()
+        } else {
+            input.parse::<syn::Token![,]>()?;
+            input.parse()?
+        };
+        Ok(Self { callback, payload })
+    }
+}
+
+/// Expands to a `&[&str]` of preset names: `core` for the presets compiled
+/// unconditionally, `third_party` for those needing the `third-party-tables`
+/// feature, `all` for every one.
+///
+/// ```ignore
+/// pub const CORE_CONFIGS: &[&str] = hirpdag::hirpdag_preset_names!(core);
+/// ```
+///
+/// The roster is a compile-time table, so code that needs the names as runtime
+/// data — validating a preset named in an environment variable, say — would
+/// otherwise write the list out a second time. Not part of hirpdag's public
+/// API. See `docs/adr/0007-preset-roster-driven-by-a-proc-macro.md`.
+#[proc_macro]
+pub fn hirpdag_preset_names(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let selector = syn::parse_macro_input!(input as PresetNamesCall);
+    presets::expand_preset_names(selector.0).into()
+}
+
+/// `hirpdag_preset_names!(core | third_party | all)`.
+struct PresetNamesCall(presets::PresetSelector);
+
+impl syn::parse::Parse for PresetNamesCall {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let name: Ident = input.parse()?;
+        presets::PresetSelector::from_ident(&name.to_string())
+            .map(Self)
+            .ok_or_else(|| {
+                syn::Error::new_spanned(&name, "expected `core`, `third_party` or `all`")
+            })
+    }
 }
 
 fn expand_hirpdag_module(

@@ -1,6 +1,8 @@
 // Shared benchmark support.
 //
-// `hirpdag_each_config!` holds the list of hash-consing configuration presets.
+// `hirpdag_each_config!` walks the hash-consing configuration presets, which are
+// listed once in `hirpdag_derive::presets` and reached from here through
+// `hirpdag::hirpdag_for_each_preset!`.
 // `hirpdag_bench_configs!` drives it to expand the given items (the `#[hirpdag]`
 // type definitions and the benchmark implementation) once per preset, each in a
 // `#[hirpdag_module]` module named after it, and the `bench_*` macros drive it
@@ -218,26 +220,14 @@ impl criterion::measurement::ValueFormatter for AllocBytesFormatter {
 // -----------------------------------------------------------------------------
 
 /// The presets every benchmark is *compiled* for, and which any run may
-/// therefore select. Must stay in sync with the module lists in
-/// `hirpdag_bench_configs!` and `hirpdag_each_config!`.
-pub const CORE_CONFIGS: &[&str] = &[
-    "arc_hash_linear",
-    "arc_hash_sorted",
-    "leak_hash_linear",
-    "sep_hash_linear",
-    "seppad_hash_linear",
-    "sepu32_hash_linear",
-    "tlc_hash_linear",
-];
+/// therefore select.
+///
+/// Read from the one preset roster rather than written out here, so this and
+/// the module lists below cannot disagree about what exists.
+pub const CORE_CONFIGS: &[&str] = hirpdag::hirpdag_preset_names!(core);
 
 /// Presets compiled only with the `third-party-tables` feature.
-pub const THIRD_PARTY_CONFIGS: &[&str] = &[
-    "arc_tovweaktable",
-    "arc_dashmap",
-    "arc_flurry",
-    "arc_skipmap",
-    "arc_arcswap",
-];
+pub const THIRD_PARTY_CONFIGS: &[&str] = hirpdag::hirpdag_preset_names!(third_party);
 
 /// Whether [`THIRD_PARTY_CONFIGS`] are compiled into this binary.
 pub const THIRD_PARTY_COMPILED: bool = cfg!(feature = "third-party-tables");
@@ -436,31 +426,30 @@ pub fn mem_criterion() -> criterion::Criterion<AllocBytes> {
 // Per-configuration expansion and registration
 // -----------------------------------------------------------------------------
 
+/// Reorders one preset from the roster's `(module, preset, label)` into the
+/// `@one <module>, <label>, <preset>` shape the callbacks here expect.
+///
+/// The `#[cfg]` for a feature-gated preset is emitted by the driver, on this
+/// whole invocation.
+macro_rules! hirpdag_each_config_one {
+    ($module:ident, $preset:literal, $label:literal, $callback:ident, $($args:tt)*) => {
+        $callback!(@one $module, $label, $preset, $($args)*);
+    };
+}
+
 /// Expands `$callback!(@one <module>, <label>, <preset>, $($args)*)` once per
-/// configuration: the one place the preset list is written, driving both the
-/// module expansion below and the benchmark registration macros. It must stay
-/// in sync with `CORE_CONFIGS` / `THIRD_PARTY_CONFIGS` above, which is what
-/// `HIRPDAG_BENCH_SCOPE` is validated against.
+/// configuration, driving both the module expansion below and the benchmark
+/// registration macros.
+///
+/// The preset list is not written here: it comes from the one roster in
+/// `hirpdag_derive::presets`, which is also what `CORE_CONFIGS` /
+/// `THIRD_PARTY_CONFIGS` above are read from and what the macro validates
+/// `preset = "..."` against. So the modules a run compiles, the names
+/// `HIRPDAG_BENCH_SCOPE` accepts, and the labels criterion reports cannot drift
+/// apart. See `docs/adr/0007-preset-roster-driven-by-a-proc-macro.md`.
 macro_rules! hirpdag_each_config {
     ($callback:ident, $($args:tt)*) => {
-        $callback!(@one arc_hash_linear, "ArcHashLinear", "arc_hash_linear", $($args)*);
-        $callback!(@one arc_hash_sorted, "ArcHashSorted", "arc_hash_sorted", $($args)*);
-        $callback!(@one leak_hash_linear, "LeakHashLinear", "leak_hash_linear", $($args)*);
-        $callback!(@one sep_hash_linear, "SepHashLinear", "sep_hash_linear", $($args)*);
-        $callback!(@one seppad_hash_linear, "SepPadHashLinear", "seppad_hash_linear", $($args)*);
-        $callback!(@one sepu32_hash_linear, "SepU32HashLinear", "sepu32_hash_linear", $($args)*);
-        $callback!(@one tlc_hash_linear, "TlcHashLinear", "tlc_hash_linear", $($args)*);
-        // Tables backed by third-party collection crates (feature-gated).
-        #[cfg(feature = "third-party-tables")]
-        $callback!(@one arc_tovweaktable, "ArcTovWeakTable", "arc_tovweaktable", $($args)*);
-        #[cfg(feature = "third-party-tables")]
-        $callback!(@one arc_dashmap, "ArcDashMap", "arc_dashmap", $($args)*);
-        #[cfg(feature = "third-party-tables")]
-        $callback!(@one arc_flurry, "ArcFlurry", "arc_flurry", $($args)*);
-        #[cfg(feature = "third-party-tables")]
-        $callback!(@one arc_skipmap, "ArcSkipMap", "arc_skipmap", $($args)*);
-        #[cfg(feature = "third-party-tables")]
-        $callback!(@one arc_arcswap, "ArcArcSwap", "arc_arcswap", $($args)*);
+        hirpdag::hirpdag_for_each_preset!(hirpdag_each_config_one, $callback, $($args)*);
     };
 }
 

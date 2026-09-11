@@ -253,9 +253,44 @@ One data type's place in its module's archive: its name for error messages, and 
 
 ---
 
-## Configuration Overrides
+## Configuration
 
-The following `#[hirpdag_module(...)]` options override the default pluggable implementations:
+### Preset
+A named (reference, table) pairing, selected with `#[hirpdag_module(preset = "...")]`.  A preset is the whole hash-consing configuration under one name, so `preset = "arc_dashmap"` says as much as the four type overrides below say together.  The default is `arc_hash_linear`.
+
+Every preset is one entry in a single roster, `hirpdag_derive::presets::PRESETS`, carrying the types it selects, the label a benchmark reports it under, and whether it needs the `third-party-tables` feature.  That roster is the only list: the macro validates `preset = "..."` against it, and [`hirpdag_for_each_preset!`](#hirpdag_for_each_preset) drives the test and benchmark matrices from it, so adding a preset adds it everywhere at once.  See `docs/adr/0007-preset-roster-driven-by-a-proc-macro.md`.
+
+A preset's *name* is also the identifier of a module stamped out for it, which is why every name is a valid identifier.  Its *label* is stored rather than derived, because a snake-to-camel transform is not injective over these names: six of the twelve (`seppad`, `sepu32`, `tovweaktable`, `dashmap`, `skipmap`, `arcswap`) do not survive one.  This is the same reasoning as [generated names](#generated-names), recorded in `docs/adr/0006-generated-names-from-the-declared-name.md`.
+
+### `hirpdag_for_each_preset!`
+Expands a callback macro once per [preset](#preset):
+
+```rust
+hirpdag::hirpdag_for_each_preset!(my_callback, <payload tokens>);
+// my_callback!(arc_hash_linear, "arc_hash_linear", "ArcHashLinear", <payload tokens>);
+// ... once per preset
+```
+
+The callback is a single-arm `macro_rules!` taking `($module:ident, $preset:literal, $label:literal, <payload>)`; the payload passes through verbatim, so the callback decides what it means.  Used by `test_suite`'s `hirpdag_test_configs!` and the three benchmark macros to stamp a type, a test or a benchmark registration out once per preset.
+
+Presets needing `third-party-tables` are emitted under a `#[cfg(feature = "third-party-tables")]` that is evaluated in the *calling* crate, so a crate driving the roster is expected to declare a feature of that name mirroring hirpdag's.  Not part of hirpdag's public API.
+
+Source: `hirpdag_derive/src/presets.rs`
+
+### `hirpdag_preset_names!`
+Expands to a `&[&str]` of [preset](#preset) names: `core` for those compiled unconditionally, `third_party` for those needing the `third-party-tables` feature, `all` for every one.
+
+```rust
+pub const CORE_CONFIGS: &[&str] = hirpdag::hirpdag_preset_names!(core);
+```
+
+The companion to [`hirpdag_for_each_preset!`](#hirpdag_for_each_preset), for code that needs the roster as *runtime* data rather than as one expansion per preset.  A macro that emits an item per preset cannot also produce a single array literal, so the benchmark suite's `HIRPDAG_BENCH_SCOPE` validation — which checks a name given in an environment variable against the presets that exist — reads its lists from here.  Not part of hirpdag's public API.
+
+Source: `hirpdag_derive/src/presets.rs`
+
+### Configuration overrides
+
+The following `#[hirpdag_module(...)]` options override the [preset](#preset)'s choices individually:
 
 | Option | Default | Controls |
 |--------|---------|----------|

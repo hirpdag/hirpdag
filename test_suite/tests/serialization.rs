@@ -395,3 +395,43 @@ fn schema_match_accepted_across_modules_with_same_shape() {
     let out = hirpdag_deserialize(&bytes).unwrap();
     assert_eq!(out, roots);
 }
+
+// The round trip, under every hash-consing preset.
+//
+// Deserialization re-interns every node through *this* module's table, so
+// asserting that the deserialized root is pointer-equal to the original is the
+// one assertion here that actually depends on which `Table` and `Reference` the
+// preset selected. The tests above are about the archive format, which cannot
+// differ by preset, and stay on the default.
+#[macro_use]
+mod support;
+
+hirpdag_test_configs! {
+    #[hirpdag(root)]
+    pub struct Shared {
+        pub name: String,
+        pub deps: Vec<Shared>,
+    }
+
+    #[test]
+    fn round_trip_re_interns_through_this_presets_table() {
+        let leaf = Shared::new("leaf".to_string(), vec![]);
+        let parent = Shared::new("parent".to_string(), vec![leaf.clone(), leaf.clone()]);
+
+        // `Shared` is this module's only root type, so the roots struct has
+        // exactly one field to fill.
+        let bytes = hirpdag_serialize(&HirpdagArchiveRoots {
+            roots_Shared: vec![parent.clone()],
+        })
+        .unwrap();
+        let out = hirpdag_deserialize(&bytes).unwrap();
+
+        assert_eq!(out.roots_Shared.len(), 1);
+        // Pointer equality: the rebuilt node merged with the one still live in
+        // this preset's table rather than becoming a second copy.
+        assert_eq!(out.roots_Shared[0], parent);
+        // DAG sharing survives the round trip: one leaf, reached twice.
+        assert_eq!(out.roots_Shared[0].deps[0], out.roots_Shared[0].deps[1]);
+        assert_eq!(out.roots_Shared[0].deps[0], leaf);
+    }
+}

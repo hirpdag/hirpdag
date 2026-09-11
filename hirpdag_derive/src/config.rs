@@ -2,6 +2,8 @@
 
 use proc_macro2::{Ident, TokenStream};
 
+use crate::presets::{self, ConfigTypes, DEFAULT_PRESET};
+
 pub enum HirpdagArg {
     /// Normalizer will be defined by user for construction.
     Normalizer,
@@ -25,135 +27,6 @@ pub enum HirpdagArg {
 
     /// Named preset selecting the reference and table types together.
     Preset(String),
-}
-
-/// Preset used when no `preset`/type arguments are given.
-const DEFAULT_PRESET: &str = "arc_hash_linear";
-
-/// Known named configuration presets, selectable with
-/// `#[hirpdag_module(preset = "name")]`.
-const PRESETS: &[&str] = &[
-    "arc_hash_linear",
-    "arc_hash_sorted",
-    "leak_hash_linear",
-    "sep_hash_linear",
-    "seppad_hash_linear",
-    "sepu32_hash_linear",
-    "tlc_hash_linear",
-    // Tables backed by third-party collection crates (behind the
-    // `third-party-tables` feature).
-    "arc_tovweaktable",
-    "arc_dashmap",
-    "arc_flurry",
-    "arc_skipmap",
-    "arc_arcswap",
-];
-
-/// The type strings that select a hash-consing implementation.
-///
-/// `reference_type`, `reference_weak_type` and `tableshared_type` are always
-/// emitted, as the aliases `ImplRef<D>`, `ImplRefWeak<D>` and
-/// `ImplTableShared<D>`. The shared table builds itself from those type
-/// parameters (it is `Default`), so no factory is named here.
-/// `ImplRef` / `ImplRefWeak` are the strong/weak reference pair, the vocabulary
-/// any table implementation draws on to name whichever reference-counting
-/// implementation it was configured with, so both are available whether or not a
-/// given table happens to use the weak side.
-///
-/// `aliases` is a list of extra `type <name><D> = <rhs>;` declarations a config
-/// emits so its shared-table strings can stay short by referring to a named
-/// helper instead of respelling a long concrete type. The lock-based backends
-/// declare `ImplTable` (they are generic over an inner table); the
-/// concurrent-collection backends store the mapping directly and declare none.
-///
-/// Every string is spliced into a `type …<D> = …;` alias, so they share a `D`
-/// data-type parameter and may refer to each other through these alias names.
-#[derive(Clone)]
-struct ConfigTypes {
-    reference_type: String,
-    reference_weak_type: String,
-    aliases: Vec<(String, String)>,
-    tableshared_type: String,
-}
-
-impl ConfigTypes {
-    /// Insert the helper alias `name` (or replace it if already present).
-    fn set_alias(&mut self, name: &str, rhs: String) {
-        match self.aliases.iter_mut().find(|(n, _)| n == name) {
-            Some(entry) => entry.1 = rhs,
-            None => self.aliases.push((name.to_string(), rhs)),
-        }
-    }
-}
-
-/// The [`ConfigTypes`] for a named preset, or `None` if the name is unknown.
-fn preset_types(name: &str) -> Option<ConfigTypes> {
-    // A hashmap that falls back to `inner_table` at larger sizes.
-    fn hashmap_fallback(inner_table: &str) -> String {
-        format!(
-            "hirpdag::hirpdag_hashconsing::TableHashmapFallbackWeak<D, ImplRef<D>, ImplRefWeak<D>, hirpdag::hirpdag_hashconsing::{inner_table}<D, ImplRef<D>, ImplRefWeak<D>>>"
-        )
-    }
-    // A `ConfigTypes` for a lock-based preset: reference `base`, generic over the
-    // given inner `ThreadUnsafeTable` (exposed as the `ImplTable` alias), shared via the
-    // sharded-mutex table.
-    fn sharded(base: &str, inner_table: String) -> ConfigTypes {
-        ConfigTypes {
-            reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
-            reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
-            aliases: vec![("ImplTable".to_string(), inner_table)],
-            tableshared_type:
-                "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>"
-                    .to_string(),
-        }
-    }
-    // A `ConfigTypes` for a preset backed by a third-party concurrent collection
-    // named `TableShared{shared_base}`. These store the mapping directly and are
-    // not generic over an inner `ThreadUnsafeTable`, so they declare no `ImplTable`
-    // alias. The hashed backends take their hasher from their own default type
-    // parameter; the ordered one (skipmap) has none.
-    fn concurrent(base: &str, shared_base: &str) -> ConfigTypes {
-        ConfigTypes {
-            reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
-            reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
-            aliases: Vec::new(),
-            tableshared_type: format!(
-                "hirpdag::hirpdag_hashconsing::TableShared{shared_base}<D, ImplRef<D>>"
-            ),
-        }
-    }
-
-    let tovweaktable =
-        "hirpdag::hirpdag_hashconsing::TableTovWeakTable<D, ImplRef<D>, ImplRefWeak<D>>"
-            .to_string();
-
-    Some(match name {
-        "arc_hash_linear" => sharded("RefArc", hashmap_fallback("TableVecLinearWeak")),
-        "arc_hash_sorted" => sharded("RefArc", hashmap_fallback("TableVecSortedWeak")),
-        "leak_hash_linear" => sharded("RefLeak", hashmap_fallback("TableVecLinearWeak")),
-        // Reference-counting experiments with counts stored separately from the
-        // data (see hirpdag_hashconsing::reference::sepcount).
-        "sep_hash_linear" => sharded("RefSep", hashmap_fallback("TableVecLinearWeak")),
-        "seppad_hash_linear" => sharded("RefSepPad", hashmap_fallback("TableVecLinearWeak")),
-        "sepu32_hash_linear" => sharded("RefSepU32", hashmap_fallback("TableVecLinearWeak")),
-        // Thread-local deferred reference counting (see
-        // hirpdag_hashconsing::reference::tlc).
-        "tlc_hash_linear" => sharded("RefTlc", hashmap_fallback("TableVecLinearWeak")),
-        // Tables backed by third-party collection crates (behind the
-        // `third-party-tables` feature). `arc_tovweaktable` wraps the weak-table
-        // crate's `WeakHashSet` as an inner `ThreadUnsafeTable` behind the sharded
-        // shared table; the rest store the mapping directly in a concurrent collection
-        // (strong references, no weak-reference GC) via `TableShared*`. `RefArc`
-        // is used because the concurrent backends require a `Send + Sync`
-        // reference. See the `table::*_strong` / `table::shared_*` /
-        // `table::tov_weak_table_threadunsafe` modules.
-        "arc_tovweaktable" => sharded("RefArc", tovweaktable),
-        "arc_dashmap" => concurrent("RefArc", "DashMap"),
-        "arc_flurry" => concurrent("RefArc", "Flurry"),
-        "arc_skipmap" => concurrent("RefArc", "SkipMap"),
-        "arc_arcswap" => concurrent("RefArc", "ArcSwap"),
-        _ => return None,
-    })
 }
 
 impl syn::parse::Parse for HirpdagArg {
@@ -185,13 +58,13 @@ impl syn::parse::Parse for HirpdagArg {
             }
             "preset" => Handler::String(|s: &syn::LitStr| {
                 let name = s.value();
-                if preset_types(&name).is_none() {
+                if presets::find(&name).is_none() {
                     return Err(syn::Error::new(
                         s.span(),
                         format!(
                             "unknown preset `{}`; known presets: {}",
                             name,
-                            PRESETS.join(", ")
+                            presets::names().join(", ")
                         ),
                     ));
                 }
@@ -253,7 +126,9 @@ impl HirpdagConfig {
         Self {
             normalizer: false,
             root: false,
-            types: preset_types(DEFAULT_PRESET).expect("default preset is known"),
+            types: presets::find(DEFAULT_PRESET)
+                .expect("default preset is known")
+                .config_types(),
         }
     }
 
@@ -270,7 +145,9 @@ impl HirpdagConfig {
                 HirpdagArg::TableType(name) => config.types.set_alias("ImplTable", name.clone()),
                 HirpdagArg::TableSharedType(name) => config.types.tableshared_type = name.clone(),
                 HirpdagArg::Preset(name) => {
-                    config.types = preset_types(name).expect("preset validated at parse time");
+                    config.types = presets::find(name)
+                        .expect("preset validated at parse time")
+                        .config_types();
                 }
             }
         }
