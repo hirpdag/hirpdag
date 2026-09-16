@@ -125,15 +125,19 @@ use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
 // depth=14 => 32767 nodes. Sweep from a full-graph rewrite (change_period=1)
 // through a sparse one (change_period=16) to a pure no-op (change_period=0).
+// The first `TIME_CONFIGS` entries -- full and sparse, the two ends of the
+// fast-path story -- are timed by default; the no-op joins them with
+// `HIRPDAG_BENCH_SCOPE=all`, and the memory group always runs all three.
 const CONFIGS: [(usize, usize, u64); 3] = [
     (14, 8, 1),  // full: every node changes every pass
     (14, 8, 16), // sparse: ~1 node in 16 is a change seed
     (14, 8, 0),  // none: pure no-op rewrite, whole tree cloned back
 ];
+const TIME_CONFIGS: usize = 2;
 
 fn bench_sparse_rewrite_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("SparseRewrite");
-    for (depth, rewrites, change_period) in CONFIGS.iter() {
+    for (depth, rewrites, change_period) in support::time_params(&CONFIGS, TIME_CONFIGS) {
         let params = BenchSparseRewriteParams {
             depth: *depth,
             rewrites: *rewrites,
@@ -160,24 +164,16 @@ fn bench_sparse_rewrite_mem(c: &mut Criterion<support::AllocBytes>) {
 
 criterion_group! {
     name = benches_time;
-    config = Criterion::default()
-        .sample_size(10)
-        .measurement_time(core::time::Duration::from_secs(15));
+    config = support::time_criterion();
     targets = bench_sparse_rewrite_time
 }
 
 // Memory (peak-heap) benchmark; see `support::AllocBytes` and
 // `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
-// setup. `without_plots()` because criterion cannot render a distribution from
-// zero-variance samples.
+// setup.
 criterion_group! {
     name = benches_mem;
-    config = Criterion::default()
-        .with_measurement(support::AllocBytes)
-        .without_plots()
-        .sample_size(10)
-        .warm_up_time(core::time::Duration::from_nanos(1))
-        .measurement_time(core::time::Duration::from_nanos(1));
+    config = support::mem_criterion();
     targets = bench_sparse_rewrite_mem
 }
 

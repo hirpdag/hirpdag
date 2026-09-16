@@ -90,16 +90,33 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
 - [P2] See also the `std::any::Any` single-map experiment above, which covers
   the rewrite caches as well as the hash-consing tables.
 
-- [P2] Benchmark the cache itself.
+- [P1] Benchmark the cache itself.
   - The existing benchmarks exercise memoization only indirectly through
     rewriting; none measures hit-path cost, shard contention across threads, or
     the shard-count/hasher/eviction trade-offs above.
+  - Sweep the hit rate directly: a workload that re-runs the same rewrite over an
+    already-memoized graph is all hits, one over a freshly built graph is all
+    misses, and interleaving the two gives the range in between. The hit path is
+    what most rewrite passes actually spend their time on, so it deserves a
+    benchmark that isolates it from the construction cost around it.
+  - The hash-consing tables have the same question: a lookup that finds an
+    existing node (the common case under sharing) versus one that interns a new
+    one.
 
 ### More benchmarks
 
-- [P0] Add memory measurement groups (`benches_mem`) to remaining benchmarks.
-  - `churn.rs`, `builder_edits.rs`, `large_nodes.rs`, and `serde_roundtrip.rs` currently only have wall-clock timing groups.
-  - Add `bench_*_mem` using `AllocBytes` and `bench_each_config_mem!` so all 9 benchmarks track peak heap usage (especially critical for `churn` to track deallocation/eviction and `large_nodes` to measure memory savings across sharing ratios).
+- [P1] Collect benchmark results and compare them across revisions.
+  - Criterion compares a run against the previous run in `target/criterion/`, and
+    `--save-baseline`/`--baseline` compares two named runs; neither keeps a history,
+    and nothing extracts a machine-readable table across presets and benchmarks.
+  - Wanted: a script that runs a chosen scope (see `docs/BENCHMARKING.md`), pulls the
+    estimates out of criterion's `estimates.json` for both the timed and the `*Mem`
+    groups, and writes one row per (revision, benchmark, preset, parameter set) so
+    runs on different revisions can be diffed and plotted.
+  - Record the machine and the scope with the results; numbers from different scopes
+    are comparable per benchmark id, but numbers from different machines are not.
+  - Would also make `docs/update_benchmark_results.sh` (which hard-codes four violin
+    plot paths) unnecessary.
 
 - [P1] Multi-threaded concurrency and contention benchmarks.
   - **Concurrent Churn / Dropping**: Multi-threaded node creation and drop to stress atomic decrement contention, `RefTlc` thread-local decrement flushing, and test whether `RefSepPad` eliminates cache-line false sharing compared to `RefSep`.

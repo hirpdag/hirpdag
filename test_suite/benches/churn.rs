@@ -102,31 +102,59 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn bench_churn(c: &mut Criterion) {
+// (fanout, depth, window, steps). fanout=3, depth=3 => 40 nodes per unit.
+// Sweep the live-window size: a small window drops almost immediately, a large
+// one keeps far more nodes (and table entries) alive at once.
+const CONFIGS: [(usize, usize, usize, usize); 2] = [(3, 3, 8, 1000), (3, 3, 256, 1000)];
+
+fn make_params((fanout, depth, window, steps): (usize, usize, usize, usize)) -> BenchChurnParams {
+    BenchChurnParams {
+        fanout,
+        depth,
+        window,
+        steps,
+    }
+}
+
+fn bench_churn_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("Churn");
-    // fanout=3, depth=3 => 40 nodes per unit. Sweep the live-window
-    // size: a small window drops almost immediately, a large one
-    // keeps far more nodes (and table entries) alive at once.
-    let configs = [(3usize, 3usize, 8usize, 1000usize), (3, 3, 256, 1000)];
-    for (fanout, depth, window, steps) in configs.iter() {
-        let params = BenchChurnParams {
-            fanout: *fanout,
-            depth: *depth,
-            window: *window,
-            steps: *steps,
-        };
+    for config in CONFIGS.iter() {
+        let params = make_params(*config);
         bench_each_config!(group, params, churn);
     }
     group.finish();
 }
 
-criterion_group! {
-    name = benches;
-    config = Criterion::default()
-        .sample_size(10)
-        .measurement_time(core::time::Duration::from_secs(15));
-    targets = bench_churn
+// Peak heap is the direct read-out of the property this benchmark is about:
+// with a bounded live window, a preset that frees on `RC == 0` should peak at
+// roughly window-many units no matter how many steps run, while one that never
+// frees (`leak_*`) grows with `steps`. The window sweep then shows how much of
+// the peak is the live set itself.
+fn bench_churn_mem(c: &mut Criterion<support::AllocBytes>) {
+    let mut group = c.benchmark_group("ChurnMem");
+    group.sampling_mode(SamplingMode::Flat);
+    for config in CONFIGS.iter() {
+        let params = make_params(*config);
+        bench_each_config_mem!(group, params, churn);
+    }
+    group.finish();
 }
-criterion_main!(benches);
+
+criterion_group! {
+    name = benches_time;
+    config = support::time_criterion();
+    targets = bench_churn_time
+}
+
+// Memory (peak-heap) benchmark; see `support::AllocBytes` and
+// `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
+// setup.
+criterion_group! {
+    name = benches_mem;
+    config = support::mem_criterion();
+    targets = bench_churn_mem
+}
+
+criterion_main!(benches_time, benches_mem);

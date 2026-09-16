@@ -114,14 +114,16 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn bench_builder_edits(c: &mut Criterion) {
+// (fanout, depth, edits). fanout=2, depth=10 => 1024-leaf tree; each edit
+// rebuilds a depth-long path. The second entry is the same leaf count in a
+// shallower, wider tree, so each edit copies fewer nodes.
+const CONFIGS: [(usize, usize, usize); 2] = [(2, 10, 500), (4, 6, 500)];
+
+fn bench_builder_edits_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("BuilderEdits");
-    // fanout=2, depth=10 => 1024-leaf tree; each edit rebuilds a
-    // depth-long path. Sweep the number of edits and the tree shape.
-    let configs = [(2usize, 10usize, 500usize), (4, 6, 500)];
-    for (fanout, depth, edits) in configs.iter() {
+    for (fanout, depth, edits) in CONFIGS.iter() {
         let params = BenchBuilderEditsParams {
             fanout: *fanout,
             depth: *depth,
@@ -132,11 +134,36 @@ fn bench_builder_edits(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group! {
-    name = benches;
-    config = Criterion::default()
-        .sample_size(10)
-        .measurement_time(core::time::Duration::from_secs(15));
-    targets = bench_builder_edits
+// Peak heap measures what persistence costs: every version is retained, but an
+// edit allocates only the O(depth) nodes on the copied path, so the peak should
+// grow with `edits * depth` rather than with the size of the whole tree.
+fn bench_builder_edits_mem(c: &mut Criterion<support::AllocBytes>) {
+    let mut group = c.benchmark_group("BuilderEditsMem");
+    group.sampling_mode(SamplingMode::Flat);
+    for (fanout, depth, edits) in CONFIGS.iter() {
+        let params = BenchBuilderEditsParams {
+            fanout: *fanout,
+            depth: *depth,
+            edits: *edits,
+        };
+        bench_each_config_mem!(group, params, builder_edits);
+    }
+    group.finish();
 }
-criterion_main!(benches);
+
+criterion_group! {
+    name = benches_time;
+    config = support::time_criterion();
+    targets = bench_builder_edits_time
+}
+
+// Memory (peak-heap) benchmark; see `support::AllocBytes` and
+// `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
+// setup.
+criterion_group! {
+    name = benches_mem;
+    config = support::mem_criterion();
+    targets = bench_builder_edits_mem
+}
+
+criterion_main!(benches_time, benches_mem);

@@ -100,9 +100,13 @@ hirpdag_bench_configs! {
 
 use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
+// (depth, num_vars): the same tree shape at two sharing ratios -- 4 variables
+// collapse far more subtrees than 16 do.
+const CONFIGS: [(usize, u32); 2] = [(12, 4), (12, 16)];
+
 fn bench_expr_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("ExprSubstitution");
-    for (depth, num_vars) in [(12usize, 4u32), (12, 16)].iter() {
+    for (depth, num_vars) in CONFIGS.iter() {
         let params = BenchExprParams {
             depth: *depth,
             num_vars: *num_vars,
@@ -115,7 +119,7 @@ fn bench_expr_time(c: &mut Criterion) {
 fn bench_expr_mem(c: &mut Criterion<support::AllocBytes>) {
     let mut group = c.benchmark_group("ExprSubstitutionMem");
     group.sampling_mode(SamplingMode::Flat);
-    for (depth, num_vars) in [(12usize, 4u32), (12, 16)].iter() {
+    for (depth, num_vars) in CONFIGS.iter() {
         let params = BenchExprParams {
             depth: *depth,
             num_vars: *num_vars,
@@ -127,24 +131,16 @@ fn bench_expr_mem(c: &mut Criterion<support::AllocBytes>) {
 
 criterion_group! {
     name = benches_time;
-    config = Criterion::default()
-        .sample_size(10)
-        .measurement_time(core::time::Duration::from_secs(15));
+    config = support::time_criterion();
     targets = bench_expr_time
 }
 
 // Memory (peak-heap) benchmark; see `support::AllocBytes` and
 // `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
-// setup. `without_plots()` because criterion cannot render a distribution from
-// zero-variance samples.
+// setup.
 criterion_group! {
     name = benches_mem;
-    config = Criterion::default()
-        .with_measurement(support::AllocBytes)
-        .without_plots()
-        .sample_size(10)
-        .warm_up_time(core::time::Duration::from_nanos(1))
-        .measurement_time(core::time::Duration::from_nanos(1));
+    config = support::mem_criterion();
     targets = bench_expr_mem
 }
 

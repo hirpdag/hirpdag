@@ -152,40 +152,73 @@ hirpdag_bench_configs! {
     }
 }
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, SamplingMode};
 
-fn bench_large_nodes(c: &mut Criterion) {
+// (depth, fanout, blob_bytes, unique_blobs, rewrite). depth=6, fanout=4 => 4096
+// leaf slots. The first `TIME_CONFIGS` entries -- the two ends of the sharing
+// sweep -- are timed by default; the larger payload and the rewrite pass join
+// them with `HIRPDAG_BENCH_SCOPE=all`, and the memory group always runs all
+// four.
+const CONFIGS: [(usize, usize, usize, u64, bool); 4] = [
+    // High sharing: 64 unique 1 KiB blobs referenced by 4096 slots.
+    (6, 4, 1024, 64, false),
+    // Low sharing: nearly all 4096 leaf slots are distinct.
+    (6, 4, 1024, 4096, false),
+    // Larger payloads, high sharing.
+    (6, 4, 4096, 64, false),
+    // High sharing plus a full-graph rewrite of every blob.
+    (6, 4, 1024, 64, true),
+];
+const TIME_CONFIGS: usize = 2;
+
+fn make_params(
+    (depth, fanout, blob_bytes, unique_blobs, rewrite): (usize, usize, usize, u64, bool),
+) -> BenchLargeNodesParams {
+    BenchLargeNodesParams {
+        depth,
+        fanout,
+        blob_bytes,
+        unique_blobs,
+        rewrite,
+    }
+}
+
+fn bench_large_nodes_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("LargeNodes");
-    // depth=6, fanout=4 => 4096 leaf slots. Sweep payload size,
-    // sharing ratio (unique_blobs), and whether a rewrite pass runs.
-    let configs = [
-        // High sharing: 64 unique 1 KiB blobs referenced by 4096 slots.
-        (6usize, 4usize, 1024usize, 64u64, false),
-        // Low sharing: nearly all 4096 leaf slots are distinct.
-        (6, 4, 1024, 4096, false),
-        // Larger payloads, high sharing.
-        (6, 4, 4096, 64, false),
-        // High sharing plus a full-graph rewrite of every blob.
-        (6, 4, 1024, 64, true),
-    ];
-    for (depth, fanout, blob_bytes, unique_blobs, rewrite) in configs.iter() {
-        let params = BenchLargeNodesParams {
-            depth: *depth,
-            fanout: *fanout,
-            blob_bytes: *blob_bytes,
-            unique_blobs: *unique_blobs,
-            rewrite: *rewrite,
-        };
+    for config in support::time_params(&CONFIGS, TIME_CONFIGS) {
+        let params = make_params(*config);
         bench_each_config!(group, params, build_large_nodes);
     }
     group.finish();
 }
 
-criterion_group! {
-    name = benches;
-    config = Criterion::default()
-        .sample_size(10)
-        .measurement_time(core::time::Duration::from_secs(15));
-    targets = bench_large_nodes
+// Peak heap is where deduplicating large payloads shows up: the sharing sweep
+// should cost roughly `unique_blobs * blob_bytes`, near-independent of how many
+// leaf slots reference those blobs, and the rewrite entry adds one fresh copy
+// of each unique blob on top of the original graph.
+fn bench_large_nodes_mem(c: &mut Criterion<support::AllocBytes>) {
+    let mut group = c.benchmark_group("LargeNodesMem");
+    group.sampling_mode(SamplingMode::Flat);
+    for config in CONFIGS.iter() {
+        let params = make_params(*config);
+        bench_each_config_mem!(group, params, build_large_nodes);
+    }
+    group.finish();
 }
-criterion_main!(benches);
+
+criterion_group! {
+    name = benches_time;
+    config = support::time_criterion();
+    targets = bench_large_nodes_time
+}
+
+// Memory (peak-heap) benchmark; see `support::AllocBytes` and
+// `bench_each_config_mem!` for the measurement and the minimum-run, fresh-table
+// setup.
+criterion_group! {
+    name = benches_mem;
+    config = support::mem_criterion();
+    targets = bench_large_nodes_mem
+}
+
+criterion_main!(benches_time, benches_mem);
