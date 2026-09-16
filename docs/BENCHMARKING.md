@@ -37,8 +37,8 @@ counting and no frees at all) -- so the gap between them is what the node
 lifecycle costs on that workload.
 
 The memory groups cover everything because peak heap is deterministic: each is
-ten single-iteration samples, so the whole preset list is nearly free to
-measure.
+ten short samples rather than the thousands of iterations a timed benchmark
+needs, so the whole preset list is cheap to measure.
 
 Each benchmark's "key" parameter sets are the first entries of its `CONFIGS`
 array; the rest sweep a workload axis (an extra thread count, a payload size, a
@@ -61,7 +61,8 @@ on startup.
 
 `all` is roughly three times the default run: it triples the timed measurements,
 and leaves the memory groups where they already were. The memory groups are a
-small part of either -- all 182 of them together are under a minute.
+small part of either -- all 182 of them together take about a minute and a
+half.
 
 Criterion's own flags still apply on top, so a run whose numbers are going to be
 published can ask for a longer measurement than the default 5s window. Filter to

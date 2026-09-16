@@ -12,7 +12,7 @@
 //   * the timed groups measure `KEY_CONFIGS` (two presets),
 //   * except `primes`, the config-sweep benchmark, which times every preset,
 //   * and the memory groups measure every preset, because a peak-heap
-//     measurement is deterministic and takes one iteration per sample.
+//     measurement is deterministic and needs far fewer runs than a timed one.
 //
 // `HIRPDAG_BENCH_SCOPE` overrides that: `all` measures every preset (and every
 // parameter set) in every group, `key` narrows every group to `KEY_CONFIGS`,
@@ -122,10 +122,10 @@ static GLOBAL: TrackingAllocator = TrackingAllocator;
 ///
 /// Allocation sizes are deterministic for a given workload, so a memory
 /// benchmark does not need the many samples criterion uses to smooth out
-/// jittery latencies. The memory benchmark groups are
-/// therefore configured for the minimum number of runs (flat sampling, a tiny
-/// measurement window, so each of criterion's ten samples is a single
-/// invocation).
+/// jittery latencies. The memory benchmark groups are therefore configured for
+/// few runs: flat sampling with a short measurement window, so criterion's ten
+/// samples are a hundred-odd invocations rather than the thousands a timed
+/// benchmark needs. See [`crate::support::mem_criterion`].
 ///
 /// The reported figure is the peak *increase* in live heap during the run,
 /// relative to the heap size at [`start`](Self::start). For this to equal the
@@ -262,8 +262,8 @@ pub enum Coverage {
     /// linear in the number of presets.
     Key,
     /// Every compiled-in preset. What the memory groups use (a peak-heap
-    /// measurement is deterministic, so it is ten single-iteration samples --
-    /// cheap enough to cover the whole list), and what the designated
+    /// measurement is deterministic, so it needs far fewer runs than a timed
+    /// one -- cheap enough to cover the whole list), and what the designated
     /// config-sweep benchmark uses for timing too.
     Full,
 }
@@ -387,8 +387,8 @@ pub fn config_enabled(preset: &str, coverage: Coverage) -> bool {
 /// of `all`, or all of them when the run asked for every configuration. Order
 /// each benchmark's parameter list so the representative sets come first.
 ///
-/// Memory groups pass every parameter set instead: one iteration per sample
-/// makes the extra sets nearly free.
+/// Memory groups pass every parameter set instead: their short measurement
+/// window makes the extra sets cheap.
 pub fn time_params<T>(all: &[T], key: usize) -> &[T] {
     match scope() {
         Scope::All => all,
@@ -416,17 +416,20 @@ pub fn time_criterion() -> criterion::Criterion {
 /// Configuration shared by the memory (peak-heap) groups.
 ///
 /// Allocation sizes are deterministic for a given workload, so this asks for
-/// the minimum number of runs: flat sampling with a measurement window of
-/// nothing, making each of criterion's ten samples a single invocation.
-/// `without_plots()` because criterion cannot render a distribution from
-/// zero-variance samples.
+/// few runs: flat sampling with a short window, so a memory benchmark is a
+/// handful of invocations rather than the thousands a timed one needs.
+/// Criterion interprets the window in the measurement's own unit, so the 50ms
+/// here is 50 million *bytes* of accumulated peak heap -- enough that the small
+/// workloads still fill criterion's ten samples instead of warning that they
+/// could not. `without_plots()` because criterion cannot render a distribution
+/// from zero-variance samples.
 pub fn mem_criterion() -> criterion::Criterion<AllocBytes> {
     criterion::Criterion::default()
         .with_measurement(AllocBytes)
         .without_plots()
         .sample_size(10)
-        .warm_up_time(core::time::Duration::from_nanos(1))
-        .measurement_time(core::time::Duration::from_nanos(1))
+        .warm_up_time(core::time::Duration::from_millis(1))
+        .measurement_time(core::time::Duration::from_millis(50))
 }
 
 // -----------------------------------------------------------------------------
@@ -547,8 +550,8 @@ macro_rules! bench_all_configs {
 }
 
 /// Measures peak heap for `$function` in every configuration: unlike timing,
-/// this is ten single-iteration samples of a deterministic quantity, so full
-/// coverage is cheap and every benchmark gets it.
+/// this is ten short samples of a deterministic quantity, so full coverage is
+/// cheap and every benchmark gets it.
 macro_rules! bench_each_config_mem {
     ($group:expr, $params:expr, $function:ident) => {
         hirpdag_each_config!(
