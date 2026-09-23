@@ -147,10 +147,14 @@ mod tests {
         {
             test_tableshared_all::<R, TableVecLinearWeak<TestData, R, RW>>();
             test_tableshared_all::<R, TableVecSortedWeak<TestData, R, RW>>();
-            test_tableshared_all::<R, TableVecSortedWeak<TestData, R, RW>>();
             test_tableshared_all::<
                 R,
                 TableHashmapFallbackWeak<TestData, R, RW, TableVecLinearWeak<TestData, R, RW>>,
+            >();
+            // The inner table of the `arc_hash_sorted` preset.
+            test_tableshared_all::<
+                R,
+                TableHashmapFallbackWeak<TestData, R, RW, TableVecSortedWeak<TestData, R, RW>>,
             >();
         }
 
@@ -176,6 +180,154 @@ mod tests {
                     TableTovWeakTable<TestData, RefArc<TestData>, RefArcWeak<TestData>>,
                 >();
             }
+        }
+    }
+
+    /// Reference lifecycle: the data is dropped exactly once, when the last
+    /// strong handle goes, and a weak handle stops upgrading at that point.
+    ///
+    /// The table tests only check pointer identity, so they would pass for a
+    /// reference that never frees anything, or frees twice. `RefSep*` and
+    /// `RefTlc` do their own counting in unsafe code; this pins it down.
+    mod test_lifecycle {
+        use crate::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        /// Data that counts how many times it has been dropped.
+        #[derive(Debug)]
+        struct Tracked {
+            id: u32,
+            drops: Arc<AtomicUsize>,
+        }
+
+        impl Tracked {
+            fn new(id: u32) -> (Self, Arc<AtomicUsize>) {
+                let drops = Arc::new(AtomicUsize::new(0));
+                let data = Self {
+                    id,
+                    drops: drops.clone(),
+                };
+                (data, drops)
+            }
+        }
+
+        impl Drop for Tracked {
+            fn drop(&mut self) {
+                self.drops.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        impl std::hash::Hash for Tracked {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.id.hash(state);
+            }
+        }
+
+        impl PartialEq for Tracked {
+            fn eq(&self, other: &Self) -> bool {
+                self.id == other.id
+            }
+        }
+
+        impl Eq for Tracked {}
+
+        /// Same-thread lifecycle, for references whose drop takes effect
+        /// immediately.
+        fn freed_after_last_strong<R, RW>()
+        where
+            R: Reference<Tracked>,
+            RW: ReferenceWeak<Tracked, R>,
+        {
+            let (data, drops) = Tracked::new(1);
+            let a = R::new(data);
+            let b = R::strong_clone(&a);
+            let weak = RW::weak_downgrade(&a);
+            assert!(R::strong_ptr_eq(&a, &b));
+
+            drop(a);
+            assert_eq!(drops.load(Ordering::SeqCst), 0, "freed with a handle left");
+            let up = RW::weak_upgrade(&weak).expect("upgrade while a handle is left");
+            assert!(R::strong_ptr_eq(&up, &b));
+            drop(up);
+            drop(b);
+
+            assert_eq!(drops.load(Ordering::SeqCst), 1, "not freed exactly once");
+            assert!(RW::weak_upgrade(&weak).is_none(), "upgraded a freed value");
+            drop(weak);
+            assert_eq!(drops.load(Ordering::SeqCst), 1, "weak drop freed the data");
+        }
+
+        #[test]
+        fn arc() {
+            freed_after_last_strong::<RefArc<Tracked>, RefArcWeak<Tracked>>();
+        }
+
+        #[test]
+        fn rc() {
+            freed_after_last_strong::<RefRc<Tracked>, RefRcWeak<Tracked>>();
+        }
+
+        #[test]
+        fn sep() {
+            freed_after_last_strong::<RefSep<Tracked>, RefSepWeak<Tracked>>();
+        }
+
+        #[test]
+        fn seppad() {
+            freed_after_last_strong::<RefSepPad<Tracked>, RefSepPadWeak<Tracked>>();
+        }
+
+        #[test]
+        fn sepu32() {
+            freed_after_last_strong::<RefSepU32<Tracked>, RefSepU32Weak<Tracked>>();
+        }
+
+        /// `RefLeak` never frees, and its weak handles always upgrade.
+        #[test]
+        fn leak_never_frees() {
+            type R = RefLeak<Tracked>;
+            type RW = RefLeakWeak<Tracked>;
+            let (data, drops) = Tracked::new(1);
+            // `RefLeak` is a `ManuallyDrop`, whose inherent `new` would shadow
+            // the trait's.
+            let weak = {
+                let a = <R as Reference<Tracked>>::new(data);
+                <RW as ReferenceWeak<Tracked, R>>::weak_downgrade(&a)
+            };
+            assert!(<RW as ReferenceWeak<Tracked, R>>::weak_upgrade(&weak).is_some());
+            assert_eq!(drops.load(Ordering::SeqCst), 0);
+        }
+
+        /// `RefTlc` defers decrements to a per-thread buffer that is flushed
+        /// after a bounded number of operations or at thread exit, so the
+        /// handles are dropped on a thread that then exits. Clones and drops
+        /// in between cancel against the buffer; handles also cross threads,
+        /// which is the case the design argues is sound.
+        #[test]
+        fn tlc_freed_once_after_flush() {
+            let (data, drops) = Tracked::new(1);
+            let a = RefTlc::new(data);
+            let weak = RefTlcWeak::weak_downgrade(&a);
+
+            std::thread::spawn(move || {
+                let clones: Vec<_> = (0..100).map(|_| RefTlc::strong_clone(&a)).collect();
+                drop(a);
+                let up = RefTlcWeak::weak_upgrade(&weak).expect("upgrade while alive");
+                let moved = RefTlc::strong_clone(&up);
+                std::thread::spawn(move || drop(moved)).join().unwrap();
+                drop(up);
+                drop(clones);
+                // Still referenced by this thread's deferred decrements.
+                assert_eq!(drops.load(Ordering::SeqCst), 0);
+                (weak, drops)
+            })
+            .join()
+            .map(|(weak, drops)| {
+                assert_eq!(drops.load(Ordering::SeqCst), 1, "not freed exactly once");
+                assert!(RefTlcWeak::weak_upgrade(&weak).is_none());
+            })
+            .unwrap();
         }
     }
 

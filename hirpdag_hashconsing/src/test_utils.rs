@@ -113,6 +113,34 @@ where
     hashcons_two_copies::<R, TS>(&tableshared);
 }
 
+/// `get` finds only what `get_or_insert` interned, and finds the same pointer.
+///
+/// Nothing in hirpdag itself calls `get`, so this is its only coverage. What
+/// `get` returns once every strong reference is gone is left unchecked: weak
+/// tables forget the entry, `RefLeak` and the strong concurrent tables keep it.
+fn test_tableshared_get<R, TS>(tableshared: TS)
+where
+    R: Reference<TestData>,
+    TS: Table<TestData, R>,
+{
+    let n = 32usize;
+    for k in 0..n {
+        let data = TestData::new(k as i32, 0, "hello".to_string());
+        assert!(tableshared.get(&data).is_none(), "key {} before insert", k);
+    }
+    let mut interned: Vec<R> = vec![];
+    populate_linear(&mut interned, &tableshared, 0..n);
+    for (k, x) in interned.iter().enumerate() {
+        let data = TestData::new(k as i32, 0, "hello".to_string());
+        let found = tableshared
+            .get(&data)
+            .unwrap_or_else(|| panic!("key {} after insert", k));
+        assert!(R::strong_ptr_eq(&found, x), "key {} found another node", k);
+    }
+    let absent = TestData::new(n as i32, 0, "hello".to_string());
+    assert!(tableshared.get(&absent).is_none());
+}
+
 /// Run the shared-table checks, each against a table fresh from `new_table`.
 pub fn test_tableshared<R, TS>(new_table: impl Fn() -> TS)
 where
@@ -121,4 +149,5 @@ where
 {
     test_tableshared_interface::<R, TS>(new_table());
     test_tableshared_deduplication_basic::<R, TS>(new_table());
+    test_tableshared_get::<R, TS>(new_table());
 }
