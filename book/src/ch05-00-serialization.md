@@ -95,8 +95,9 @@ decoded, so:
   enum variants changes the wire format. The schema fingerprint turns this
   into an early, clear error for binary archives; JSON is name-tagged, more
   tolerant, and unfingerprinted.
-* The collect walk is recursive; extremely deep chains could overflow the
-  stack.
+* Serializing and deserializing are iterative, so graph depth is limited by
+  memory rather than by the thread's stack. Dropping, rewriting and
+  `Debug`-formatting a graph still recurse once per level of depth.
 
 See `docs/design/serialization.md` in the repository for the full design, and
 `docs/adr/` for the decisions behind it.

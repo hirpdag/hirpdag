@@ -54,8 +54,9 @@ pub trait HirpdagArchive: Sized {
     /// One entry of the node table: an interned node of any hashconsed type in
     /// the module (the generated `HirpdagNodeRef`).  Node references resolve
     /// their index against a slice of these, and the node's archived form is
-    /// one entry of the serialized node table.
-    type Node: HirpdagArchived<[Self::Node]>;
+    /// one entry of the serialized node table.  The collect phase asks it for
+    /// its children.
+    type Node: HirpdagArchived<[Self::Node]> + HirpdagCollectNode;
 
     /// The roots of an archive: one vector per `#[hirpdag(root)]` type (the
     /// generated `HirpdagArchiveRoots`).  [`HirpdagNoRoots`] for a module with
@@ -110,16 +111,40 @@ impl<R: ?Sized> HirpdagArchived<R> for HirpdagNoRoots {
 
 // ==== Collect phase
 
-/// State of the collect phase: the node table being built, and the nodes
-/// already in it.
+/// A node table entry that can name its children: the refs held in its fields.
+///
+/// Implemented by the module's node type (the generated `HirpdagNodeRef`), by
+/// running [`HirpdagCollect`] over the node's data, which hands each child ref
+/// to [`HirpdagCollectCtx::visit`].
+pub trait HirpdagCollectNode: Sized {
+    /// Hand each ref in this node's fields to `ctx`, in field order.
+    fn hirpdag_collect_children(&self, ctx: &mut HirpdagCollectCtx<Self>);
+}
+
+/// State of the collect phase: the node table being built, the nodes already
+/// in it, and the nodes found but not yet expanded.
 ///
 /// Nodes are keyed by creation id, which hash-consing makes a unique name for
 /// an interned node, so a node reachable by several paths is registered once.
+///
+/// The walk is a post-order DFS over an explicit stack rather than the call
+/// stack, so its depth is bounded by memory, not by the thread's stack size.
 pub struct HirpdagCollectCtx<N> {
     /// Creation id of each registered node, to its index in `nodes`.
     seen: std::collections::HashMap<u64, u64>,
     /// The node table, in post-order DFS order.
     nodes: Vec<N>,
+    /// Refs handed to [`visit`](Self::visit) since the walk last took them: the
+    /// roots, then the children of the node being expanded, in field order.
+    found: Vec<(u64, N)>,
+}
+
+/// One entry of the collect walk's explicit stack.
+enum CollectStep<N> {
+    /// Hand over the node's children, then come back to register it.
+    Expand(u64, N),
+    /// The node's children are all registered: register the node.
+    Register(u64, N),
 }
 
 impl<N> HirpdagCollectCtx<N> {
@@ -127,31 +152,71 @@ impl<N> HirpdagCollectCtx<N> {
         Self {
             seen: std::collections::HashMap::new(),
             nodes: Vec::new(),
+            found: Vec::new(),
         }
     }
 
-    /// Register one node, children first, unless it is already registered.
+    /// Hand over a ref found in a root or in a node's fields.
     ///
-    /// `collect_children` recurses into the node's fields and `to_node` hands
-    /// over the node itself; running them in that order is what makes every
-    /// child's index smaller than its parent's.
-    pub fn visit<F, G>(&mut self, creation_id: u64, collect_children: F, to_node: G)
+    /// Nothing is walked here: the node is queued for the walk to expand and
+    /// register, children first.  `to_node` is only called for a node not
+    /// already registered, so an edge to a registered node costs no clone.
+    pub fn visit<G>(&mut self, creation_id: u64, to_node: G)
     where
-        F: FnOnce(&mut Self),
         G: FnOnce() -> N,
     {
         if self.seen.contains_key(&creation_id) {
             return;
         }
-        collect_children(self);
-        let index = self.nodes.len() as u64;
-        self.nodes.push(to_node());
-        self.seen.insert(creation_id, index);
+        self.found.push((creation_id, to_node()));
+    }
+
+    /// Queue the refs found since the last call, so that the first found is
+    /// the first taken off the stack.
+    fn push_found(&mut self, stack: &mut Vec<CollectStep<N>>) {
+        stack.extend(
+            self.found
+                .drain(..)
+                .rev()
+                .map(|(creation_id, node)| CollectStep::Expand(creation_id, node)),
+        );
     }
 
     /// The node table, and where in it the encode phase finds each node.
     fn into_parts(self) -> (Vec<N>, HirpdagNodeIndex) {
         (self.nodes, HirpdagNodeIndex::new(self.seen))
+    }
+}
+
+impl<N: HirpdagCollectNode> HirpdagCollectCtx<N> {
+    /// Walk everything reachable from the refs handed over so far, registering
+    /// each unique node once, children before parents.
+    ///
+    /// Visits nodes in the order a recursive post-order DFS would: each ref in
+    /// the order it was found, its children fully registered before it.  A node
+    /// found again after it was registered is skipped.  (Found again while it
+    /// is being expanded would mean it is its own descendant, which interned
+    /// nodes cannot be.)
+    fn walk(&mut self) {
+        let mut stack: Vec<CollectStep<N>> = Vec::new();
+        self.push_found(&mut stack);
+        while let Some(step) = stack.pop() {
+            match step {
+                CollectStep::Expand(creation_id, node) => {
+                    if self.seen.contains_key(&creation_id) {
+                        continue;
+                    }
+                    node.hirpdag_collect_children(self);
+                    stack.push(CollectStep::Register(creation_id, node));
+                    self.push_found(&mut stack);
+                }
+                CollectStep::Register(creation_id, node) => {
+                    let index = self.nodes.len() as u64;
+                    self.nodes.push(node);
+                    self.seen.insert(creation_id, index);
+                }
+            }
+        }
     }
 }
 
@@ -166,6 +231,7 @@ impl<N> Default for HirpdagCollectCtx<N> {
 fn collect<A: HirpdagArchive>(roots: &A::Roots) -> (Vec<A::Node>, HirpdagNodeIndex) {
     let mut ctx = HirpdagCollectCtx::<A::Node>::new();
     roots.hirpdag_collect(&mut ctx);
+    ctx.walk();
     ctx.into_parts()
 }
 
@@ -261,13 +327,23 @@ pub fn archive_serialize<A: HirpdagArchive>(
 
 /// Deserializes a hirpdag binary archive, re-interning every node through the
 /// hash-cons table, and returns the typed roots.  Fails with `SchemaMismatch`
-/// if the archive was written by different hirpdag type definitions.
+/// if the archive was written by different hirpdag type definitions, and
+/// with `Format` if the input does not end where the archive does.
 pub fn archive_deserialize<A: HirpdagArchive>(
     bytes: &[u8],
 ) -> Result<A::Roots, HirpdagDeserializeError> {
     let payload = hirpdag_read_binary_header(bytes, &A::schema_fingerprint())?;
-    let archive: Archive<ArchivedNode<A>, ArchivedRoots<A>> = postcard::from_bytes(payload)
-        .map_err(|e| HirpdagDeserializeError::Format(e.to_string()))?;
+    // `postcard::from_bytes` ignores whatever follows the value it decodes,
+    // so check for leftovers here, as the JSON path does.
+    let (archive, rest): (Archive<ArchivedNode<A>, ArchivedRoots<A>>, &[u8]) =
+        postcard::take_from_bytes(payload)
+            .map_err(|e| HirpdagDeserializeError::Format(e.to_string()))?;
+    if !rest.is_empty() {
+        return Err(HirpdagDeserializeError::Format(format!(
+            "{} trailing bytes after the archive",
+            rest.len()
+        )));
+    }
     archive_decode::<A>(archive)
 }
 
@@ -583,11 +659,7 @@ mod tests {
 
     impl HirpdagCollect<ToyCtx> for Item {
         fn hirpdag_collect(&self, ctx: &mut ToyCtx) {
-            ctx.visit(
-                self.creation_id(),
-                |ctx| self.data().hirpdag_collect(ctx),
-                || ToyNode::Item(self.clone()),
-            );
+            ctx.visit(self.creation_id(), || ToyNode::Item(self.clone()));
         }
     }
 
@@ -600,7 +672,16 @@ mod tests {
 
     impl HirpdagCollect<ToyCtx> for Tag {
         fn hirpdag_collect(&self, ctx: &mut ToyCtx) {
-            ctx.visit(self.creation_id(), |_ctx| {}, || ToyNode::Tag(self.clone()));
+            ctx.visit(self.creation_id(), || ToyNode::Tag(self.clone()));
+        }
+    }
+
+    impl HirpdagCollectNode for ToyNode {
+        fn hirpdag_collect_children(&self, ctx: &mut ToyCtx) {
+            match self {
+                ToyNode::Item(item) => item.data().hirpdag_collect(ctx),
+                ToyNode::Tag(_) => {}
+            }
         }
     }
 
@@ -671,6 +752,34 @@ mod tests {
         // And a parent names its children by index, not by value.
         assert!(
             matches!(&archive.nodes[2], ArchivedToyNode::Item(data) if data.deps == vec![1, 1])
+        );
+    }
+
+    /// The node table is in the order a recursive post-order DFS registers the
+    /// nodes: roots in order, each node's refs in field order, a child before
+    /// its parent, and a node reached again skipped.
+    #[test]
+    fn node_table_is_in_post_order() {
+        let hot = tag("order_hot");
+        let a = item("order_a", vec![], Some(hot.clone()));
+        let b = item("order_b", vec![a.clone()], None);
+        let c = item("order_c", vec![a.clone(), b.clone()], Some(hot.clone()));
+        let roots = ToyRoots {
+            item: vec![c, b],
+            tag: vec![hot, tag("order_cold")],
+        };
+        let archive = archive_encode::<ToySchema>(&roots).unwrap();
+        let order: Vec<&str> = archive
+            .nodes
+            .iter()
+            .map(|node| match node {
+                ArchivedToyNode::Item(data) => data.name.as_str(),
+                ArchivedToyNode::Tag(data) => data.label.as_str(),
+            })
+            .collect();
+        assert_eq!(
+            order,
+            vec!["order_hot", "order_a", "order_b", "order_c", "order_cold"]
         );
     }
 
@@ -797,6 +906,17 @@ mod tests {
         let bytes = archive_serialize::<ToySchema>(&diamond()).unwrap();
         let err = archive_deserialize::<ToySchema>(&bytes[..bytes.len() - 1]).unwrap_err();
         assert!(matches!(err, HirpdagDeserializeError::Format(_)));
+    }
+
+    #[test]
+    fn trailing_bytes_rejected() {
+        let mut bytes = archive_serialize::<ToySchema>(&diamond()).unwrap();
+        bytes.extend_from_slice(b"garbage");
+        let err = archive_deserialize::<ToySchema>(&bytes).unwrap_err();
+        assert_eq!(
+            err,
+            HirpdagDeserializeError::Format("7 trailing bytes after the archive".to_string())
+        );
     }
 
     #[test]

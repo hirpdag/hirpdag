@@ -145,6 +145,8 @@ generates a `hirpdag_archive_encode` / `hirpdag_archive_decode` pair that says i
 
 1. Collect phase: a post-order DFS from each root in order. Dedup by creation ID; on
    first visit, register the interned node in the node table and record its index.
+   The DFS runs over an explicit stack, not the call stack, so graph depth is not
+   limited by the thread's stack size.
 2. Encode phase: convert each node, and then the roots, into their archived form,
    resolving every ref against the index the collect phase built.
 3. Hand the archive — version, node table, roots, all plain data — to postcard or
@@ -156,7 +158,13 @@ leaks into the output; the node list is in DFS completion order).
 The collect walk uses a small `HirpdagCollect<C>` trait in `hirpdag::base` with the
 same shape as the existing `HirpdagRewritable<T>` / `HirpdagComputeMeta` patterns:
 no-op impls for numbers/`String`, structural impls for `Option`/`Vec`, and generated
-impls for data structs, enums, and ref types.
+impls for data structs, enums, and ref types. A ref's impl does not recurse: it
+hands its node to `HirpdagCollectCtx::visit`, which queues it. The walk in
+`HirpdagCollectCtx` pops the queued node, asks it for its children through
+`HirpdagCollectNode` (generated for `HirpdagNodeRef`, running `HirpdagCollect` over
+the node's data), queues those, and registers the node once they are all
+registered. Queued refs are taken in the order they were found, so the node table
+comes out in exactly the order a recursive DFS would produce.
 
 ### Deserialization algorithm
 
@@ -190,27 +198,31 @@ Consequences:
   error types, and the two traversal traits (`HirpdagCollect` for the collect walk,
   `HirpdagArchived` for the archived form) with their leaf and container impls.
 - `hirpdag/src/base/archive.rs` — the archive itself: the `HirpdagArchive` and
-  `HirpdagArchiveMember` interfaces a module implements, the collect context, ref
+  `HirpdagArchiveMember` interfaces a module implements, the collect context and its
+  explicit-stack walk (with the `HirpdagCollectNode` trait it expands nodes by), ref
   resolution, and the four entry points. Its unit tests drive all of it through a
   hand-written schema standing in for a generated module, so a bug in the archive
   fails a test in the crate that owns it.
-- `hirpdag_derive/src/lib.rs` — per module: the interned-node enum, the node table
-  entry enum, the encode/decode helpers, the `HirpdagArchive` impl and the four
+- `hirpdag_derive/src/lib.rs` — per module: the interned-node enum and its
+  `HirpdagCollectNode` impl, the node table entry enum, the encode/decode helpers, the `HirpdagArchive` impl and the four
   entry points. Per data type: the archived form and its two conversions, the
   collect impl, and (for structs) the `HirpdagArchiveMember` impl.
 - `test_suite/tests/serialization.rs` — end-to-end over a generated module: round
   trips in both formats, sharing preserved through a Fibonacci-shaped DAG, multiple
   and mixed-type roots, re-interning on a second load, hand-written JSON, concurrent
-  archives, and the error paths (bad magic, truncated input, unsupported version,
-  invalid index, node type mismatch, schema mismatch).
+  archives, and the error paths (bad magic, truncated input, trailing bytes,
+  unsupported version, invalid index, node type mismatch, schema mismatch).
+- `test_suite/tests/deep_serialization.rs` — a 100,000-node chain round trips on a
+  thread with a 256 KiB stack, which the old recursive collect overflowed.
 - `test_suite/benches/serde_roundtrip.rs` — build, serialize and deserialize a
   round trip, in both formats, across the configuration presets.
 
 ## Caveats / future work
 
-- **Recursive collect.** v1 collect is recursive; extremely deep chains could
-  overflow the stack. `HirpdagMeta::height` (u16, saturating) gives a cheap upfront
-  signal; an explicit-stack DFS is a contained follow-up.
+- **Deep graphs outside serialization.** Collect and decode are both iterative, so
+  serialization handles any depth (`test_suite/tests/deep_serialization.rs` round
+  trips a 100,000-node chain on a 256 KiB stack). Dropping a deep graph, rewriting it
+  and `Debug`-formatting it still recurse once per level.
 - **Schema evolution.** v1 requires matching type definitions. Binary enum tags are
   ordinal, so reordering `#[hirpdag]` type declarations or enum variants changes the
   wire format. The schema fingerprint in the binary header catches this with an

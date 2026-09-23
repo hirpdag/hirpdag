@@ -223,7 +223,21 @@ impl syn::parse::Parse for HirpdagArg {
                     ))
                 }
             }
-            Handler::Flag(build_arg) => build_arg(),
+            Handler::Flag(build_arg) => {
+                // A flag is set by being present. Accepting and ignoring a
+                // value would turn `root = false` into a root.
+                if opeq.is_some() || value_lit.is_some() {
+                    return Err(syn::Error::new(
+                        arg_name_ident.span(),
+                        format!(
+                            "HirpdagArg {} is a flag and takes no value; \
+                             write `{}` to set it, or leave it out",
+                            arg_name, arg_name
+                        ),
+                    ));
+                }
+                build_arg()
+            }
         }
     }
 }

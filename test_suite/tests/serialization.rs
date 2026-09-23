@@ -217,6 +217,21 @@ fn truncated_input_rejected() {
 }
 
 #[test]
+fn trailing_bytes_rejected() {
+    let roots = HirpdagArchiveRoots {
+        roots_Item: vec![Item::new("trailing_item".to_string(), vec![])],
+        ..Default::default()
+    };
+    let mut bytes = hirpdag_serialize(&roots).unwrap();
+    bytes.push(0);
+    let err = hirpdag_deserialize(&bytes).unwrap_err();
+    assert!(matches!(
+        err,
+        hirpdag::base::HirpdagDeserializeError::Format(_)
+    ));
+}
+
+#[test]
 fn concurrent_archives_do_not_interfere() {
     // An archive carries the state it needs from phase to phase itself, with
     // nothing ambient, so any number of them can be in flight at once.
