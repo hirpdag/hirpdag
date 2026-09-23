@@ -790,11 +790,12 @@ fn expand_hirpdag_struct(
             }
         }
 
+        // A ref hands its node to the collect walk, which expands it later
+        // (see HirpdagCollectNode below) rather than recursing into it here.
         impl hirpdag::base::HirpdagCollect<HirpdagCollectCtx> for #hirpdag_ref_name {
             fn hirpdag_collect(&self, ctx: &mut HirpdagCollectCtx) {
                 ctx.visit(
                     self.0.hirpdag_get_creation_id(),
-                    |ctx| hirpdag::base::HirpdagCollect::hirpdag_collect(&(**self), ctx),
                     || HirpdagNodeRef::#hirpdag_ref_name(self.clone()),
                 );
             }
@@ -1611,6 +1612,7 @@ fn get_serialization_items(
     let mut noderef_variants = proc_macro2::TokenStream::new();
     let mut to_archive_arms = proc_macro2::TokenStream::new();
     let mut from_archive_arms = proc_macro2::TokenStream::new();
+    let mut collect_children_arms = proc_macro2::TokenStream::new();
     let mut roots_field_declarations = proc_macro2::TokenStream::new();
     let mut roots_fields_collect = proc_macro2::TokenStream::new();
     let mut roots_archive_field_declarations = proc_macro2::TokenStream::new();
@@ -1636,6 +1638,11 @@ fn get_serialization_items(
             HirpdagNodeRef::#ref_name(node) => HirpdagArchiveNode::#ref_name(
                 hirpdag_archive_encode(&(**node), index)?
             ),
+        });
+        collect_children_arms.extend(quote! {
+            HirpdagNodeRef::#ref_name(node) => {
+                hirpdag::base::HirpdagCollect::hirpdag_collect(&(**node), ctx)
+            }
         });
         // Nodes are re-interned through the normal hashcons path (not the
         // normalizing constructor: the archived data was produced from
@@ -1721,6 +1728,14 @@ fn get_serialization_items(
         /// Collect phase state for this module's node table.
         #[doc(hidden)]
         pub type HirpdagCollectCtx = hirpdag::base::HirpdagCollectCtx<HirpdagNodeRef>;
+
+        impl hirpdag::base::HirpdagCollectNode for HirpdagNodeRef {
+            fn hirpdag_collect_children(&self, ctx: &mut HirpdagCollectCtx) {
+                match self {
+                    #collect_children_arms
+                }
+            }
+        }
 
         /// The archived form of a value in this module: the same value with
         /// every reference replaced by a node table index.
