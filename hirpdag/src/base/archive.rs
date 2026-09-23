@@ -261,13 +261,23 @@ pub fn archive_serialize<A: HirpdagArchive>(
 
 /// Deserializes a hirpdag binary archive, re-interning every node through the
 /// hash-cons table, and returns the typed roots.  Fails with `SchemaMismatch`
-/// if the archive was written by different hirpdag type definitions.
+/// if the archive was written by different hirpdag type definitions, and
+/// with `Format` if the input does not end where the archive does.
 pub fn archive_deserialize<A: HirpdagArchive>(
     bytes: &[u8],
 ) -> Result<A::Roots, HirpdagDeserializeError> {
     let payload = hirpdag_read_binary_header(bytes, &A::schema_fingerprint())?;
-    let archive: Archive<ArchivedNode<A>, ArchivedRoots<A>> = postcard::from_bytes(payload)
-        .map_err(|e| HirpdagDeserializeError::Format(e.to_string()))?;
+    // `postcard::from_bytes` ignores whatever follows the value it decodes,
+    // so check for leftovers here, as the JSON path does.
+    let (archive, rest): (Archive<ArchivedNode<A>, ArchivedRoots<A>>, &[u8]) =
+        postcard::take_from_bytes(payload)
+            .map_err(|e| HirpdagDeserializeError::Format(e.to_string()))?;
+    if !rest.is_empty() {
+        return Err(HirpdagDeserializeError::Format(format!(
+            "{} trailing bytes after the archive",
+            rest.len()
+        )));
+    }
     archive_decode::<A>(archive)
 }
 
@@ -797,6 +807,17 @@ mod tests {
         let bytes = archive_serialize::<ToySchema>(&diamond()).unwrap();
         let err = archive_deserialize::<ToySchema>(&bytes[..bytes.len() - 1]).unwrap_err();
         assert!(matches!(err, HirpdagDeserializeError::Format(_)));
+    }
+
+    #[test]
+    fn trailing_bytes_rejected() {
+        let mut bytes = archive_serialize::<ToySchema>(&diamond()).unwrap();
+        bytes.extend_from_slice(b"garbage");
+        let err = archive_deserialize::<ToySchema>(&bytes).unwrap_err();
+        assert_eq!(
+            err,
+            HirpdagDeserializeError::Format("7 trailing bytes after the archive".to_string())
+        );
     }
 
     #[test]
