@@ -314,10 +314,18 @@ fn get_default_rewrite_body(fields_named: &syn::FieldsNamed) -> proc_macro2::Tok
     }
 
     // Prefixed locals so a field literally named `driver` or `self` cannot
-    // shadow the parameters used to rewrite the remaining fields.
+    // shadow the parameters used to rewrite the remaining fields. A raw
+    // identifier (`r#type`) loses its `r#`: the prefixed name is not a
+    // keyword, and `hirpdag_rw_r#type` is not an identifier at all.
     let locals: Vec<syn::Ident> = field_names
         .iter()
-        .map(|field_name| Ident::new(&format!("hirpdag_rw_{}", field_name), Span::call_site()))
+        .map(|field_name| {
+            use syn::ext::IdentExt;
+            Ident::new(
+                &format!("hirpdag_rw_{}", field_name.unraw()),
+                Span::call_site(),
+            )
+        })
         .collect();
 
     let lets: proc_macro2::TokenStream = field_names
@@ -862,15 +870,36 @@ fn get_variants_rewrite(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream 
         .collect()
 }
 
-/// The payload type of a single-field tuple variant, which is the only shape
-/// `#[hirpdag]` enums take.
+/// Rejects any variant that is not a single-field tuple variant, the only
+/// shape `#[hirpdag]` enums take: the generated code matches every variant as
+/// `Variant(x)`.
+///
+/// Runs before anything is generated, so the error points at the variant
+/// rather than surfacing as a macro panic (no span) or as type errors inside
+/// the expansion.
+fn check_variants(input_enum: &syn::DataEnum) -> syn::Result<()> {
+    for variant in &input_enum.variants {
+        let is_single_tuple_field =
+            matches!(&variant.fields, syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1);
+        if !is_single_tuple_field {
+            return Err(syn::Error::new_spanned(
+                variant,
+                format!(
+                    "`#[hirpdag]` enum variants must have exactly one unnamed field, \
+                     like `{}(T)`",
+                    variant.ident
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The payload type of a single-field tuple variant.
 fn get_variant_type(variant: &syn::Variant) -> &syn::Type {
-    match variant.fields.iter().next() {
-        Some(field) if variant.fields.len() == 1 => &field.ty,
-        _ => panic!(
-            "`#[hirpdag]` enum variants must have exactly one unnamed field: `{}`",
-            variant.ident
-        ),
+    match &variant.fields {
+        syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => &fields.unnamed[0].ty,
+        _ => unreachable!("variant shapes are checked by check_variants"),
     }
 }
 
@@ -956,6 +985,8 @@ fn expand_hirpdag_enum(
             "`#[hirpdag(root)]` can only be applied to structs; enums are not hashconsed",
         ));
     }
+
+    check_variants(input_enum)?;
 
     let names = DataTypeNames::new(name, DataTypeKind::Enum);
     let DataTypeNames {
@@ -2024,6 +2055,68 @@ mod tests {
             err.to_string().contains("inline module"),
             "unexpected error: {err}"
         );
+    }
+
+    /// The error `expand_module_items` reports for a module.
+    fn expansion_error(src: &str) -> String {
+        expand_module_items(&config(""), &items(src), "test_pkg")
+            .expect_err("expansion should fail")
+            .to_string()
+    }
+
+    /// A flag set with a value used to be read as set whatever the value, so
+    /// `root = false` made a root.
+    #[test]
+    fn a_flag_with_a_value_is_rejected() {
+        for src in [
+            "mod m { #[hirpdag(root = false)] struct S { a: u32 } }",
+            "mod m { #[hirpdag(root = true)] struct S { a: u32 } }",
+            "mod m { #[hirpdag(normalizer = false)] struct S { a: u32 } }",
+            "mod m { #[hirpdag(root \"yes\")] struct S { a: u32 } }",
+        ] {
+            let err = expansion_error(src);
+            assert!(err.contains("takes no value"), "{src}: {err}");
+        }
+        // The module attribute goes through the same parser.
+        assert!(syn::parse_str::<HirpdagArgs>("normalizer = false").is_err());
+        // Bare flags are still accepted.
+        assert!(scan("mod m { #[hirpdag(root)] struct S { a: u32 } }")[0].is_root);
+    }
+
+    /// A raw identifier field used to panic building the rewrite local's name.
+    #[test]
+    fn a_raw_identifier_field_expands() {
+        let (tokens, _) = expand_module_items(
+            &config(""),
+            &items("mod m { #[hirpdag] struct S { r#type: u32, r#match: Option<S> } }"),
+            "test_pkg",
+        )
+        .expect("expansion");
+        let tokens = tokens.to_string();
+        assert!(
+            tokens.contains("hirpdag_rw_type"),
+            "rewrite local not found"
+        );
+        assert!(
+            tokens.contains("hirpdag_rw_match"),
+            "rewrite local not found"
+        );
+    }
+
+    /// Enum variants other than a single tuple field used to panic the macro,
+    /// or, for a one-field struct variant, expand into code that did not
+    /// compile.
+    #[test]
+    fn an_enum_variant_of_the_wrong_shape_is_rejected() {
+        for src in [
+            "mod m { #[hirpdag] enum E { A, B(u32) } }",
+            "mod m { #[hirpdag] enum E { A(u32, u32) } }",
+            "mod m { #[hirpdag] enum E { A { x: u32 } } }",
+            "mod m { #[hirpdag] enum E { A(), B(u32) } }",
+        ] {
+            let err = expansion_error(src);
+            assert!(err.contains("exactly one unnamed field"), "{src}: {err}");
+        }
     }
 
     /// The package name is passed in rather than read from the environment, so
