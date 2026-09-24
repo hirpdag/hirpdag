@@ -54,7 +54,7 @@ Distance from this node to its deepest leaf (saturating).  Proportional to the l
 A user-defined bitfield propagated upward via bitwise OR.  Allows quickly testing whether *any* node in a subtree has a property (e.g. "contains a free variable") without traversal.
 
 ### `HirpdagComputeMeta`
-Trait implemented by every field type.  The macro-generated implementation for each struct folds together the results from all fields.  Leaf types (numbers, strings) return zero; child `HirpdagRef` fields return their cached metadata.
+Trait implemented by every field type.  The macro-generated implementation for each struct folds together the results from all fields.  Leaves (`HirpdagLeaf`) return zero; child `HirpdagRef` fields return their cached metadata.  See Field Types.
 
 Source: `hirpdag/src/base/meta.rs`
 
@@ -171,6 +171,20 @@ Source: `hirpdag/src/base/memoize.rs`
 
 ### Normalization
 A user-supplied transformation applied during construction (`new()`), before interning.  Used to enforce canonical forms such as sorting commutative operands, flattening nested associative operators, or folding constant subexpressions.  Only triggered when `#[hirpdag(normalizer)]` is present.
+
+---
+
+## Field Types
+
+### Field type
+A type a `#[hirpdag]` struct field or enum payload can have.  The generated code visits every field four ways, so a field type implements `HirpdagComputeMeta`, `HirpdagRewritable`, `HirpdagCollect` and `HirpdagArchived`.  Field types are leaves, `#[hirpdag]` types (whose implementations are generated), and the containers `Option`, `Vec` and tuples of two to four elements, nested to any depth.  `Box` is not a container: it is `#[fundamental]`, so an implementation for it would overlap the leaf implementations.  An unsupported field is a compile error at the field.
+
+Source: `hirpdag/src/base/field.rs`
+
+### `HirpdagLeaf`
+Marker trait for a field type that holds no hirpdag node: the integers, `bool`, `char`, `String` and `()`, plus any type a crate marks with `impl HirpdagLeaf for TheType {}`.  Implementing it provides all four field traits: a leaf has zero metadata, is cloned unchanged by a rewrite, references nothing for the archive to collect, and is archived as itself.  Its supertraits are what the generated code asks of a field (`Clone`, `Debug`, `Hash`, `Eq`, `Ord`, serde's `Serialize` and `DeserializeOwned`).
+
+Source: `hirpdag/src/base/field.rs`
 
 ---
 

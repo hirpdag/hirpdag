@@ -209,34 +209,10 @@ impl<'de> serde::Deserialize<'de> for HirpdagFormatVersion {
 ///
 /// `C` is the collect context generated per `#[hirpdag_module]` module.
 /// Follows the same shape as `HirpdagRewritable`: no-op for leaf values,
-/// structural for containers, generated for hirpdag types.
+/// structural for containers (both in [`field`](crate::base::field)),
+/// generated for hirpdag types.
 pub trait HirpdagCollect<C> {
     fn hirpdag_collect(&self, ctx: &mut C);
-}
-
-use crate::base::basic_traits::IsNumber;
-impl<C, P: IsNumber> HirpdagCollect<C> for P {
-    fn hirpdag_collect(&self, _ctx: &mut C) {}
-}
-
-impl<C> HirpdagCollect<C> for String {
-    fn hirpdag_collect(&self, _ctx: &mut C) {}
-}
-
-impl<C, T: HirpdagCollect<C>> HirpdagCollect<C> for Option<T> {
-    fn hirpdag_collect(&self, ctx: &mut C) {
-        if let Some(inner) = self {
-            inner.hirpdag_collect(ctx);
-        }
-    }
-}
-
-impl<C, T: HirpdagCollect<C>> HirpdagCollect<C> for Vec<T> {
-    fn hirpdag_collect(&self, ctx: &mut C) {
-        for item in self {
-            item.hirpdag_collect(ctx);
-        }
-    }
 }
 
 /// Where the collect phase put each node: creation id to node table index.
@@ -291,8 +267,8 @@ impl HirpdagNodeIndex {
 ///
 /// `R` is what a reference resolves against: the reconstructed nodes so far
 /// (`[HirpdagNodeRef]` for a generated module).  Follows the same shape as
-/// [`HirpdagCollect`]: identity for leaf values, structural for containers,
-/// generated for hirpdag types.
+/// [`HirpdagCollect`]: identity for leaf values, structural for containers
+/// (both in [`field`](crate::base::field)), generated for hirpdag types.
 pub trait HirpdagArchived<R: ?Sized>: Sized {
     /// This value's form inside an archive.
     type Archive: serde::Serialize + serde::de::DeserializeOwned;
@@ -308,72 +284,4 @@ pub trait HirpdagArchived<R: ?Sized>: Sized {
         archived: Self::Archive,
         nodes: &R,
     ) -> Result<Self, HirpdagDeserializeError>;
-}
-
-impl<R: ?Sized, P> HirpdagArchived<R> for P
-where
-    P: IsNumber + Copy + serde::Serialize + serde::de::DeserializeOwned,
-{
-    type Archive = P;
-    fn hirpdag_to_archive(&self, _index: &HirpdagNodeIndex) -> Result<P, HirpdagSerializeError> {
-        Ok(*self)
-    }
-    fn hirpdag_from_archive(archived: P, _nodes: &R) -> Result<P, HirpdagDeserializeError> {
-        Ok(archived)
-    }
-}
-
-impl<R: ?Sized> HirpdagArchived<R> for String {
-    type Archive = String;
-    fn hirpdag_to_archive(
-        &self,
-        _index: &HirpdagNodeIndex,
-    ) -> Result<String, HirpdagSerializeError> {
-        Ok(self.clone())
-    }
-    fn hirpdag_from_archive(
-        archived: String,
-        _nodes: &R,
-    ) -> Result<String, HirpdagDeserializeError> {
-        Ok(archived)
-    }
-}
-
-impl<R: ?Sized, T: HirpdagArchived<R>> HirpdagArchived<R> for Option<T> {
-    type Archive = Option<T::Archive>;
-    fn hirpdag_to_archive(
-        &self,
-        index: &HirpdagNodeIndex,
-    ) -> Result<Self::Archive, HirpdagSerializeError> {
-        self.as_ref()
-            .map(|v| v.hirpdag_to_archive(index))
-            .transpose()
-    }
-    fn hirpdag_from_archive(
-        archived: Self::Archive,
-        nodes: &R,
-    ) -> Result<Self, HirpdagDeserializeError> {
-        archived
-            .map(|v| T::hirpdag_from_archive(v, nodes))
-            .transpose()
-    }
-}
-
-impl<R: ?Sized, T: HirpdagArchived<R>> HirpdagArchived<R> for Vec<T> {
-    type Archive = Vec<T::Archive>;
-    fn hirpdag_to_archive(
-        &self,
-        index: &HirpdagNodeIndex,
-    ) -> Result<Self::Archive, HirpdagSerializeError> {
-        self.iter().map(|v| v.hirpdag_to_archive(index)).collect()
-    }
-    fn hirpdag_from_archive(
-        archived: Self::Archive,
-        nodes: &R,
-    ) -> Result<Self, HirpdagDeserializeError> {
-        archived
-            .into_iter()
-            .map(|v| T::hirpdag_from_archive(v, nodes))
-            .collect()
-    }
 }

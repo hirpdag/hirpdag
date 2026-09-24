@@ -4,6 +4,9 @@ pub use self::reference::*;
 pub mod meta;
 pub use self::meta::*;
 
+pub mod field;
+pub use self::field::*;
+
 pub mod memoize;
 pub use self::memoize::*;
 
@@ -15,5 +18,3 @@ pub use self::serialize::*;
 
 pub mod archive;
 pub use self::archive::*;
-
-pub mod basic_traits;
