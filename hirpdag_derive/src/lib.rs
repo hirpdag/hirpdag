@@ -1581,8 +1581,6 @@ fn expand_hirpdag_end(
     }
 }
 
-/// Converts a CamelCase type name to a snake_case field name.
-/// e.g. "MessageA" -> "message_a".
 /// Generates the module-level serialization items: the interned-node enum, its
 /// archived counterpart (the node table entry), the two helpers that pin
 /// archiving to this module's node table, and the `HirpdagArchive` impl that
