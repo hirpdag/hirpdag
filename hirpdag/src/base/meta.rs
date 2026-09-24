@@ -22,8 +22,8 @@ pub struct HirpdagMeta {
 impl HirpdagMeta {
     /// Returns the zero / leaf metadata: count=0, height=0, flags=0.
     ///
-    /// Used as the initial accumulator and as the metadata for terminal values
-    /// (numbers, strings) that contain no child nodes.
+    /// Used as the initial accumulator and as the metadata for leaves
+    /// ([`HirpdagLeaf`](crate::base::HirpdagLeaf)), which contain no child nodes.
     pub fn zero() -> Self {
         Self {
             count: 0,
@@ -102,42 +102,19 @@ impl<'a> std::iter::Sum<&'a HirpdagMeta> for HirpdagMeta {
 /// Implemented by every field type to compute its metadata contribution.
 ///
 /// The macro-generated `hirpdag_compute_meta` for each struct folds together the results
-/// from all fields.  Leaf types (numbers, strings) return [`HirpdagMeta::zero`]; child
-/// `HirpdagRef` fields return their cached metadata.
+/// from all fields.  Leaves ([`HirpdagLeaf`](crate::base::HirpdagLeaf)) return
+/// [`HirpdagMeta::zero`]; child `HirpdagRef` fields return their cached metadata.  The
+/// leaf and container implementations are in [`field`](crate::base::field).
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be a field of a `#[hirpdag]` type",
+    label = "not a hirpdag field type",
+    note = "fields are leaves (integers, `bool`, `char`, `String`, `()`), `#[hirpdag]` types, \
+            or `Option`, `Vec` and tuples of fields",
+    note = "a type defined in this crate that holds no hirpdag nodes becomes a leaf with \
+            `impl hirpdag::base::HirpdagLeaf for TheType {{}}`"
+)]
 pub trait HirpdagComputeMeta {
     fn hirpdag_compute_meta(&self) -> HirpdagMeta;
-}
-
-impl HirpdagComputeMeta for String {
-    fn hirpdag_compute_meta(&self) -> HirpdagMeta {
-        HirpdagMeta::zero()
-    }
-}
-
-impl HirpdagComputeMeta for &str {
-    fn hirpdag_compute_meta(&self) -> HirpdagMeta {
-        HirpdagMeta::zero()
-    }
-}
-
-impl<T: HirpdagComputeMeta> HirpdagComputeMeta for Option<T> {
-    fn hirpdag_compute_meta(&self) -> HirpdagMeta {
-        self.as_ref()
-            .map_or(HirpdagMeta::zero(), |m| m.hirpdag_compute_meta())
-    }
-}
-
-impl<T: HirpdagComputeMeta> HirpdagComputeMeta for Vec<T> {
-    fn hirpdag_compute_meta(&self) -> HirpdagMeta {
-        self.iter().map(|m| m.hirpdag_compute_meta()).sum()
-    }
-}
-
-use crate::base::basic_traits::IsNumber;
-impl<P: IsNumber> HirpdagComputeMeta for P {
-    fn hirpdag_compute_meta(&self) -> HirpdagMeta {
-        HirpdagMeta::zero()
-    }
 }
 
 #[cfg(test)]

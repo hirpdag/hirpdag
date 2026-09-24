@@ -216,6 +216,84 @@ fn get_definition_string_enum(name: &str, input_enum: &syn::DataEnum) -> String 
     s
 }
 
+/// A compile-time check that every field type is one hirpdag can hold.
+///
+/// Each check is spanned to the type it checks, so an unsupported type
+/// (`Box<u32>`, or a type of the user's that is not a
+/// `hirpdag::base::HirpdagLeaf`) is reported where the field declares it, with
+/// the reason spelled out by the field traits' diagnostic, rather than only at
+/// the attribute through the generated code that uses the field. The generated
+/// code still fails to compile as well; this adds the error that says where
+/// and why.
+///
+/// `HirpdagComputeMeta` stands in for the four field traits: the leaf and
+/// container implementations of all four are uniform (see
+/// `hirpdag::base::field`), so a type has one exactly when it has the others.
+fn get_field_type_checks<'a>(
+    field_types: impl Iterator<Item = &'a syn::Type>,
+) -> proc_macro2::TokenStream {
+    use syn::spanned::Spanned;
+    let mut checked = Vec::new();
+    for ty in field_types {
+        field_check_types(ty, &mut checked);
+    }
+    let checks = checked.into_iter().map(|ty| {
+        quote_spanned! {ty.span()=>
+            hirpdag_field::<#ty>();
+        }
+    });
+    quote! {
+        #[allow(dead_code)]
+        const _: () = {
+            fn hirpdag_field<T: hirpdag::base::HirpdagComputeMeta>() {}
+            fn hirpdag_check_fields() {
+                #(#checks)*
+            }
+        };
+    }
+}
+
+/// The types to check for a field of type `ty`: the elements of the
+/// containers hirpdag provides (`Option`, `Vec`, tuples), however deeply they
+/// nest, and `ty` itself for anything else.
+///
+/// Checking `Option<(bool, Colour)>` as a whole cannot say which element is at
+/// fault: the leaf implementation and the `Option` one both match, so the
+/// compiler reports the outer type. Checking the elements puts the error on
+/// `Colour`. This reads the syntax, so a container reached through a type
+/// alias, or a user type that happens to be named `Option`, is checked as a
+/// whole; either way the generated code enforces the real bounds.
+fn field_check_types<'a>(ty: &'a syn::Type, out: &mut Vec<&'a syn::Type>) {
+    match ty {
+        syn::Type::Paren(paren) => field_check_types(&paren.elem, out),
+        syn::Type::Group(group) => field_check_types(&group.elem, out),
+        syn::Type::Tuple(tuple) if !tuple.elems.is_empty() => {
+            for elem in &tuple.elems {
+                field_check_types(elem, out);
+            }
+        }
+        syn::Type::Path(path) if path.qself.is_none() => {
+            let segment = path.path.segments.last().expect("a path has a segment");
+            let single_arg = match &segment.arguments {
+                syn::PathArguments::AngleBracketed(args) if args.args.len() == 1 => {
+                    match &args.args[0] {
+                        syn::GenericArgument::Type(inner) => Some(inner),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            match single_arg {
+                Some(inner) if segment.ident == "Option" || segment.ident == "Vec" => {
+                    field_check_types(inner, out)
+                }
+                _ => out.push(ty),
+            }
+        }
+        _ => out.push(ty),
+    }
+}
+
 /// The named fields of a `#[hirpdag]` struct.
 ///
 /// Tuple and unit structs are rejected here rather than panicking: a panic in a
@@ -269,15 +347,17 @@ fn get_fields_list(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream 
 
 fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
     //let fields_compute_meta = quote! {
-    //    self.a.hirpdag_compute_meta(),
-    //    self.b.hirpdag_compute_meta(),
-    //    self.c.hirpdag_compute_meta(),
+    //    hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.a),
+    //    hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.b),
+    //    hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.c),
     //};
     fields_named
         .named
         .iter()
         .map(|t| t.ident.as_ref().unwrap())
-        .map(|field_name| quote! { self.#field_name.hirpdag_compute_meta(), })
+        .map(|field_name| {
+            quote! { hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.#field_name), }
+        })
         .collect()
 }
 
@@ -566,6 +646,8 @@ fn expand_hirpdag_struct(
 
     let default_normalizer = get_default_normalizer(config, fields_named);
 
+    let field_type_checks = get_field_type_checks(fields_named.named.iter().map(|f| &f.ty));
+
     let tokens = quote! {
         use hirpdag::base::*;
 
@@ -573,6 +655,8 @@ fn expand_hirpdag_struct(
         pub struct #hirpdag_struct_name {
             #fields_declarations
         }
+
+        #field_type_checks
 
         impl HirpdagStruct for #hirpdag_struct_name {
             type ReferenceStorageStruct = ImplRef<HirpdagStorage<#hirpdag_struct_name>>;
@@ -814,16 +898,16 @@ fn get_variants_declarations(input_enum: &syn::DataEnum) -> proc_macro2::TokenSt
 
 fn get_variants_compute_meta(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
     //let variants_compute_meta = quote! {
-    //    Foo(a) => a.hirpdag_compute_meta(),
-    //    Bar(a) => a.hirpdag_compute_meta(),
-    //    Baz(a) => a.hirpdag_compute_meta(),
+    //    Foo(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x),
+    //    Bar(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x),
+    //    Baz(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x),
     //};
     input_enum
         .variants
         .iter()
         .map(|t| {
             let variant = &t.ident;
-            quote! { #variant(x) => x.hirpdag_compute_meta(), }
+            quote! { #variant(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x), }
         })
         .collect()
 }
@@ -971,6 +1055,7 @@ fn expand_hirpdag_enum(
     };
 
     let variants_declarations = get_variants_declarations(input_enum);
+    let field_type_checks = get_field_type_checks(input_enum.variants.iter().map(get_variant_type));
     let variants_compute_meta = get_variants_compute_meta(input_enum);
     let variants_rewrite = get_variants_rewrite(input_enum);
     let variants_collect = get_variants_collect(input_enum);
@@ -986,6 +1071,8 @@ fn expand_hirpdag_enum(
         pub enum #name {
             #variants_declarations
         }
+
+        #field_type_checks
 
         impl HirpdagComputeMeta for #name {
             fn hirpdag_compute_meta(&self) -> HirpdagMeta {
@@ -1944,6 +2031,38 @@ mod tests {
             pub fn not_a_data_type() {}
         }
     "#;
+
+    fn checked_types(ty: &str) -> Vec<String> {
+        let ty: syn::Type = syn::parse_str(ty).expect("type parses");
+        let mut out = Vec::new();
+        field_check_types(&ty, &mut out);
+        out.iter()
+            .map(|t| quote::ToTokens::to_token_stream(t).to_string())
+            .collect()
+    }
+
+    #[test]
+    fn field_checks_look_inside_hirpdag_containers() {
+        assert_eq!(checked_types("u32"), ["u32"]);
+        assert_eq!(checked_types("Option<(bool, Colour)>"), ["bool", "Colour"]);
+        assert_eq!(checked_types("Vec<Vec<Node>>"), ["Node"]);
+        assert_eq!(
+            checked_types("std::option::Option<(u8, Vec<(char, Node)>)>"),
+            ["u8", "char", "Node"]
+        );
+        assert_eq!(checked_types("((u8))"), ["u8"]);
+    }
+
+    #[test]
+    fn field_checks_take_other_types_whole() {
+        assert_eq!(checked_types("()"), ["()"]);
+        assert_eq!(checked_types("Box<u32>"), ["Box < u32 >"]);
+        assert_eq!(checked_types("Children"), ["Children"]);
+        assert_eq!(
+            checked_types("HashMap<u32, Node>"),
+            ["HashMap < u32 , Node >"]
+        );
+    }
 
     #[test]
     fn scan_records_every_declaration_in_order() {

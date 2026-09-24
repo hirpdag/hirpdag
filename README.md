@@ -182,6 +182,32 @@ Because hirpdag nodes are hash-consed, `build()` will return the existing
 interned node if an identical one already exists, so no duplicate allocation
 occurs.
 
+## Field Types
+
+A `#[hirpdag]` struct field (or enum payload) is one of:
+
+-   a leaf: an integer, `bool`, `char`, `String` or `()`;
+-   another `#[hirpdag]` type;
+-   `Option`, `Vec` or a tuple (up to four elements) of field types, nested to any depth.
+
+A type of your own that holds no hirpdag nodes becomes a leaf with one line:
+
+```rust
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(hirpdag::serde::Serialize, hirpdag::serde::Deserialize)]
+#[serde(crate = "hirpdag::serde")]
+pub enum Colour {
+    Red,
+    Green,
+}
+
+impl hirpdag::base::HirpdagLeaf for Colour {}
+```
+
+Any other field type is a compile error at the field, saying which type is not
+supported and why. See `hirpdag::base::field` for the rules, and
+`docs/adr/0007-field-types-from-one-leaf-trait.md` for why `Box` is not among them.
+
 ## Serialization
 
 Hirpdag serialization is always DAG-aware: each unique node is written exactly
