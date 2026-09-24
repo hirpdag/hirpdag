@@ -203,7 +203,7 @@ Consequences:
   resolution, and the four entry points. Its unit tests drive all of it through a
   hand-written schema standing in for a generated module, so a bug in the archive
   fails a test in the crate that owns it.
-- `hirpdag_derive/src/lib.rs` — per module: the interned-node enum and its
+- `hirpdag_derive/src/archive.rs` — per module: the interned-node enum and its
   `HirpdagCollectNode` impl, the node table entry enum, the encode/decode helpers, the `HirpdagArchive` impl and the four
   entry points. Per data type: the archived form and its two conversions, the
   collect impl, and (for structs) the `HirpdagArchiveMember` impl.

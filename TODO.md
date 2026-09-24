@@ -26,7 +26,7 @@
 ### Memoization cache improvements
 
 Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
-(`hirpdag/src/base/memoize.rs`, `hirpdag_derive/src/lib.rs`).
+(`hirpdag/src/base/memoize.rs`, `hirpdag_derive/src/rewrite.rs`).
 
 - [P1] Bound what the cache keeps alive.
   - Keys and values are strong node references, so a long-lived cache pins every
