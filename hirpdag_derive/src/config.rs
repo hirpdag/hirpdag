@@ -1,31 +1,6 @@
 #![forbid(unsafe_code)]
 
-use proc_macro2::{Ident, TokenStream};
-
-pub enum HirpdagArg {
-    /// Normalizer will be defined by user for construction.
-    Normalizer,
-
-    /// This struct type can be a serialization root: it gets a vector in the
-    /// generated HirpdagArchiveRoots struct.
-    Root,
-
-    /// Hashconsing strong reference type specified by user.
-    ReferenceType(String),
-
-    /// Hashconsing weak reference type specified by user.
-    ReferenceWeakType(String),
-
-    /// Hashconsing table type specified by user.
-    /// The table must be compatible with the reference type used.
-    TableType(String),
-
-    /// Hashconsing table sharing type specified by user.
-    TableSharedType(String),
-
-    /// Named preset selecting the reference and table types together.
-    Preset(String),
-}
+use proc_macro2::{Ident, Span, TokenStream};
 
 /// Preset used when no `preset`/type arguments are given.
 const DEFAULT_PRESET: &str = "arc_hash_linear";
@@ -156,147 +131,144 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
     })
 }
 
-impl syn::parse::Parse for HirpdagArg {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let arg_name_ident: Ident = input.parse()?;
-        let opeq: Option<syn::Token![=]> = input.parse()?;
-        let value_lit: Option<syn::Lit> = input.parse()?;
-        let arg_name = arg_name_ident.to_string();
-        enum Handler {
-            /// Argument name is not recognised
-            NotRecognised,
-            /// Flag is present or not
-            Flag(fn() -> syn::Result<HirpdagArg>),
-            /// String literal
-            String(fn(&syn::LitStr) -> syn::Result<HirpdagArg>),
-        }
-        let arg_handler = match arg_name.as_str() {
-            "normalizer" => Handler::Flag(|| Ok(Self::Normalizer)),
-            "root" => Handler::Flag(|| Ok(Self::Root)),
-            "reference_type" => {
-                Handler::String(|s: &syn::LitStr| Ok(Self::ReferenceType(s.value())))
-            }
-            "reference_weak_type" => {
-                Handler::String(|s: &syn::LitStr| Ok(Self::ReferenceWeakType(s.value())))
-            }
-            "table_type" => Handler::String(|s: &syn::LitStr| Ok(Self::TableType(s.value()))),
-            "tableshared_type" => {
-                Handler::String(|s: &syn::LitStr| Ok(Self::TableSharedType(s.value())))
-            }
-            "preset" => Handler::String(|s: &syn::LitStr| {
-                let name = s.value();
-                if preset_types(&name).is_none() {
-                    return Err(syn::Error::new(
-                        s.span(),
-                        format!(
-                            "unknown preset `{}`; known presets: {}",
-                            name,
-                            PRESETS.join(", ")
-                        ),
-                    ));
-                }
-                Ok(Self::Preset(name))
-            }),
-            _ => Handler::NotRecognised,
-        };
-        match arg_handler {
-            Handler::NotRecognised => Err(syn::Error::new(
-                input.span(),
-                format!("HirpdagArg {} was not recognised", arg_name.as_str()),
-            )),
-            Handler::String(build_arg) => {
-                if opeq.is_none() {
-                    return Err(syn::Error::new(
-                        input.span(),
-                        "HirpdagArg expected = syntax.",
-                    ));
-                }
-                if let Some(syn::Lit::Str(s)) = value_lit {
-                    build_arg(&s)
-                } else {
-                    Err(syn::Error::new(
-                        input.span(),
-                        format!(
-                            "HirpdagArg {} requires a string argument.",
-                            arg_name.as_str()
-                        ),
-                    ))
-                }
-            }
-            Handler::Flag(build_arg) => {
-                // A flag is set by being present. Accepting and ignoring a
-                // value would turn `root = false` into a root.
-                if opeq.is_some() || value_lit.is_some() {
-                    return Err(syn::Error::new(
-                        arg_name_ident.span(),
-                        format!(
-                            "HirpdagArg {} is a flag and takes no value; \
-                             write `{}` to set it, or leave it out",
-                            arg_name, arg_name
-                        ),
-                    ));
-                }
-                build_arg()
-            }
-        }
-    }
+/// One `name` or `name = "value"` entry of an attribute's argument list,
+/// before it is checked against what that attribute accepts.
+struct RawArg {
+    name: Ident,
+    eq: Option<syn::Token![=]>,
+    value: Option<syn::Lit>,
 }
 
-pub struct HirpdagArgs {
-    args: Vec<HirpdagArg>,
-}
-
-impl syn::parse::Parse for HirpdagArgs {
+impl syn::parse::Parse for RawArg {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let vars =
-            syn::punctuated::Punctuated::<HirpdagArg, syn::Token![,]>::parse_terminated(input)?;
         Ok(Self {
-            args: vars.into_iter().collect(),
+            name: input.parse()?,
+            eq: input.parse()?,
+            value: input.parse()?,
         })
     }
 }
 
-pub struct HirpdagConfig {
-    normalizer: bool,
-    root: bool,
+impl RawArg {
+    /// Checks the argument is a bare flag and returns its span.
+    fn flag(&self) -> syn::Result<Span> {
+        // A flag is set by being present. Accepting and ignoring a value
+        // would turn `root = false` into a root.
+        if self.eq.is_some() || self.value.is_some() {
+            return Err(syn::Error::new(
+                self.name.span(),
+                format!(
+                    "`{0}` is a flag and takes no value; write `{0}` to set it, or leave it out",
+                    self.name
+                ),
+            ));
+        }
+        Ok(self.name.span())
+    }
+
+    /// Checks the argument is `name = "value"` and returns the string.
+    fn string(&self) -> syn::Result<syn::LitStr> {
+        match (&self.eq, &self.value) {
+            (Some(_), Some(syn::Lit::Str(s))) => Ok(s.clone()),
+            _ => Err(syn::Error::new(
+                self.name.span(),
+                format!("`{0}` takes a string: `{0} = \"...\"`", self.name),
+            )),
+        }
+    }
+
+    /// Checks the argument is `name = "type"` with a string that parses as a
+    /// Rust type, so a typo is reported at the argument rather than inside
+    /// the expansion (or as a macro panic, for a string that does not lex).
+    fn type_string(&self) -> syn::Result<String> {
+        let s = self.string()?;
+        syn::parse_str::<syn::Type>(&s.value()).map_err(|e| {
+            syn::Error::new(s.span(), format!("`{}` must name a type: {}", self.name, e))
+        })?;
+        Ok(s.value())
+    }
+
+    /// The error for an argument that `attribute` does not accept. An
+    /// argument that belongs to the other attribute says where it goes.
+    fn not_accepted(&self, attribute: &str, accepted: &[&str]) -> syn::Error {
+        let name = self.name.to_string();
+        let message = if MODULE_ARGS.contains(&name.as_str()) {
+            format!(
+                "`{name}` is a `#[hirpdag_module(...)]` argument; \
+                 it applies to the whole module, not to one type"
+            )
+        } else if TYPE_ARGS.contains(&name.as_str()) {
+            format!("`{name}` is a `#[hirpdag(...)]` argument; put it on the struct")
+        } else {
+            format!(
+                "unknown `{attribute}` argument `{name}`; expected one of: {}",
+                accepted.join(", ")
+            )
+        };
+        syn::Error::new(self.name.span(), message)
+    }
+}
+
+/// Parses a comma-separated argument list.
+fn parse_raw_args(input: syn::parse::ParseStream) -> syn::Result<Vec<RawArg>> {
+    Ok(
+        syn::punctuated::Punctuated::<RawArg, syn::Token![,]>::parse_terminated(input)?
+            .into_iter()
+            .collect(),
+    )
+}
+
+/// The arguments `#[hirpdag_module(...)]` accepts.
+const MODULE_ARGS: &[&str] = &[
+    "preset",
+    "reference_type",
+    "reference_weak_type",
+    "table_type",
+    "tableshared_type",
+];
+
+/// The arguments `#[hirpdag(...)]` accepts.
+const TYPE_ARGS: &[&str] = &["normalizer", "root"];
+
+/// The configuration of a module: which hash-consing implementation its
+/// generated code uses. Parsed from `#[hirpdag_module(...)]`.
+///
+/// Arguments apply in order, so a `preset` replaces every type chosen before
+/// it and an explicit type string after it overrides that one type.
+pub struct ModuleConfig {
     types: ConfigTypes,
 }
 
-impl HirpdagConfig {
-    fn default() -> Self {
-        Self {
-            normalizer: false,
-            root: false,
-            types: preset_types(DEFAULT_PRESET).expect("default preset is known"),
-        }
-    }
-
-    pub fn from(args: &HirpdagArgs) -> Self {
-        let mut config = Self::default();
-        for a in &args.args {
-            match a {
-                HirpdagArg::Normalizer => config.normalizer = true,
-                HirpdagArg::Root => config.root = true,
-                HirpdagArg::ReferenceType(name) => config.types.reference_type = name.clone(),
-                HirpdagArg::ReferenceWeakType(name) => {
-                    config.types.reference_weak_type = name.clone()
+impl syn::parse::Parse for ModuleConfig {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut types = preset_types(DEFAULT_PRESET).expect("default preset is known");
+        for arg in parse_raw_args(input)? {
+            match arg.name.to_string().as_str() {
+                "preset" => {
+                    let s = arg.string()?;
+                    types = preset_types(&s.value()).ok_or_else(|| {
+                        syn::Error::new(
+                            s.span(),
+                            format!(
+                                "unknown preset `{}`; known presets: {}",
+                                s.value(),
+                                PRESETS.join(", ")
+                            ),
+                        )
+                    })?;
                 }
-                HirpdagArg::TableType(name) => config.types.set_alias("ImplTable", name.clone()),
-                HirpdagArg::TableSharedType(name) => config.types.tableshared_type = name.clone(),
-                HirpdagArg::Preset(name) => {
-                    config.types = preset_types(name).expect("preset validated at parse time");
-                }
+                "reference_type" => types.reference_type = arg.type_string()?,
+                "reference_weak_type" => types.reference_weak_type = arg.type_string()?,
+                "table_type" => types.set_alias("ImplTable", arg.type_string()?),
+                "tableshared_type" => types.tableshared_type = arg.type_string()?,
+                _ => return Err(arg.not_accepted("#[hirpdag_module]", MODULE_ARGS)),
             }
         }
-        config
+        Ok(Self { types })
     }
+}
 
-    pub fn has_normalizer(&self) -> bool {
-        self.normalizer
-    }
-    pub fn is_root(&self) -> bool {
-        self.root
-    }
+impl ModuleConfig {
     pub fn reference_type(&self) -> TokenStream {
         self.types.reference_type.parse().unwrap()
     }
@@ -319,5 +291,46 @@ impl HirpdagConfig {
     }
     pub fn tableshared_type(&self) -> TokenStream {
         self.types.tableshared_type.parse().unwrap()
+    }
+}
+
+/// The configuration of one data type. Parsed from `#[hirpdag(...)]`.
+///
+/// Each flag keeps the span it was written at, so a flag that does not apply
+/// to the item it is on (an enum) can be reported there.
+#[derive(Default)]
+pub struct TypeConfig {
+    normalizer: Option<Span>,
+    root: Option<Span>,
+}
+
+impl syn::parse::Parse for TypeConfig {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut config = Self::default();
+        for arg in parse_raw_args(input)? {
+            match arg.name.to_string().as_str() {
+                "normalizer" => config.normalizer = Some(arg.flag()?),
+                "root" => config.root = Some(arg.flag()?),
+                _ => return Err(arg.not_accepted("#[hirpdag]", TYPE_ARGS)),
+            }
+        }
+        Ok(config)
+    }
+}
+
+impl TypeConfig {
+    /// Where `normalizer` was written, if it was.
+    pub fn normalizer(&self) -> Option<Span> {
+        self.normalizer
+    }
+    /// Where `root` was written, if it was.
+    pub fn root(&self) -> Option<Span> {
+        self.root
+    }
+    pub fn has_normalizer(&self) -> bool {
+        self.normalizer.is_some()
+    }
+    pub fn is_root(&self) -> bool {
+        self.root.is_some()
     }
 }

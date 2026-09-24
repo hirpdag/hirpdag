@@ -10,7 +10,7 @@ extern crate proc_macro2;
 mod config;
 mod names;
 
-use crate::config::{HirpdagArgs, HirpdagConfig};
+use crate::config::{ModuleConfig, TypeConfig};
 use crate::names::{DataTypeKind, DataTypeNames};
 
 use proc_macro2::{Ident, Span};
@@ -72,8 +72,7 @@ pub fn hirpdag_module(
     attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let attrs = syn::parse_macro_input!(attr as HirpdagArgs);
-    let config = HirpdagConfig::from(&attrs);
+    let config = syn::parse_macro_input!(attr as ModuleConfig);
     let module = syn::parse_macro_input!(input as syn::ItemMod);
     // The one ambient read: cargo sets this for the rustc invocation the macro
     // runs in. Everything below is a function of its arguments.
@@ -84,7 +83,7 @@ pub fn hirpdag_module(
 }
 
 fn expand_hirpdag_module(
-    config: &HirpdagConfig,
+    config: &ModuleConfig,
     module: &syn::ItemMod,
     package: &str,
 ) -> syn::Result<proc_macro2::TokenStream> {
@@ -121,7 +120,7 @@ fn expand_hirpdag_module(
 /// they are returned rather than written into a caller's vector so that this
 /// function is a value the tests can hold.
 fn expand_module_items(
-    config: &HirpdagConfig,
+    config: &ModuleConfig,
     items: &[syn::Item],
     package: &str,
 ) -> syn::Result<(proc_macro2::TokenStream, Vec<DataTypeEntry>)> {
@@ -130,8 +129,7 @@ fn expand_module_items(
     for item in items {
         let mut item = item.clone();
         if let Some(attr) = take_hirpdag_attr(&mut item) {
-            let args = parse_hirpdag_args(&attr)?;
-            let type_config = HirpdagConfig::from(&args);
+            let type_config = parse_hirpdag_args(&attr)?;
             let input: syn::DeriveInput = match item {
                 syn::Item::Struct(s) => s.into(),
                 syn::Item::Enum(e) => e.into(),
@@ -164,7 +162,7 @@ fn take_hirpdag_attr(item: &mut syn::Item) -> Option<syn::Attribute> {
     Some(attrs.remove(position))
 }
 
-fn parse_hirpdag_args(attr: &syn::Attribute) -> syn::Result<HirpdagArgs> {
+fn parse_hirpdag_args(attr: &syn::Attribute) -> syn::Result<TypeConfig> {
     match &attr.meta {
         syn::Meta::Path(_) => syn::parse2(proc_macro2::TokenStream::new()),
         syn::Meta::List(list) => syn::parse2(list.tokens.clone()),
@@ -593,7 +591,7 @@ fn get_builder_build_args(fields_named: &syn::FieldsNamed) -> proc_macro2::Token
 }
 
 fn get_default_normalizer(
-    config: &HirpdagConfig,
+    config: &TypeConfig,
     fields_named: &syn::FieldsNamed,
 ) -> proc_macro2::TokenStream {
     if config.has_normalizer() {
@@ -610,7 +608,7 @@ fn get_default_normalizer(
 }
 
 fn expand_hirpdag_struct(
-    config: &HirpdagConfig,
+    config: &TypeConfig,
     input: &syn::DeriveInput,
     input_struct: &syn::DataStruct,
 ) -> syn::Result<(proc_macro2::TokenStream, DataTypeEntry)> {
@@ -1056,7 +1054,7 @@ fn get_variants_from_archive(
 }
 
 fn expand_hirpdag_enum(
-    config: &HirpdagConfig,
+    config: &TypeConfig,
     input: &syn::DeriveInput,
     input_enum: &syn::DataEnum,
 ) -> syn::Result<(proc_macro2::TokenStream, DataTypeEntry)> {
@@ -1064,10 +1062,17 @@ fn expand_hirpdag_enum(
 
     let name_str = name.to_string();
 
-    if config.is_root() {
-        return Err(syn::Error::new_spanned(
-            &input.ident,
+    if let Some(span) = config.root() {
+        return Err(syn::Error::new(
+            span,
             "`#[hirpdag(root)]` can only be applied to structs; enums are not hashconsed",
+        ));
+    }
+    if let Some(span) = config.normalizer() {
+        return Err(syn::Error::new(
+            span,
+            "`#[hirpdag(normalizer)]` can only be applied to structs; \
+             enums have no constructor to normalize",
         ));
     }
 
@@ -1368,7 +1373,7 @@ fn get_cache_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
 /// HirpdagRewriter trait, memoized rewriting, and the serialization
 /// machinery.
 fn expand_hirpdag_end(
-    config: &HirpdagConfig,
+    config: &ModuleConfig,
     types: &[DataTypeEntry],
     package: &str,
 ) -> proc_macro2::TokenStream {
@@ -2037,8 +2042,8 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
 mod tests {
     use super::*;
 
-    fn config(args: &str) -> HirpdagConfig {
-        HirpdagConfig::from(&syn::parse_str::<HirpdagArgs>(args).expect("attribute args parse"))
+    fn config(args: &str) -> ModuleConfig {
+        syn::parse_str(args).expect("attribute args parse")
     }
 
     /// The items of an inline module, as `#[hirpdag_module]` sees them.
@@ -2211,10 +2216,74 @@ mod tests {
             let err = expansion_error(src);
             assert!(err.contains("takes no value"), "{src}: {err}");
         }
-        // The module attribute goes through the same parser.
-        assert!(syn::parse_str::<HirpdagArgs>("normalizer = false").is_err());
         // Bare flags are still accepted.
         assert!(scan("mod m { #[hirpdag(root)] struct S { a: u32 } }")[0].is_root);
+    }
+
+    /// The error `#[hirpdag_module(...)]` reports for an argument list.
+    fn module_args_error(args: &str) -> String {
+        syn::parse_str::<ModuleConfig>(args)
+            .err()
+            .expect("module arguments should be rejected")
+            .to_string()
+    }
+
+    /// Each attribute accepts only the arguments it uses. Both used to parse
+    /// one shared grammar and ignore the rest, so `normalizer` on the module
+    /// or a type string on a struct compiled and did nothing.
+    #[test]
+    fn an_argument_for_the_other_attribute_is_rejected() {
+        for args in ["normalizer", "root", "preset = \"arc_hash_linear\", root"] {
+            let err = module_args_error(args);
+            assert!(
+                err.contains("is a `#[hirpdag(...)]` argument"),
+                "{args}: {err}"
+            );
+        }
+        for args in [
+            "preset = \"leak_hash_linear\"",
+            "reference_type = \"this is not a type\"",
+            "reference_weak_type = \"X\"",
+            "table_type = \"X\"",
+            "tableshared_type = \"X\"",
+        ] {
+            let src = format!("mod m {{ #[hirpdag({args})] struct S {{ a: u32 }} }}");
+            let err = expansion_error(&src);
+            assert!(
+                err.contains("is a `#[hirpdag_module(...)]` argument"),
+                "{args}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_argument_lists_what_is_accepted() {
+        let err = module_args_error("nonsense");
+        assert!(err.contains("expected one of: preset,"), "{err}");
+        let err = expansion_error("mod m { #[hirpdag(nonsense)] struct S { a: u32 } }");
+        assert!(err.contains("expected one of: normalizer, root"), "{err}");
+    }
+
+    #[test]
+    fn a_type_string_must_parse_as_a_type() {
+        for args in [
+            "reference_type = \"this is not a type\"",
+            "tableshared_type = \"Foo<(\"",
+            "reference_type",
+            "reference_type = 3",
+        ] {
+            assert!(syn::parse_str::<ModuleConfig>(args).is_err(), "{args}");
+        }
+        assert!(syn::parse_str::<ModuleConfig>(
+            "reference_type = \"hirpdag::hirpdag_hashconsing::RefArc<D>\""
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn a_normalizer_enum_is_rejected() {
+        let err = expansion_error("mod m { #[hirpdag(normalizer)] enum E { A(u32) } }");
+        assert!(err.contains("can only be applied to structs"), "{err}");
     }
 
     /// A raw identifier field used to panic building the rewrite local's name.

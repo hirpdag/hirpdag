@@ -38,7 +38,7 @@ where
 /// single-threaded [`ThreadUnsafeTable`] instances behind a locking strategy (a single mutex, sharded
 /// mutexes); others store the mapping directly in a concurrent collection (lock-free hash
 /// maps, skip lists, RCU). The `hirpdag` macro selects the implementation via
-/// `#[hirpdag(tableshared_type = "...")]`.
+/// `#[hirpdag_module(tableshared_type = "...")]`.
 ///
 /// Implementations construct themselves: an empty table is [`Default`], which is
 /// all `HirpdagHashconsTable::new` asks for. Backends that hash also offer
