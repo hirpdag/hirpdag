@@ -21,8 +21,6 @@
   - Use flat datastructures
   - Should Hirpdag automatically change a field to a more optimized type for you? Or just warn or something?
 
-- [P2] Caching for `ref.hirpdag_compute_meta()`. e.g. `ref.hirpdag_compute_meta(meta_cache)`.
-
 ### Memoization cache improvements
 
 Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
@@ -134,7 +132,7 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
 
 - [P2] Microbenchmarks for common DAG operations and traversals.
   - **Comparison and Hashing**: Compare $O(1)$ pointer/creation-ID comparison (`HirpdagRef::cmp`, `Eq`) and $O(1)$ hashing against $O(N)$ deep structural comparison (`hirpdag_cmp_deep`) in tight loops.
-  - **Read-Only / Visitor Passes**: Benchmark pure traversal/visitor passes and metadata queries (`hirpdag_get_meta` vs recomputing `hirpdag_compute_meta`).
+  - **Read-Only / Visitor Passes**: Benchmark pure traversal/visitor passes and metadata queries (`hirpdag_get_meta()` vs recomputing `hirpdag_compute_meta`).
   - **Serialization Graph Variety**: Expand `serde_roundtrip` to cover wide trees with high fanout, large payload DAGs (`large_nodes`), and deep chains in addition to the Fibonacci DAG.
 
 ### Features

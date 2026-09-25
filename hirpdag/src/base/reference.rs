@@ -2,7 +2,6 @@
 
 use crate::base::meta::HirpdagComputeMeta;
 use crate::base::meta::HirpdagMeta;
-use crate::base::meta::HirpdagMetaFlagType;
 use hirpdag_hashconsing;
 use hirpdag_hashconsing::Reference;
 use hirpdag_hashconsing::Table;
@@ -308,9 +307,4 @@ pub trait HirpdagStruct:
     type ReferenceStorageStruct: Reference<HirpdagStorage<Self>>;
 
     fn hirpdag_hashcons(self) -> HirpdagRef<Self, Self::ReferenceStorageStruct>;
-
-    /// Computes the flags for the current HirpdagStruct.
-    fn hirpdag_flags(&self) -> HirpdagMetaFlagType {
-        0
-    }
 }

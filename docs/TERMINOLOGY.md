@@ -40,7 +40,7 @@ To associate *mutable* state with a node (annotations, analysis results, scratch
 ## Metadata
 
 ### `HirpdagMeta`
-Aggregated structural metadata cached on every interned node.  Computed bottom-up at intern time; reading any field is O(1).
+Aggregated structural metadata cached on every interned node.  Computed bottom-up at intern time; read it with the generated `hirpdag_get_meta()` accessor on a node, which is O(1).
 
 Source: `hirpdag/src/base/meta.rs`
 
@@ -51,7 +51,7 @@ Total number of nodes in the subtree rooted at this node (saturating).  Useful f
 Distance from this node to its deepest leaf (saturating).  Proportional to the longest dependency chain.
 
 ### flags (`HirpdagMetaFlagType` = u16)
-A user-defined bitfield propagated upward via bitwise OR.  Allows quickly testing whether *any* node in a subtree has a property (e.g. "contains a free variable") without traversal.
+A user-defined bitfield propagated upward via bitwise OR.  Allows quickly testing whether *any* node in a subtree has a property (e.g. "contains a free variable") without traversal.  A type sets its own node's bits with `#[hirpdag(flags = path::to_fn)]`, where the function takes the type's data (`&HirpdagStructFoo` for a struct, `&Foo` for an enum) and returns the bits.
 
 ### `HirpdagComputeMeta`
 Trait implemented by every field type.  The macro-generated implementation for each struct folds together the results from all fields.  Leaves (`HirpdagLeaf`) return zero; child `HirpdagRef` fields return their cached metadata.  See Field Types.

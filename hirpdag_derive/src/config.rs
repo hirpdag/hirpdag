@@ -136,16 +136,23 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
 struct RawArg {
     name: Ident,
     eq: Option<syn::Token![=]>,
-    value: Option<syn::Lit>,
+    value: Option<syn::Expr>,
 }
 
 impl syn::parse::Parse for RawArg {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            name: input.parse()?,
-            eq: input.parse()?,
-            value: input.parse()?,
-        })
+        let name = input.parse()?;
+        let eq: Option<syn::Token![=]> = input.parse()?;
+        // A value without `=` (`root "yes"`) is still read, so it can be
+        // reported as a value given to a flag rather than as a syntax error.
+        let value = if eq.is_some() {
+            Some(input.parse()?)
+        } else {
+            input
+                .parse::<Option<syn::Lit>>()?
+                .map(|lit| syn::Expr::Lit(syn::ExprLit { attrs: vec![], lit }))
+        };
+        Ok(Self { name, eq, value })
     }
 }
 
@@ -166,13 +173,46 @@ impl RawArg {
         Ok(self.name.span())
     }
 
+    /// The value, with any invisible groups removed. A value passed through a
+    /// `macro_rules!` fragment (`$preset:literal`, `$f:path`) arrives wrapped
+    /// in one.
+    fn bare_value(&self) -> Option<&syn::Expr> {
+        let mut value = self.value.as_ref()?;
+        while let syn::Expr::Group(group) = value {
+            value = &group.expr;
+        }
+        Some(value)
+    }
+
     /// Checks the argument is `name = "value"` and returns the string.
     fn string(&self) -> syn::Result<syn::LitStr> {
-        match (&self.eq, &self.value) {
-            (Some(_), Some(syn::Lit::Str(s))) => Ok(s.clone()),
+        match (&self.eq, self.bare_value()) {
+            (
+                Some(_),
+                Some(syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                })),
+            ) => Ok(s.clone()),
             _ => Err(syn::Error::new(
                 self.name.span(),
                 format!("`{0}` takes a string: `{0} = \"...\"`", self.name),
+            )),
+        }
+    }
+
+    /// Checks the argument is `name = some::path` and returns the path.
+    fn path(&self) -> syn::Result<syn::Path> {
+        match self.bare_value() {
+            Some(syn::Expr::Path(p)) if p.qself.is_none() && p.attrs.is_empty() => {
+                Ok(p.path.clone())
+            }
+            _ => Err(syn::Error::new(
+                self.name.span(),
+                format!(
+                    "`{0}` takes the path of a function: `{0} = path::to_fn`",
+                    self.name
+                ),
             )),
         }
     }
@@ -228,7 +268,7 @@ const MODULE_ARGS: &[&str] = &[
 ];
 
 /// The arguments `#[hirpdag(...)]` accepts.
-const TYPE_ARGS: &[&str] = &["normalizer", "root"];
+const TYPE_ARGS: &[&str] = &["flags", "normalizer", "root"];
 
 /// The configuration of a module: which hash-consing implementation its
 /// generated code uses. Parsed from `#[hirpdag_module(...)]`.
@@ -296,10 +336,11 @@ impl ModuleConfig {
 
 /// The configuration of one data type. Parsed from `#[hirpdag(...)]`.
 ///
-/// Each flag keeps the span it was written at, so a flag that does not apply
-/// to the item it is on (an enum) can be reported there.
+/// Each bare flag keeps the span it was written at, so a flag that does not
+/// apply to the item it is on (an enum) can be reported there.
 #[derive(Default)]
 pub struct TypeConfig {
+    flags: Option<syn::Path>,
     normalizer: Option<Span>,
     root: Option<Span>,
 }
@@ -309,6 +350,7 @@ impl syn::parse::Parse for TypeConfig {
         let mut config = Self::default();
         for arg in parse_raw_args(input)? {
             match arg.name.to_string().as_str() {
+                "flags" => config.flags = Some(arg.path()?),
                 "normalizer" => config.normalizer = Some(arg.flag()?),
                 "root" => config.root = Some(arg.flag()?),
                 _ => return Err(arg.not_accepted("#[hirpdag]", TYPE_ARGS)),
@@ -319,6 +361,11 @@ impl syn::parse::Parse for TypeConfig {
 }
 
 impl TypeConfig {
+    /// The function `flags = ...` names, which computes a node's own
+    /// metadata flags from its data.
+    pub fn flags(&self) -> Option<&syn::Path> {
+        self.flags.as_ref()
+    }
     /// Where `normalizer` was written, if it was.
     pub fn normalizer(&self) -> Option<Span> {
         self.normalizer
