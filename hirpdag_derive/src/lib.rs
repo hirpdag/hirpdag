@@ -181,7 +181,7 @@ fn expand_hirpdag_struct(
     let fields_named = hashcons::get_fields_named(input, input_struct)?;
 
     let hashcons = hashcons::for_struct(config, &names, fields_named);
-    let meta = meta::for_struct(&names, fields_named);
+    let meta = meta::for_struct(config, &names, fields_named);
     let builder = builder::for_struct(&names, fields_named);
     let rewrite = rewrite::for_struct(&names, fields_named);
     let archive = archive::for_struct(&names, fields_named);
@@ -235,7 +235,7 @@ fn expand_hirpdag_enum(
     let names = DataTypeNames::new(name, DataTypeKind::Enum);
 
     let hashcons = hashcons::for_enum(&names, input_enum);
-    let meta = meta::for_enum(&names, input_enum);
+    let meta = meta::for_enum(config, &names, input_enum);
     let rewrite = rewrite::for_enum(&names, input_enum);
     let archive = archive::for_enum(&names, input_enum);
 
@@ -467,7 +467,10 @@ mod tests {
         let err = module_args_error("nonsense");
         assert!(err.contains("expected one of: preset,"), "{err}");
         let err = expansion_error("mod m { #[hirpdag(nonsense)] struct S { a: u32 } }");
-        assert!(err.contains("expected one of: normalizer, root"), "{err}");
+        assert!(
+            err.contains("expected one of: flags, normalizer, root"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -484,6 +487,24 @@ mod tests {
             "reference_type = \"hirpdag::hirpdag_hashconsing::RefArc<D>\""
         )
         .is_ok());
+    }
+
+    /// `flags` names the function computing a type's own flags, so it takes a
+    /// path, not a flag or a string.
+    #[test]
+    fn flags_takes_a_function_path() {
+        for args in ["flags", "flags = \"f\"", "flags = 3", "flags = f()"] {
+            let src = format!("mod m {{ #[hirpdag({args})] struct S {{ a: u32 }} }}");
+            let err = expansion_error(&src);
+            assert!(
+                err.contains("takes the path of a function"),
+                "{args}: {err}"
+            );
+        }
+        for args in ["flags = f", "flags = super::f", "flags = f, root"] {
+            let src = format!("mod m {{ #[hirpdag({args})] struct S {{ a: u32 }} }}");
+            assert_eq!(scan(&src).len(), 1, "{args}");
+        }
     }
 
     #[test]

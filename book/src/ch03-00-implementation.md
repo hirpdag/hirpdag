@@ -116,6 +116,9 @@ Each Hirpdag Object has a small amount of metadata attached to it. This includes
 * Content flags
 
 The content flags are intended to provide a hint to avoid unnecessary traversals.
+A type sets its own bits with `#[hirpdag(flags = path::to_fn)]`, and a node's
+flags are its own bits ORed with those of everything below it. All three are
+computed once when the object is interned and read with `hirpdag_get_meta()`.
 
 ## Reference Count Update Elision
 

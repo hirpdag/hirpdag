@@ -1,8 +1,11 @@
 ---
 status: accepted
+amended-by: [0011-settable-metadata-flags]
 ---
 
 # Give each attribute its own argument grammar, and reject what it does not use
+
+ADR-0011 added `flags = path` to `#[hirpdag(...)]`; the rest of this stands.
 
 `#[hirpdag_module(...)]` and `#[hirpdag(...)]` parsed the same argument list,
 `HirpdagArgs`, into the same `HirpdagConfig`. Each read only part of it: the

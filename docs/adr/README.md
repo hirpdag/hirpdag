@@ -19,7 +19,8 @@ subsystem works *now*, read the design doc for it.
 | [0005](0005-archive-as-plain-data.md) | Encode references to node indices outside serde, so an archive carries no ambient state | accepted |
 | [0006](0006-generated-names-from-the-declared-name.md) | Derive generated names from the declared name verbatim, never by transforming its case | accepted |
 | [0007](0007-field-types-from-one-leaf-trait.md) | Define leaf field types through one marker trait, with the containers beside it | accepted |
-| [0010](0010-one-argument-grammar-per-attribute.md) | Give each attribute its own argument grammar, and reject what it does not use | accepted |
+| [0010](0010-one-argument-grammar-per-attribute.md) | Give each attribute its own argument grammar, and reject what it does not use | accepted, amended by 0011 |
+| [0011](0011-settable-metadata-flags.md) | Set metadata flags per type with `#[hirpdag(flags = path)]`, and read metadata through `hirpdag_get_meta()` | accepted |
 
 Design docs, which do describe the current code:
 

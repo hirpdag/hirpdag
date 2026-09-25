@@ -5,6 +5,10 @@ pub type HirpdagMetaCountType = u32;
 /// Height of a node's subtree: the distance from the node to its deepest leaf (saturating u16).
 pub type HirpdagMetaHeightType = u16;
 /// Bitfield of user-defined flags propagated upward through the DAG via bitwise OR.
+///
+/// A type sets its own node's bits with `#[hirpdag(flags = path::to_fn)]`, where
+/// the function takes the type's data and returns the bits; a node's flags are
+/// those bits ORed with every child's flags.
 pub type HirpdagMetaFlagType = u16;
 
 /// Aggregated structural metadata cached on every interned node.
@@ -113,6 +117,10 @@ impl<'a> std::iter::Sum<&'a HirpdagMeta> for HirpdagMeta {
     note = "a type defined in this crate that holds no hirpdag nodes becomes a leaf with \
             `impl hirpdag::base::HirpdagLeaf for TheType {{}}`"
 )]
+///
+/// This is the interning machinery, not the way to read a node's metadata: that
+/// is the generated `hirpdag_get_meta()` accessor, which borrows the cached
+/// value.
 pub trait HirpdagComputeMeta {
     fn hirpdag_compute_meta(&self) -> HirpdagMeta;
 }
