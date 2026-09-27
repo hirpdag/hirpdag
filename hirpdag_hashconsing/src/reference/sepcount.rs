@@ -50,6 +50,8 @@ pub trait CountSlot: Default + Send + Sync + Sized + 'static {
     fn strong_dec(&self) -> bool;
     /// Increment the strong count if it is nonzero. Returns false if zero.
     fn strong_upgrade(&self) -> bool;
+    /// The current strong count (a plain read, racy with other threads).
+    fn strong_count(&self) -> usize;
     /// Increment the weak count.
     fn weak_inc(&self);
     /// Decrement the weak count. Returns true if it reached zero.
@@ -170,6 +172,10 @@ macro_rules! define_count_slot {
                 }
             }
 
+            fn strong_count(&self) -> usize {
+                self.strong.load(std::sync::atomic::Ordering::Relaxed) as usize
+            }
+
             fn weak_inc(&self) {
                 self.weak.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
@@ -272,6 +278,25 @@ where
 
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool {
         a.data == b.data
+    }
+
+    #[inline]
+    fn strong_is_unique(ptr: &Self) -> bool {
+        ptr.slot().strong_count() == 1
+    }
+
+    fn strong_into_deferred_drop(ptr: Self) -> drop_queue::DeferredDrop {
+        unsafe fn drop_sep<D, S: CountSlot>(words: [usize; 2]) {
+            drop(RefSepGeneric::<D, S> {
+                data: std::ptr::NonNull::new_unchecked(words[0] as *mut D),
+                slot: std::ptr::NonNull::new_unchecked(words[1] as *mut S),
+            });
+        }
+        let words = [ptr.data.as_ptr() as usize, ptr.slot.as_ptr() as usize];
+        // The handle's count now travels in `words`.
+        std::mem::forget(ptr);
+        // Safety: `drop_sep` rebuilds, once, the handle just forgotten.
+        unsafe { drop_queue::DeferredDrop::new(words, drop_sep::<D, S>) }
     }
 }
 

@@ -22,12 +22,17 @@
 //!   object is still alive, so the upgrade can succeed without a CAS.
 //! - The map is flushed (applying the pending decrements to the shared
 //!   counters) after a bounded number of buffered operations, and when the
-//!   thread exits.
+//!   thread exits. Applying a decrement can free an object, whose drop buffers
+//!   decrements for the handles in its data; a flush applies those too, and
+//!   keeps going until the map is empty, so it frees a deep graph completely
+//!   and without recursing.
+//! - At thread exit the map itself is gone, so drops release directly, through
+//!   the thread's drop queue (see [`drop_queue`]) rather than by recursion.
 //!
 //! In clone/drop-heavy workloads (e.g. rewrites) most count updates pair up
 //! thread-locally and never touch the shared cacheline. The cost is a
 //! thread-local hash map operation per clone/drop, and objects staying alive
-//! slightly longer than their last handle.
+//! slightly longer than their last handle: until the next flush.
 
 use crate::reference::*;
 
@@ -79,6 +84,9 @@ struct DeferredEntry {
 struct DeferredDecs {
     map: std::collections::HashMap<usize, DeferredEntry>,
     ops_since_flush: usize,
+    /// A flush is running on this thread. Decrements buffered meanwhile are
+    /// left for that flush's loop instead of starting a nested flush.
+    flushing: bool,
 }
 
 impl DeferredDecs {
@@ -91,23 +99,16 @@ impl DeferredDecs {
         self.map.drain().collect()
     }
 
-    /// Buffer one deferred decrement for `addr`. Returns drained decrements
-    /// for the caller to apply if a flush threshold was reached.
-    fn defer(
-        &mut self,
-        addr: usize,
-        release: unsafe fn(usize, usize),
-    ) -> Option<Vec<(usize, DeferredEntry)>> {
+    /// Buffer one deferred decrement for `addr`. Returns true if a flush
+    /// threshold was reached and no flush is already running, so the caller
+    /// should run one with [`flush`].
+    fn defer(&mut self, addr: usize, release: unsafe fn(usize, usize)) -> bool {
         self.map
             .entry(addr)
             .or_insert(DeferredEntry { count: 0, release })
             .count += 1;
         self.ops_since_flush += 1;
-        if self.ops_since_flush >= FLUSH_OPS || self.map.len() >= FLUSH_ENTRIES {
-            Some(self.take_pending())
-        } else {
-            None
-        }
+        !self.flushing && (self.ops_since_flush >= FLUSH_OPS || self.map.len() >= FLUSH_ENTRIES)
     }
 
     /// Consume one deferred decrement for `addr` if present, cancelling it
@@ -138,7 +139,7 @@ impl Drop for DeferredDecs {
     fn drop(&mut self) {
         // Runs at thread exit. Child handle drops triggered here cannot
         // re-enter the map: LocalKey::try_with fails during destruction, so
-        // they fall back to direct shared-counter decrements.
+        // they release directly, through the drop queue (see `RefTlc::drop`).
         apply_pending(self.take_pending());
     }
 }
@@ -148,7 +149,39 @@ thread_local! {
         std::cell::RefCell::new(DeferredDecs {
             map: std::collections::HashMap::new(),
             ops_since_flush: 0,
+            flushing: false,
         });
+}
+
+/// Ends a flush, including by unwinding, so a panicking drop does not leave
+/// the thread unable to flush again.
+struct FlushGuard;
+
+impl Drop for FlushGuard {
+    fn drop(&mut self) {
+        let _ = TLC_DEFERRED.try_with(|d| d.borrow_mut().flushing = false);
+    }
+}
+
+/// Apply buffered decrements until none remain.
+///
+/// Applying one can free an object, and its drop buffers decrements for the
+/// handles in its data. Those are applied by this loop rather than by a
+/// nested flush, so a deep graph is freed here completely, one level per
+/// iteration, without recursing. Each borrow of the map ends before any
+/// decrement is applied: dropped data may contain `RefTlc` fields whose drops
+/// re-enter the map.
+fn flush() {
+    TLC_DEFERRED.with(|d| d.borrow_mut().flushing = true);
+    let guard = FlushGuard;
+    loop {
+        let pending = TLC_DEFERRED.with(|d| d.borrow_mut().take_pending());
+        if pending.is_empty() {
+            break;
+        }
+        apply_pending(pending);
+    }
+    drop(guard);
 }
 
 /// Consume a deferred decrement for `addr` on this thread, if one exists.
@@ -163,18 +196,22 @@ fn tlc_consume(addr: usize) -> bool {
 /// Buffer a deferred decrement for `addr` on this thread.
 /// Returns false if the thread-local buffer is unavailable (thread exit).
 fn tlc_defer(addr: usize, release: unsafe fn(usize, usize)) -> bool {
-    let deferred = TLC_DEFERRED.try_with(|d| d.borrow_mut().defer(addr, release));
-    match deferred {
-        Ok(pending) => {
-            // Apply outside the borrow: dropped data may contain RefTlc
-            // fields whose drops re-enter the map.
-            if let Some(pending) = pending {
-                apply_pending(pending);
-            }
+    match TLC_DEFERRED.try_with(|d| d.borrow_mut().defer(addr, release)) {
+        Ok(true) => {
+            flush();
             true
         }
+        Ok(false) => true,
         Err(_) => false,
     }
+}
+
+/// Release one strong count of the `TlcInner<D>` at `words[0]`, for the drop
+/// queue.
+///
+/// Safety: as [`release_strong`] with `n == 1`.
+unsafe fn release_one<D>(words: [usize; 2]) {
+    release_strong::<D>(words[0], 1);
 }
 
 /// Strong reference handle with thread-local deferred decrements.
@@ -198,7 +235,14 @@ impl<D> RefTlc<D> {
 impl<D> Drop for RefTlc<D> {
     fn drop(&mut self) {
         if !tlc_defer(self.addr(), release_strong::<D>) {
-            unsafe { release_strong::<D>(self.addr(), 1) };
+            // The thread's buffer is gone (thread exit): release now. Through
+            // the drop queue, because freeing this object drops the handles
+            // in its data, and they land here too.
+            //
+            // Safety: this handle's count is released once, by the queue.
+            let release =
+                unsafe { drop_queue::DeferredDrop::new([self.addr(), 0], release_one::<D>) };
+            drop_queue::drop_iteratively(release);
         }
     }
 }

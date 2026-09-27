@@ -25,6 +25,21 @@ where
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool {
         std::sync::Arc::<D>::ptr_eq(a, b)
     }
+
+    #[inline]
+    fn strong_is_unique(ptr: &Self) -> bool {
+        std::sync::Arc::strong_count(ptr) == 1
+    }
+
+    fn strong_into_deferred_drop(ptr: Self) -> drop_queue::DeferredDrop {
+        unsafe fn drop_arc<D>(words: [usize; 2]) {
+            drop(std::sync::Arc::from_raw(words[0] as *const D));
+        }
+        let raw = std::sync::Arc::into_raw(ptr) as usize;
+        // Safety: `drop_arc` turns the raw pointer back into the handle
+        // `into_raw` consumed, once.
+        unsafe { drop_queue::DeferredDrop::new([raw, 0], drop_arc::<D>) }
+    }
 }
 
 pub type RefArcWeak<D> = std::sync::Weak<D>;
