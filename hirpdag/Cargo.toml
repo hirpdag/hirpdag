@@ -3,7 +3,7 @@ name = "hirpdag"
 version = "0.2.0"
 authors = ["Andrew Browne <dersaidin@dersaidin.net>"]
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/hirpdag/hirpdag"
 keywords = ["hashconsing", "persistent", "dag", "rewriting"]
@@ -27,3 +27,6 @@ hirpdag_derive = { version = "0.2.0", path = "../hirpdag_derive" }
 serde = { version = "1.0", features = ["derive"] }
 postcard = { version = "1.0", default-features = false, features = ["use-std"] }
 serde_json = "1.0"
+# Grows the stack on demand in the generated rewrite drivers, so a rewrite of
+# any depth runs on any stack (docs/adr/0013-stacker-for-rewrite.md).
+stacker = "0.1.25"

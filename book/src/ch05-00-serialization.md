@@ -96,8 +96,9 @@ decoded, so:
   into an early, clear error for binary archives; JSON is name-tagged, more
   tolerant, and unfingerprinted.
 * Serializing and deserializing are iterative, so graph depth is limited by
-  memory rather than by the thread's stack. Dropping, rewriting and
-  `Debug`-formatting a graph still recurse once per level of depth.
+  memory rather than by the thread's stack; rewriting grows the stack on
+  demand, to the same effect. Dropping and `Debug`-formatting a graph still
+  recurse once per level of depth.
 
 See `docs/design/serialization.md` in the repository for the full design, and
 `docs/adr/` for the decisions behind it.

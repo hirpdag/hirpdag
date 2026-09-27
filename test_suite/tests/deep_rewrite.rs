@@ -4,21 +4,18 @@
 // (`x.default_rewrite(driver)` calls `driver.rewrite(&field)` for each field),
 // so every level of depth keeps a rule's frames, and the driver's, alive until
 // the level below returns. The memoized driver adds its cache lookup and
-// closure to each level. About 2,000 levels (debug) or 18,000 (release)
+// closure to each level. About 2,000 levels (debug) or 18,000 (release) used to
 // overflow a 2 MiB stack and abort the process with the memoized driver; the
-// direct driver manages about 2.5 times as many. 64 KiB holds about 600
-// levels of memoized rewrite in release, so 10,000 overflows it in both
-// profiles.
+// direct driver managed about 2.5 times as many. The generated drivers now
+// grow the stack on demand (`hirpdag::base::hirpdag_ensure_stack`). 64 KiB held
+// about 600 levels of memoized rewrite in release, so 10,000 would overflow it
+// in both profiles.
 //
 // The chain is built, and the result checked and dropped, on a thread with a
-// large stack (dropping a deep graph recurses too; see deep_drop.rs). Only the
+// large stack (dropping a deep graph recursed too; see deep_drop.rs). Only the
 // rewrite runs on the small stack. The input stays referenced by the large
 // thread and the output is returned to it, so nothing deep is freed on the
 // small stack.
-//
-// Known failures, ignored until fixed. A stack overflow aborts the whole test
-// binary, so run each test on its own:
-//   cargo test -p hirpdag_test_suite --all-features --test deep_rewrite -- --ignored --exact <name>
 
 use hirpdag::*;
 
@@ -71,7 +68,6 @@ impl HirpdagRewriter for Increment {
 }
 
 #[test]
-#[ignore = "rewriting a deep graph overflows the stack; run with --ignored"]
 fn direct_rewrite_of_a_deep_chain_on_a_small_stack() {
     on_stack("large", LARGE_STACK, || {
         let input = chain(0);
@@ -85,7 +81,6 @@ fn direct_rewrite_of_a_deep_chain_on_a_small_stack() {
 }
 
 #[test]
-#[ignore = "rewriting a deep graph overflows the stack; run with --ignored"]
 fn memoized_rewrite_of_a_deep_chain_on_a_small_stack() {
     on_stack("large", LARGE_STACK, || {
         let input = chain(0);
