@@ -9,7 +9,7 @@
     reference_type = "hirpdag::hirpdag_hashconsing::RefArc<D>",
     reference_weak_type = "hirpdag::hirpdag_hashconsing::RefArcWeak<D>",
     table_type = "hirpdag::hirpdag_hashconsing::TableVecSortedWeak<D, ImplRef<D>, ImplRefWeak<D>>",
-    tableshared_type = "hirpdag::hirpdag_hashconsing::TableSharedMutex<D, ImplRef<D>, ImplTable<D>>"
+    tableshared_type = "hirpdag::hirpdag_hashconsing::TableSharedMutex<D, ImplRef<D>, ImplRefWeak<D>, ImplTable<D>>"
 )]
 mod explicit {
     #[hirpdag]

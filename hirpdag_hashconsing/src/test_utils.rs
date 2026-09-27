@@ -16,10 +16,11 @@ impl TestData {
     }
 }
 
-pub fn test_interface_impl<R, TS>(tableshared: &TS, data: TestData)
+pub fn test_interface_impl<R, WR, TS>(tableshared: &TS, data: TestData)
 where
     R: Reference<TestData>,
-    TS: Table<TestData, R>,
+    WR: ReferenceWeak<TestData, R>,
+    TS: Table<TestData, R, WR>,
 {
     let data_clone = data.clone();
     let x: R = tableshared.get_or_insert(data, |_s| {});
@@ -28,10 +29,11 @@ where
     assert!(R::strong_ptr_eq(&x, &y));
 }
 
-pub fn populate_linear<R, TS>(out: &mut Vec<R>, tableshared: &TS, range: std::ops::Range<usize>)
+pub fn populate_linear<R, WR, TS>(out: &mut Vec<R>, tableshared: &TS, range: std::ops::Range<usize>)
 where
     R: Reference<TestData>,
-    TS: Table<TestData, R>,
+    WR: ReferenceWeak<TestData, R>,
+    TS: Table<TestData, R, WR>,
 {
     for k in range {
         let data1 = TestData {
@@ -67,50 +69,53 @@ where
     }
 }
 
-pub fn hashcons_two_copies<R, TS>(tableshared: &TS)
+pub fn hashcons_two_copies<R, WR, TS>(tableshared: &TS)
 where
     R: Reference<TestData>,
-    TS: Table<TestData, R>,
+    WR: ReferenceWeak<TestData, R>,
+    TS: Table<TestData, R, WR>,
 {
     let n = 32usize;
     let mut v1: Vec<R> = vec![];
     let mut v2: Vec<R> = vec![];
-    populate_linear(&mut v1, tableshared, 0..n);
-    populate_linear(&mut v2, tableshared, 0..n);
+    populate_linear::<R, WR, TS>(&mut v1, tableshared, 0..n);
+    populate_linear::<R, WR, TS>(&mut v2, tableshared, 0..n);
     // Examples for n=4...
     // 0,1,2,3
     assert_match_and_unique(&v1, &v2);
     v1.drain(0..n / 2);
     v2.drain(0..n / 2);
     // 2,3
-    populate_linear(&mut v1, tableshared, 0..n / 2);
-    populate_linear(&mut v2, tableshared, 0..n / 2);
+    populate_linear::<R, WR, TS>(&mut v1, tableshared, 0..n / 2);
+    populate_linear::<R, WR, TS>(&mut v2, tableshared, 0..n / 2);
     // 2,3,0,1
     assert_match_and_unique(&v1, &v2);
     v1.drain(0..n / 2);
     v2.drain(0..n / 2);
     // 0,1
-    populate_linear(&mut v1, tableshared, n / 2..n);
-    populate_linear(&mut v2, tableshared, n / 2..n);
+    populate_linear::<R, WR, TS>(&mut v1, tableshared, n / 2..n);
+    populate_linear::<R, WR, TS>(&mut v2, tableshared, n / 2..n);
     // 0,1,2,3
     assert_match_and_unique(&v1, &v2);
 }
 
-fn test_tableshared_interface<R, TS>(tableshared: TS)
+fn test_tableshared_interface<R, WR, TS>(tableshared: TS)
 where
     R: Reference<TestData>,
-    TS: Table<TestData, R>,
+    WR: ReferenceWeak<TestData, R>,
+    TS: Table<TestData, R, WR>,
 {
     let data = TestData::new(2, 4, "6".to_string());
-    test_interface_impl::<R, TS>(&tableshared, data);
+    test_interface_impl::<R, WR, TS>(&tableshared, data);
 }
 
-fn test_tableshared_deduplication_basic<R, TS>(tableshared: TS)
+fn test_tableshared_deduplication_basic<R, WR, TS>(tableshared: TS)
 where
     R: Reference<TestData>,
-    TS: Table<TestData, R>,
+    WR: ReferenceWeak<TestData, R>,
+    TS: Table<TestData, R, WR>,
 {
-    hashcons_two_copies::<R, TS>(&tableshared);
+    hashcons_two_copies::<R, WR, TS>(&tableshared);
 }
 
 /// `get` finds only what `get_or_insert` interned, and finds the same pointer.
@@ -118,10 +123,11 @@ where
 /// Nothing in hirpdag itself calls `get`, so this is its only coverage. What
 /// `get` returns once every strong reference is gone is left unchecked: weak
 /// tables forget the entry, `RefLeak` and the strong concurrent tables keep it.
-fn test_tableshared_get<R, TS>(tableshared: TS)
+fn test_tableshared_get<R, WR, TS>(tableshared: TS)
 where
     R: Reference<TestData>,
-    TS: Table<TestData, R>,
+    WR: ReferenceWeak<TestData, R>,
+    TS: Table<TestData, R, WR>,
 {
     let n = 32usize;
     for k in 0..n {
@@ -129,7 +135,7 @@ where
         assert!(tableshared.get(&data).is_none(), "key {} before insert", k);
     }
     let mut interned: Vec<R> = vec![];
-    populate_linear(&mut interned, &tableshared, 0..n);
+    populate_linear::<R, WR, TS>(&mut interned, &tableshared, 0..n);
     for (k, x) in interned.iter().enumerate() {
         let data = TestData::new(k as i32, 0, "hello".to_string());
         let found = tableshared
@@ -142,12 +148,13 @@ where
 }
 
 /// Run the shared-table checks, each against a table fresh from `new_table`.
-pub fn test_tableshared<R, TS>(new_table: impl Fn() -> TS)
+pub fn test_tableshared<R, WR, TS>(new_table: impl Fn() -> TS)
 where
     R: Reference<TestData>,
-    TS: Table<TestData, R>,
+    WR: ReferenceWeak<TestData, R>,
+    TS: Table<TestData, R, WR>,
 {
-    test_tableshared_interface::<R, TS>(new_table());
-    test_tableshared_deduplication_basic::<R, TS>(new_table());
-    test_tableshared_get::<R, TS>(new_table());
+    test_tableshared_interface::<R, WR, TS>(new_table());
+    test_tableshared_deduplication_basic::<R, WR, TS>(new_table());
+    test_tableshared_get::<R, WR, TS>(new_table());
 }

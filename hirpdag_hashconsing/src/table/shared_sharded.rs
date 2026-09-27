@@ -11,11 +11,12 @@ type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::D
 /// The shard is selected by the low bits of the hash, so threads operating on
 /// structurally different nodes rarely contend.  This is the default `Table`
 /// implementation used by the `hirpdag` macro.
-pub struct TableSharedSharded<D, R, T, HB = DefaultHasher>
+pub struct TableSharedSharded<D, R, WR, T, HB = DefaultHasher>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
+    WR: ReferenceWeak<D, R>,
+    T: ThreadUnsafeTable<D, R, WR>,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     inner: [std::sync::Mutex<T>; N_SHARDS],
@@ -23,13 +24,15 @@ where
 
     phantom_d: std::marker::PhantomData<D>,
     phantom_r: std::marker::PhantomData<R>,
+    phantom_wr: std::marker::PhantomData<WR>,
 }
 
-impl<D, R, T, HB> TableSharedSharded<D, R, T, HB>
+impl<D, R, WR, T, HB> TableSharedSharded<D, R, WR, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
+    WR: ReferenceWeak<D, R>,
+    T: ThreadUnsafeTable<D, R, WR>,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     /// An empty table, one freshly built inner table per shard, hashing with
@@ -47,6 +50,7 @@ where
 
             phantom_d: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,
+            phantom_wr: std::marker::PhantomData,
         }
     }
 
@@ -57,11 +61,12 @@ where
     }
 }
 
-impl<D, R, T, HB> Default for TableSharedSharded<D, R, T, HB>
+impl<D, R, WR, T, HB> Default for TableSharedSharded<D, R, WR, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: ThreadUnsafeTable<D, R> + Default,
+    WR: ReferenceWeak<D, R>,
+    T: ThreadUnsafeTable<D, R, WR> + Default,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     fn default() -> Self {
@@ -77,11 +82,12 @@ fn make_hash<K: std::hash::Hash + ?Sized>(
     hash_builder.hash_one(val)
 }
 
-impl<D, R, T, HB> Table<D, R> for TableSharedSharded<D, R, T, HB>
+impl<D, R, WR, T, HB> Table<D, R, WR> for TableSharedSharded<D, R, WR, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
-    T: ThreadUnsafeTable<D, R>,
+    WR: ReferenceWeak<D, R>,
+    T: ThreadUnsafeTable<D, R, WR>,
     HB: std::hash::BuildHasher + Default + Clone,
 {
     fn get(&self, data: &D) -> Option<R> {

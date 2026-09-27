@@ -4,6 +4,7 @@ use crate::base::meta::HirpdagComputeMeta;
 use crate::base::meta::HirpdagMeta;
 use hirpdag_hashconsing;
 use hirpdag_hashconsing::Reference;
+use hirpdag_hashconsing::ReferenceWeak;
 use hirpdag_hashconsing::Table;
 
 /// A hash-consed, reference-counted pointer to an interned DAG node.
@@ -215,19 +216,22 @@ where
 pub struct HirpdagHashconsTable<
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
-    TS: Table<HirpdagStorage<D>, R>,
+    WR: ReferenceWeak<HirpdagStorage<D>, R>,
+    TS: Table<HirpdagStorage<D>, R, WR>,
 > {
     table: TS,
 
     phantom_d: std::marker::PhantomData<D>,
     phantom_r: std::marker::PhantomData<R>,
+    phantom_wr: std::marker::PhantomData<WR>,
 }
 
-impl<D, R, TS> HirpdagHashconsTable<D, R, TS>
+impl<D, R, WR, TS> HirpdagHashconsTable<D, R, WR, TS>
 where
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
-    TS: Table<HirpdagStorage<D>, R>,
+    WR: ReferenceWeak<HirpdagStorage<D>, R>,
+    TS: Table<HirpdagStorage<D>, R, WR>,
 {
     /// An empty table of the configured [`Table`] implementation.
     ///
@@ -243,6 +247,7 @@ where
 
             phantom_d: std::marker::PhantomData,
             phantom_r: std::marker::PhantomData,
+            phantom_wr: std::marker::PhantomData,
         }
     }
 
@@ -280,11 +285,12 @@ where
     }
 }
 
-impl<D, R, TS> Default for HirpdagHashconsTable<D, R, TS>
+impl<D, R, WR, TS> Default for HirpdagHashconsTable<D, R, WR, TS>
 where
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
-    TS: Table<HirpdagStorage<D>, R> + Default,
+    WR: ReferenceWeak<HirpdagStorage<D>, R>,
+    TS: Table<HirpdagStorage<D>, R, WR> + Default,
 {
     fn default() -> Self {
         Self::new()

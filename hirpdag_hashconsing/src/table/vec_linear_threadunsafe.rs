@@ -22,7 +22,7 @@ where
     }
 }
 
-impl<D, R, RW> ThreadUnsafeTable<D, R> for TableVecLinearWeak<D, R, RW>
+impl<D, R, RW> ThreadUnsafeTable<D, R, RW> for TableVecLinearWeak<D, R, RW>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,

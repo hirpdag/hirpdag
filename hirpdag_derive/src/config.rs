@@ -78,7 +78,7 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
             aliases: vec![("ImplTable".to_string(), inner_table)],
             tableshared_type:
-                "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>"
+                "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplRefWeak<D>, ImplTable<D>>"
                     .to_string(),
         }
     }
