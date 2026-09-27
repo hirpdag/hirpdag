@@ -19,6 +19,7 @@ macro_rules! hirpdag_test_configs {
     };
     ($($items:item)*) => {
         hirpdag_test_configs!(@one arc_hash_linear, "arc_hash_linear", $($items)*);
+        hirpdag_test_configs!(@one arc_hash_linear_mutex, "arc_hash_linear_mutex", $($items)*);
         hirpdag_test_configs!(@one arc_hash_sorted, "arc_hash_sorted", $($items)*);
         hirpdag_test_configs!(@one leak_hash_linear, "leak_hash_linear", $($items)*);
         hirpdag_test_configs!(@one sep_hash_linear, "sep_hash_linear", $($items)*);
