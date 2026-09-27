@@ -1,17 +1,16 @@
 use crate::reference::*;
 use crate::table::*;
 
-/// Number of independent shard locks.  Power-of-two so shard selection is a bitmask (no modulo).
-const N_SHARDS: usize = 8;
-
 type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
 
-/// Concurrent hash-consing table using [`N_SHARDS`] independent mutexes.
+/// Concurrent hash-consing table using `N_SHARDS` independent mutexes.
 ///
 /// The shard is selected by the low bits of the hash, so threads operating on
-/// structurally different nodes rarely contend.  This is the default `Table`
-/// implementation used by the `hirpdag` macro.
-pub struct TableSharedSharded<D, R, T, HB = DefaultHasher>
+/// structurally different nodes rarely contend.  `N_SHARDS` must be a power of
+/// two: shard selection is a bitmask (`hash & (N_SHARDS - 1)`), so any other
+/// count would leave some shards unused.  See [`TableSharedSharded8`] for the
+/// eight-shard alias used by the `hirpdag` macro presets.
+pub struct TableSharedShardedN<const N_SHARDS: usize, D, R, T, HB = DefaultHasher>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -25,7 +24,11 @@ where
     phantom_r: std::marker::PhantomData<R>,
 }
 
-impl<D, R, T, HB> TableSharedSharded<D, R, T, HB>
+/// Eight-shard [`TableSharedShardedN`].  This is the default `Table`
+/// implementation used by the `hirpdag` macro.
+pub type TableSharedSharded8<D, R, T, HB = DefaultHasher> = TableSharedShardedN<8, D, R, T, HB>;
+
+impl<const N_SHARDS: usize, D, R, T, HB> TableSharedShardedN<N_SHARDS, D, R, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -57,7 +60,7 @@ where
     }
 }
 
-impl<D, R, T, HB> Default for TableSharedSharded<D, R, T, HB>
+impl<const N_SHARDS: usize, D, R, T, HB> Default for TableSharedShardedN<N_SHARDS, D, R, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
@@ -77,7 +80,7 @@ fn make_hash<K: std::hash::Hash + ?Sized>(
     hash_builder.hash_one(val)
 }
 
-impl<D, R, T, HB> Table<D, R> for TableSharedSharded<D, R, T, HB>
+impl<const N_SHARDS: usize, D, R, T, HB> Table<D, R> for TableSharedShardedN<N_SHARDS, D, R, T, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,

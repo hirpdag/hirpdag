@@ -222,6 +222,7 @@ impl criterion::measurement::ValueFormatter for AllocBytesFormatter {
 /// `hirpdag_bench_configs!` and `hirpdag_each_config!`.
 pub const CORE_CONFIGS: &[&str] = &[
     "arc_hash_linear",
+    "arc_hash_linear_mutex",
     "arc_hash_sorted",
     "leak_hash_linear",
     "sep_hash_linear",
@@ -444,6 +445,7 @@ pub fn mem_criterion() -> criterion::Criterion<AllocBytes> {
 macro_rules! hirpdag_each_config {
     ($callback:ident, $($args:tt)*) => {
         $callback!(@one arc_hash_linear, "ArcHashLinear", "arc_hash_linear", $($args)*);
+        $callback!(@one arc_hash_linear_mutex, "ArcHashLinearMutex", "arc_hash_linear_mutex", $($args)*);
         $callback!(@one arc_hash_sorted, "ArcHashSorted", "arc_hash_sorted", $($args)*);
         $callback!(@one leak_hash_linear, "LeakHashLinear", "leak_hash_linear", $($args)*);
         $callback!(@one sep_hash_linear, "SepHashLinear", "sep_hash_linear", $($args)*);

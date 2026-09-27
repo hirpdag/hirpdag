@@ -41,7 +41,8 @@ pub use crate::table::vec_sorted_threadunsafe::TableVecSortedWeak;
 
 pub use crate::table::hashmap_fallback_threadunsafe::TableHashmapFallbackWeak;
 
-pub use crate::table::shared_sharded::TableSharedSharded;
+pub use crate::table::shared_sharded::TableSharedSharded8;
+pub use crate::table::shared_sharded::TableSharedShardedN;
 
 pub use crate::table::shared_mutex::TableSharedMutex;
 
@@ -87,8 +88,8 @@ mod tests {
             T: ThreadUnsafeTable<TestData, R> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
-            test_tableshared::<R, TableSharedSharded<TestData, R, T, HB>>(|| {
-                TableSharedSharded::with_hasher(hash_builder.clone())
+            test_tableshared::<R, TableSharedSharded8<TestData, R, T, HB>>(|| {
+                TableSharedSharded8::with_hasher(hash_builder.clone())
             });
         }
 

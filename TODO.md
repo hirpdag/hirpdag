@@ -118,12 +118,12 @@ Improvements to `HirpdagMemoizeMap` / the generated `HirpdagMemoizeCache`
 
 - [P1] Multi-threaded concurrency and contention benchmarks.
   - **Concurrent Churn / Dropping**: Multi-threaded node creation and drop to stress atomic decrement contention, `RefTlc` thread-local decrement flushing, and test whether `RefSepPad` eliminates cache-line false sharing compared to `RefSep`.
-  - **Concurrent Read/Write Contention**: Mixed reader-writer workloads (concurrent lookup of existing interned nodes while writers insert new nodes) to evaluate `TableSharedDashMap`, `TableSharedFlurry`, `TableSharedSkipMap`, and `TableSharedArcSwap` against `TableSharedSharded`.
+  - **Concurrent Read/Write Contention**: Mixed reader-writer workloads (concurrent lookup of existing interned nodes while writers insert new nodes) to evaluate `TableSharedDashMap`, `TableSharedFlurry`, `TableSharedSkipMap`, and `TableSharedArcSwap` against `TableSharedSharded8`.
   - **Shared Memoization Cache Contention**: Multi-threaded memoized rewrite passes sharing a single `HirpdagRewriteMemoized` cache across threads (currently `primes.rs` allocates separate per-thread rewriters, avoiding cache contention).
 
 - [P1] Benchmark additional reference types, table backends, and normalizers.
   - **`RefRc` preset**: Add a single-threaded `rc_hash_linear` preset / benchmark to quantify the atomic ref-counting overhead of `RefArc` on single-threaded workloads.
-  - **`TableSharedMutex` vs `TableSharedSharded`**: Benchmark single coarse mutex table against sharded mutex table to measure the scalability and locking overhead of sharding.
+  - **`TableSharedMutex` vs `TableSharedSharded8`**: Benchmark single coarse mutex table against sharded mutex table to measure the scalability and locking overhead of sharding.
   - **Normalizer overhead**: Benchmark `#[hirpdag(normalizer)]` and `Expr::spawn()` normalization during construction vs un-normalized construction.
 
 - [P1] Perf measuring cache-misses, branch-misses, etc. instead of only execution time.
