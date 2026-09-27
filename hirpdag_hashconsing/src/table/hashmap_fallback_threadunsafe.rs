@@ -9,7 +9,7 @@ pub struct TableHashmapFallbackWeak<
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     RW: ReferenceWeak<D, R>,
-    T: ThreadUnsafeTable<D, R> + Default,
+    T: ThreadUnsafeTable<D, R, RW> + Default,
 > {
     m: std::collections::HashMap<u64, RW>,
     // If the map slot for this hash is taken, use the vector.
@@ -31,7 +31,7 @@ where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     RW: ReferenceWeak<D, R>,
-    T: ThreadUnsafeTable<D, R> + Default,
+    T: ThreadUnsafeTable<D, R, RW> + Default,
 {
     fn default() -> Self {
         Self {
@@ -45,12 +45,12 @@ where
     }
 }
 
-impl<D, R, RW, T> ThreadUnsafeTable<D, R> for TableHashmapFallbackWeak<D, R, RW, T>
+impl<D, R, RW, T> ThreadUnsafeTable<D, R, RW> for TableHashmapFallbackWeak<D, R, RW, T>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug,
     R: Reference<D>,
     RW: ReferenceWeak<D, R>,
-    T: ThreadUnsafeTable<D, R> + Default,
+    T: ThreadUnsafeTable<D, R, RW> + Default,
 {
     fn get(&self, hash: u64, data: &D) -> Option<R> {
         if let Some(v) = self.m.get(&hash) {

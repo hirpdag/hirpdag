@@ -3,36 +3,37 @@
 //! DashMap is a bucket-striped concurrent hash map: it internally shards into
 //! several independently locked `RwLock<HashMap>` regions, so threads touching
 //! structurally different nodes rarely contend. This wrapper stores the mapping
-//! directly in the concurrent map, so, unlike the `TableSharedMutex` and
-//! `TableSharedSharded` wrappers, it does not delegate to an inner
+//! directly in the concurrent map, so — unlike the `TableSharedMutex` /
+//! `TableSharedSharded` wrappers — it does not delegate to an inner
 //! single-threaded [`ThreadUnsafeTable`](crate::ThreadUnsafeTable) at all.
 //!
-//! Note on retention: entries hold a *strong* reference `R` to each interned
-//! node, so nodes are retained for the lifetime of the table (no weak-reference
-//! garbage collection of unreferenced nodes). This matches the `RefLeak` style
-//! of experiment and keeps the concurrent map free of the extra liveness checks
-//! that a weak table would require.
+//! It offers two views of the same map. As a [`Table`] the values are *strong*
+//! references `R`, so nodes are retained for the lifetime of the table (no
+//! weak-reference GC); as a [`NonPurgingTable`] the values are weak handles
+//! ([`WeakEntryStrong`]) that [`TableAmortizedPurge`](crate::TableAmortizedPurge)
+//! sweeps. The map plumbing is shared through private inherent methods.
 
 use crate::reference::*;
+use crate::table::weak_holder::WeakEntryStrong;
 use crate::table::*;
 use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 
 type DefaultHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
 
-pub struct TableSharedDashMap<D, R, HB = DefaultHasher>
+pub struct TableSharedDashMap<D, V, HB = DefaultHasher>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
-    R: Reference<D> + Clone + Send + Sync,
+    V: Clone + Send + Sync,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
-    map: DashMap<D, R, HB>,
+    map: DashMap<D, V, HB>,
 }
 
-impl<D, R, HB> Default for TableSharedDashMap<D, R, HB>
+impl<D, V, HB> Default for TableSharedDashMap<D, V, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
-    R: Reference<D> + Clone + Send + Sync,
+    V: Clone + Send + Sync,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     fn default() -> Self {
@@ -40,10 +41,10 @@ where
     }
 }
 
-impl<D, R, HB> TableSharedDashMap<D, R, HB>
+impl<D, V, HB> TableSharedDashMap<D, V, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
-    R: Reference<D> + Clone + Send + Sync,
+    V: Clone + Send + Sync,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     pub fn with_hasher(hash_builder: HB) -> Self {
@@ -51,16 +52,36 @@ where
             map: DashMap::with_hasher(hash_builder),
         }
     }
+
+    // Private map plumbing, shared by the strong ([`Table`]) and weak
+    // ([`NonPurgingTable`]) views so the raw `DashMap` calls live in one place.
+    fn map_get(&self, data: &D) -> Option<V> {
+        self.map.get(data).map(|r| r.value().clone())
+    }
+
+    fn map_retain<F>(&self, mut keep: F)
+    where
+        F: FnMut(&V) -> bool,
+    {
+        self.map.retain(|_k, v| keep(v));
+    }
+
+    fn map_len(&self) -> usize {
+        self.map.len()
+    }
 }
 
-impl<D, R, HB> Table<D, R> for TableSharedDashMap<D, R, HB>
+/// Strong-reference hash-consing table: retains every interned node (no
+/// weak-reference GC), matching the `RefLeak` style of experiment.
+impl<D, R, WR, HB> Table<D, R, WR> for TableSharedDashMap<D, R, HB>
 where
     D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
     R: Reference<D> + Clone + Send + Sync,
+    WR: ReferenceWeak<D, R>,
     HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
 {
     fn get(&self, data: &D) -> Option<R> {
-        self.map.get(data).map(|r| R::strong_clone(r.value()))
+        self.map_get(data)
     }
 
     fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
@@ -68,11 +89,11 @@ where
         CF: FnOnce(&mut D),
     {
         // Fast path: a shared (read) lock on the bucket is enough for a hit.
-        if let Some(r) = self.map.get(&data) {
-            return R::strong_clone(r.value());
+        if let Some(r) = self.map_get(&data) {
+            return r;
         }
         // Slow path: take the bucket entry (exclusive lock) so that creation and
-        // insertion of a new node are atomic with respect to other writers:
+        // insertion of a new node are atomic with respect to other writers —
         // no two threads can both insert a structurally equal node.
         let key = data.clone();
         match self.map.entry(key) {
@@ -84,6 +105,64 @@ where
                 obj
             }
         }
+    }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
+        self.map.clear();
+    }
+}
+
+/// Weak-reference (non-purging) view: stores weak handles; the purge adapter
+/// drives eviction. Weak downgrade / upgrade / liveness live here; the map
+/// plumbing is shared with the strong view above.
+impl<D, R, WR, HB> NonPurgingTable<D, R, WR>
+    for TableSharedDashMap<D, WeakEntryStrong<D, R, WR>, HB>
+where
+    D: std::hash::Hash + std::cmp::Eq + std::fmt::Debug + Clone + Send + Sync,
+    R: Reference<D>,
+    WR: ReferenceWeak<D, R> + Send + Sync,
+    HB: std::hash::BuildHasher + Default + Clone + Send + Sync,
+{
+    fn get(&self, data: &D) -> Option<R> {
+        self.map_get(data).and_then(|entry| entry.upgrade())
+    }
+
+    fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
+    where
+        CF: FnOnce(&mut D),
+    {
+        // Lock-free fast path.
+        if let Some(existing) = self.get(&data) {
+            return existing;
+        }
+        // Slow path: the per-shard entry lock makes create-and-insert (and
+        // dead-slot replacement) atomic against other writers of this key.
+        match self.map.entry(data.clone()) {
+            Entry::Occupied(mut e) => {
+                if let Some(existing) = e.get().upgrade() {
+                    return existing;
+                }
+                creation_meta(&mut data);
+                let obj = R::new(data);
+                *e.get_mut() = WeakEntryStrong::downgrade(&obj);
+                obj
+            }
+            Entry::Vacant(e) => {
+                creation_meta(&mut data);
+                let obj = R::new(data);
+                e.insert(WeakEntryStrong::downgrade(&obj));
+                obj
+            }
+        }
+    }
+
+    fn retain_alive(&self) {
+        self.map_retain(|entry| entry.is_alive());
+    }
+
+    fn len(&self) -> usize {
+        self.map_len()
     }
 
     #[cfg(feature = "reset-tables")]

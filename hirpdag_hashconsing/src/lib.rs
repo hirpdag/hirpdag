@@ -9,6 +9,9 @@ mod reference;
 pub use crate::reference::Reference;
 pub use crate::reference::ReferenceWeak;
 mod table;
+pub use crate::table::amortized_purge::TableAmortizedPurge;
+pub use crate::table::weak_holder::WeakEntryStrong;
+pub use crate::table::NonPurgingTable;
 pub use crate::table::Table;
 pub use crate::table::ThreadUnsafeTable;
 
@@ -81,31 +84,34 @@ mod tests {
     mod test_rc {
         use super::*;
 
-        fn test_tableshared_sharded<R, T, HB>(hash_builder: HB)
+        fn test_tableshared_sharded<R, WR, T, HB>(hash_builder: HB)
         where
             R: Reference<TestData>,
-            T: ThreadUnsafeTable<TestData, R> + Default,
+            WR: ReferenceWeak<TestData, R>,
+            T: ThreadUnsafeTable<TestData, R, WR> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
-            test_tableshared::<R, TableSharedSharded<TestData, R, T, HB>>(|| {
+            test_tableshared::<R, WR, TableSharedSharded<TestData, R, WR, T, HB>>(|| {
                 TableSharedSharded::with_hasher(hash_builder.clone())
             });
         }
 
-        fn test_tableshared_mutex<R, T, HB>(hash_builder: HB)
+        fn test_tableshared_mutex<R, WR, T, HB>(hash_builder: HB)
         where
             R: Reference<TestData>,
-            T: ThreadUnsafeTable<TestData, R> + Default,
+            WR: ReferenceWeak<TestData, R>,
+            T: ThreadUnsafeTable<TestData, R, WR> + Default,
             HB: std::hash::BuildHasher + Default + Clone,
         {
-            test_tableshared::<R, TableSharedMutex<TestData, R, T, HB>>(|| {
+            test_tableshared::<R, WR, TableSharedMutex<TestData, R, WR, T, HB>>(|| {
                 TableSharedMutex::with_hasher(hash_builder.clone())
             });
         }
-        fn test_tableshared_all<R, T>()
+        fn test_tableshared_all<R, WR, T>()
         where
             R: Reference<TestData>,
-            T: ThreadUnsafeTable<TestData, R> + Default,
+            WR: ReferenceWeak<TestData, R>,
+            T: ThreadUnsafeTable<TestData, R, WR> + Default,
         {
             let hash_builder = std::hash::BuildHasherDefault::<
                 std::collections::hash_map::DefaultHasher,
@@ -113,13 +119,14 @@ mod tests {
 
             test_tableshared_sharded::<
                 R,
+                WR,
                 T,
                 std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>,
             >(hash_builder);
 
             let hash_builder = std::hash::BuildHasherDefault::<TerribleHasher>::default();
 
-            test_tableshared_sharded::<R, T, std::hash::BuildHasherDefault<TerribleHasher>>(
+            test_tableshared_sharded::<R, WR, T, std::hash::BuildHasherDefault<TerribleHasher>>(
                 hash_builder,
             );
 
@@ -129,13 +136,14 @@ mod tests {
 
             test_tableshared_mutex::<
                 R,
+                WR,
                 T,
                 std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>,
             >(hash_builder);
 
             let hash_builder = std::hash::BuildHasherDefault::<TerribleHasher>::default();
 
-            test_tableshared_mutex::<R, T, std::hash::BuildHasherDefault<TerribleHasher>>(
+            test_tableshared_mutex::<R, WR, T, std::hash::BuildHasherDefault<TerribleHasher>>(
                 hash_builder,
             );
         }
@@ -145,15 +153,17 @@ mod tests {
             R: Reference<TestData>,
             RW: ReferenceWeak<TestData, R>,
         {
-            test_tableshared_all::<R, TableVecLinearWeak<TestData, R, RW>>();
-            test_tableshared_all::<R, TableVecSortedWeak<TestData, R, RW>>();
+            test_tableshared_all::<R, RW, TableVecLinearWeak<TestData, R, RW>>();
+            test_tableshared_all::<R, RW, TableVecSortedWeak<TestData, R, RW>>();
             test_tableshared_all::<
                 R,
+                RW,
                 TableHashmapFallbackWeak<TestData, R, RW, TableVecLinearWeak<TestData, R, RW>>,
             >();
             // The inner table of the `arc_hash_sorted` preset.
             test_tableshared_all::<
                 R,
+                RW,
                 TableHashmapFallbackWeak<TestData, R, RW, TableVecSortedWeak<TestData, R, RW>>,
             >();
         }
@@ -173,10 +183,12 @@ mod tests {
             {
                 test_tableshared_all::<
                     RefRc<TestData>,
+                    RefRcWeak<TestData>,
                     TableTovWeakTable<TestData, RefRc<TestData>, RefRcWeak<TestData>>,
                 >();
                 test_tableshared_all::<
                     RefArc<TestData>,
+                    RefArcWeak<TestData>,
                     TableTovWeakTable<TestData, RefArc<TestData>, RefArcWeak<TestData>>,
                 >();
             }
@@ -344,6 +356,7 @@ mod tests {
 
         type Data = TestData;
         type Ref = RefArc<TestData>;
+        type RefW = RefArcWeak<TestData>;
         type DefHasher = std::hash::BuildHasherDefault<std::collections::hash_map::DefaultHasher>;
         type BadHasher = std::hash::BuildHasherDefault<TerribleHasher>;
 
@@ -352,7 +365,7 @@ mod tests {
         /// that distinct keys intern to distinct pointers.
         fn concurrent_stress<TS>(table: TS)
         where
-            TS: Table<Data, Ref> + Send + Sync + 'static,
+            TS: Table<Data, Ref, RefW> + Send + Sync + 'static,
         {
             let table = std::sync::Arc::new(table);
             let n = 300usize;
@@ -363,7 +376,7 @@ mod tests {
                 let t = table.clone();
                 handles.push(std::thread::spawn(move || {
                     let mut v: Vec<Ref> = Vec::new();
-                    populate_linear(&mut v, &*t, 0..n);
+                    populate_linear::<Ref, RefW, TS>(&mut v, &*t, 0..n);
                     v
                 }));
             }
@@ -386,8 +399,10 @@ mod tests {
 
         #[test]
         fn dashmap() {
-            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, DefHasher>>(Default::default);
-            test_tableshared::<Ref, TableSharedDashMap<Data, Ref, BadHasher>>(|| {
+            test_tableshared::<Ref, RefW, TableSharedDashMap<Data, Ref, DefHasher>>(
+                Default::default,
+            );
+            test_tableshared::<Ref, RefW, TableSharedDashMap<Data, Ref, BadHasher>>(|| {
                 TableSharedDashMap::with_hasher(BadHasher::default())
             });
 
@@ -396,8 +411,10 @@ mod tests {
 
         #[test]
         fn flurry() {
-            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, DefHasher>>(Default::default);
-            test_tableshared::<Ref, TableSharedFlurry<Data, Ref, BadHasher>>(|| {
+            test_tableshared::<Ref, RefW, TableSharedFlurry<Data, Ref, DefHasher>>(
+                Default::default,
+            );
+            test_tableshared::<Ref, RefW, TableSharedFlurry<Data, Ref, BadHasher>>(|| {
                 TableSharedFlurry::with_hasher(BadHasher::default())
             });
 
@@ -406,16 +423,116 @@ mod tests {
 
         #[test]
         fn skipmap() {
-            test_tableshared::<Ref, TableSharedSkipMap<Data, Ref>>(Default::default);
+            test_tableshared::<Ref, RefW, TableSharedSkipMap<Data, Ref>>(Default::default);
 
             concurrent_stress(TableSharedSkipMap::<Data, Ref>::default());
         }
 
         #[test]
         fn arcswap() {
-            test_tableshared::<Ref, TableSharedArcSwap<Data, Ref, DefHasher>>(Default::default);
+            test_tableshared::<Ref, RefW, TableSharedArcSwap<Data, Ref, DefHasher>>(
+                Default::default,
+            );
 
             concurrent_stress(TableSharedArcSwap::<Data, Ref, DefHasher>::default());
+        }
+
+        // The purge adapter turns a non-purging weak table into a weak-key,
+        // purging `Table`. Each concurrent backend becomes a `NonPurgingTable`
+        // by storing the `WeakEntryStrong` holder as its value.
+        type Holder = WeakEntryStrong<Data, Ref, RefW>;
+
+        #[test]
+        fn amortized_purge_over_dashmap() {
+            type DashWeak = TableSharedDashMap<Data, Holder, DefHasher>;
+            type PurgeDash = TableAmortizedPurge<Data, Ref, RefW, DashWeak>;
+            test_tableshared::<Ref, RefW, PurgeDash>(Default::default);
+
+            concurrent_stress(PurgeDash::default());
+            exercise_purge(PurgeDash::default());
+        }
+
+        #[test]
+        fn amortized_purge_over_flurry() {
+            // Exercises flurry's `try_insert` / `compute_if_present` intern path.
+            type FlurryWeak = TableSharedFlurry<Data, Holder, DefHasher>;
+            type PurgeFlurry = TableAmortizedPurge<Data, Ref, RefW, FlurryWeak>;
+            test_tableshared::<Ref, RefW, PurgeFlurry>(Default::default);
+
+            concurrent_stress(PurgeFlurry::default());
+            exercise_purge(PurgeFlurry::default());
+        }
+
+        #[test]
+        fn amortized_purge_over_skipmap() {
+            // Exercises skipmap's `compare_insert` intern path.
+            type SkipWeak = TableSharedSkipMap<Data, Holder>;
+            type PurgeSkip = TableAmortizedPurge<Data, Ref, RefW, SkipWeak>;
+            test_tableshared::<Ref, RefW, PurgeSkip>(Default::default);
+
+            concurrent_stress(PurgeSkip::default());
+            exercise_purge(PurgeSkip::default());
+        }
+
+        #[test]
+        fn amortized_purge_over_arcswap() {
+            type ArcSwapWeak = TableSharedArcSwap<Data, Holder, DefHasher>;
+            type PurgeArcSwap = TableAmortizedPurge<Data, Ref, RefW, ArcSwapWeak>;
+            test_tableshared::<Ref, RefW, PurgeArcSwap>(Default::default);
+
+            concurrent_stress(PurgeArcSwap::default());
+            exercise_purge(PurgeArcSwap::default());
+        }
+
+        /// Exercise a purge adapter's two weak-key behaviours: re-interning a key
+        /// whose node has died must replace the dead entry in place (hitting each
+        /// backend's dead-slot path — dashmap occupied-dead, skipmap
+        /// `compare_insert`, flurry `compute_if_present`, …), and a workload of
+        /// fresh keys that are dropped each cycle must stay bounded rather than
+        /// leaking dead entries.
+        fn exercise_purge<S>(table: TableAmortizedPurge<Data, Ref, RefW, S>)
+        where
+            S: NonPurgingTable<Data, Ref, RefW>,
+        {
+            // Same-key dead-slot replacement.
+            let key = || TestData::new(7, 0, "reused".to_string());
+            let first = table.get_or_insert(key(), |_| {});
+            drop(first); // the only strong reference; the node is now dead
+            assert!(
+                table.get(&key()).is_none(),
+                "dead node must not be returned"
+            );
+            let second = table.get_or_insert(key(), |_| {}); // replaces the dead entry
+            let looked = table.get(&key()).expect("re-interned key must be live");
+            assert!(Ref::strong_ptr_eq(&second, &looked));
+            drop(second);
+
+            // Bounded growth under a fresh-key-per-cycle leak pattern.
+            let n = 1000usize;
+            let mut len_after_warmup = 0;
+            for iteration in 0..50usize {
+                let mut live: Vec<Ref> = Vec::with_capacity(n);
+                for k in 0..n {
+                    // `b = iteration` makes every cycle's keys distinct, so dead
+                    // entries are never overwritten and would accumulate without
+                    // purging.
+                    let data = TestData::new(k as i32, iteration as i32, "purge_cycle".to_string());
+                    live.push(table.get_or_insert(data, |_| {}));
+                }
+                drop(live);
+                let len = table.len();
+                if iteration == 5 {
+                    len_after_warmup = len;
+                } else if iteration > 5 {
+                    assert!(
+                        len <= len_after_warmup,
+                        "map grew from {} to {} entries by iteration {}: dead entries are leaking",
+                        len_after_warmup,
+                        len,
+                        iteration
+                    );
+                }
+            }
         }
     }
 }

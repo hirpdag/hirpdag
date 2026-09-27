@@ -81,15 +81,30 @@ Source: `hirpdag/src/base/reference.rs`, `HIRPDAG_CREATION_COUNTER`
 
 ## Tables
 
-### `ThreadUnsafeTable<D, R>`
-The single-threaded storage unit for a hash-consing table.  Implementations differ in lookup strategy and memory layout.
+### `ThreadUnsafeTable<D, R, WR>`
+The single-threaded storage unit for a hash-consing table.  Implementations differ in lookup strategy and memory layout.  The `WR` parameter names the weak-reference type the table evicts against: every inner table stores weak references and can purge entries whose referent has been dropped.
 
 Trait: `hirpdag_hashconsing::ThreadUnsafeTable`
 
-### `Table<D, R>`
-The thread-safe hash-consing interface (`get` / `get_or_insert` over `&self`).  Implementations choose their concurrency strategy: some wrap one or more inner single-threaded `ThreadUnsafeTable` instances behind locks, others store the mapping directly in a concurrent collection.  The trait is *not* parameterized over an inner `ThreadUnsafeTable`.  A backend that needs one (mutex/sharded) carries it as its own generic, so backends that don't (the concurrent-collection ones) name no table at all.
+### `Table<D, R, WR>`
+The thread-safe hash-consing interface (`get` / `get_or_insert` over `&self`).  Implementations choose their concurrency strategy: some wrap one or more inner single-threaded `ThreadUnsafeTable` instances behind locks, others store the mapping directly in a concurrent collection.  The trait is *not* parameterized over an inner `ThreadUnsafeTable`.  A backend that needs one (mutex/sharded) carries it as its own generic, so backends that don't (the concurrent-collection ones) name no table at all.  The `WR` parameter names the weak-reference type; a concurrent backend that implements `Table` directly stores **strong** references and never purges (retain-forever).  Purging weak-key hash-consing comes from wrapping such a backend's `NonPurgingTable` view in `TableAmortizedPurge`.
 
 Trait: `hirpdag_hashconsing::Table`
+
+### `NonPurgingTable<D, R, WR>`
+A concurrent hash-consing map that stores **weak** references (`WR: ReferenceWeak<D, R>`) but performs no purging of dead entries on its own.  Lookups upgrade the stored weak reference; the name states the invariant.  Wrapping one in `TableAmortizedPurge` adds purging and yields a `Table`.  The concurrent third-party backends implement this directly, alongside a direct strong-retention `Table`; both views share the backend's map plumbing through private inherent methods, and the weak side stores a `WeakEntryStrong` holder that makes a weak reference `Clone + Hash + Eq` by stable pointer identity.
+
+Trait: `hirpdag_hashconsing::NonPurgingTable`
+
+### `TableAmortizedPurge`
+Adapter turning a `NonPurgingTable` into a purging `Table`.  It adds **no synchronization of its own**: `get` and `get_or_insert` delegate straight to the backend, whose `get_or_insert` is atomic via its native concurrency (dashmap's per-shard entry lock, skipmap's `compare_insert`, flurry's `try_insert` / `compute_if_present`, arc-swap's inherent writer serialization).  Dead entries are purged **amortized**: a single `retain_alive` sweep once the map grows past twice its size at the previous purge, elected by a lock-free `compare_exchange` so one sweeper runs while other writers continue.  Like every table it builds itself (`Default`).  This is how the otherwise strong-only concurrent backends gain weak-key hash-consing.
+
+Source: `hirpdag_hashconsing/src/table/amortized_purge.rs`
+
+### `WeakEntryStrong`
+A weak reference wrapped so it can be stored as the *value* of a concurrent backend's `NonPurgingTable` view: `Clone` via `ReferenceWeak::weak_clone`, `Hash` / `Eq` via `ReferenceWeak::weak_ptr_id` (a stable pointer identity that survives the referent's death), and `Send + Sync` when the weak type is.
+
+Source: `hirpdag_hashconsing/src/table/weak_holder.rs`
 
 ### `WeakEntry`
 The per-element storage unit inside vector-backed tables: a precomputed hash plus a weak reference.  The cached hash allows O(1) filtering before the equality check.
@@ -114,15 +129,15 @@ Hash-sorted `Vec` of weak entries; O(log n) binary search to the hash run, then 
 Source: `hirpdag_hashconsing/src/table/shared_sharded.rs`
 
 ### Third-party-collection table backends (`third-party-tables` feature)
-Table backends built on external collection crates, behind the opt-in `third-party-tables` Cargo feature (off by default; enable it on `hirpdag` to select these presets). `TableTovWeakTable` is an inner `ThreadUnsafeTable` (wrapping the [`weak-table`] crate) used behind the sharded shared table; the rest are `Table` implementations that store the interned mapping directly in a concurrent collection instead of delegating to an inner `ThreadUnsafeTable`. The concurrent ones store strong references (unreferenced nodes are retained, not garbage-collected) and require a `Send + Sync` reference, so they are wired to `RefArc`.
+Table backends built on external collection crates, behind the opt-in `third-party-tables` Cargo feature (off by default; enable it on `hirpdag` to select these presets). `TableTovWeakTable` is an inner `ThreadUnsafeTable` (wrapping the [`weak-table`] crate) used behind the sharded shared table; the rest store the interned mapping directly in a concurrent collection instead of delegating to an inner `ThreadUnsafeTable`. Each of these concurrent backends implements `Table` directly (a strong-reference view) and `NonPurgingTable` (a weak-reference view), and so has **two presets**: the `*_strong` preset uses the direct strong `Table`, which retains unreferenced nodes rather than garbage-collecting them; the un-suffixed preset wraps the backend's `NonPurgingTable` in `TableAmortizedPurge`, yielding a weak-key, purging `Table` that evicts dead nodes. They require a `Send + Sync` reference, so they are wired to `RefArc`.
 
-| Type | Preset | Backend | Strategy |
-| --- | --- | --- | --- |
-| `TableTovWeakTable` | `arc_tovweaktable` | [`weak-table`] | `WeakHashSet` inner `ThreadUnsafeTable` behind `TableSharedSharded`; weak-reference GC. |
-| `TableSharedDashMap` | `arc_dashmap` | [`dashmap`] | Bucket-striped concurrent hash map; per-shard locks. |
-| `TableSharedFlurry` | `arc_flurry` | [`flurry`] | Lock-free hash map (Java `ConcurrentHashMap` port); keys must be `Ord`. |
-| `TableSharedSkipMap` | `arc_skipmap` | [`crossbeam-skiplist`] | Lock-free ordered skip list; `O(log n)` lookup, no hasher. |
-| `TableSharedArcSwap` | `arc_arcswap` | [`arc-swap`] | RCU / copy-on-write: lock-free reads, whole-map clone per insert (`O(n)` writes). |
+| Type | Purging preset | Strong preset | Backend | Strategy |
+| --- | --- | --- | --- | --- |
+| `TableTovWeakTable` | `arc_tovweaktable` | — | [`weak-table`] | `WeakHashSet` inner `ThreadUnsafeTable` behind `TableSharedSharded`; weak-reference GC. |
+| `TableSharedDashMap` | `arc_dashmap` | `arc_dashmap_strong` | [`dashmap`] | Bucket-striped concurrent hash map; per-shard locks. |
+| `TableSharedFlurry` | `arc_flurry` | `arc_flurry_strong` | [`flurry`] | Lock-free hash map (Java `ConcurrentHashMap` port); keys must be `Ord`. |
+| `TableSharedSkipMap` | `arc_skipmap` | `arc_skipmap_strong` | [`crossbeam-skiplist`] | Lock-free ordered skip list; `O(log n)` lookup, no hasher. |
+| `TableSharedArcSwap` | `arc_arcswap` | `arc_arcswap_strong` | [`arc-swap`] | RCU / copy-on-write: lock-free reads, whole-map clone per insert (`O(n)` writes). |
 
 [`weak-table`]: https://crates.io/crates/weak-table
 [`dashmap`]: https://crates.io/crates/dashmap

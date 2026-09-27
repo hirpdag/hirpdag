@@ -234,9 +234,13 @@ pub const CORE_CONFIGS: &[&str] = &[
 pub const THIRD_PARTY_CONFIGS: &[&str] = &[
     "arc_tovweaktable",
     "arc_dashmap",
+    "arc_dashmap_strong",
     "arc_flurry",
+    "arc_flurry_strong",
     "arc_skipmap",
+    "arc_skipmap_strong",
     "arc_arcswap",
+    "arc_arcswap_strong",
 ];
 
 /// Whether [`THIRD_PARTY_CONFIGS`] are compiled into this binary.
@@ -456,11 +460,19 @@ macro_rules! hirpdag_each_config {
         #[cfg(feature = "third-party-tables")]
         $callback!(@one arc_dashmap, "ArcDashMap", "arc_dashmap", $($args)*);
         #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_dashmap_strong, "ArcDashMapStrong", "arc_dashmap_strong", $($args)*);
+        #[cfg(feature = "third-party-tables")]
         $callback!(@one arc_flurry, "ArcFlurry", "arc_flurry", $($args)*);
+        #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_flurry_strong, "ArcFlurryStrong", "arc_flurry_strong", $($args)*);
         #[cfg(feature = "third-party-tables")]
         $callback!(@one arc_skipmap, "ArcSkipMap", "arc_skipmap", $($args)*);
         #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_skipmap_strong, "ArcSkipMapStrong", "arc_skipmap_strong", $($args)*);
+        #[cfg(feature = "third-party-tables")]
         $callback!(@one arc_arcswap, "ArcArcSwap", "arc_arcswap", $($args)*);
+        #[cfg(feature = "third-party-tables")]
+        $callback!(@one arc_arcswap_strong, "ArcArcSwapStrong", "arc_arcswap_strong", $($args)*);
     };
 }
 

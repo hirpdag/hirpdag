@@ -2,20 +2,22 @@
 //!
 //! A skip list is a probabilistically balanced, *ordered* map. `SkipMap` is a
 //! lock-free concurrent implementation using epoch-based reclamation. Unlike the
-//! hash-map backends it keeps entries sorted by key, so it needs no hasher; the
+//! hash-map backends it keeps entries sorted by key, so it needs no hasher — the
 //! key type only has to be [`Ord`]. Lookups are `O(log n)` rather than `O(1)`,
 //! which is the trade-off for ordered iteration and lock-free progress.
 //!
 //! As with the other concurrent wrappers, the interned mapping is stored
 //! directly in the structure (there is no inner single-threaded
-//! [`ThreadUnsafeTable`](crate::ThreadUnsafeTable)), and strong references are retained (no
-//! weak-reference GC of unreferenced nodes).
+//! [`ThreadUnsafeTable`](crate::ThreadUnsafeTable)). It offers a strong-reference
+//! [`Table`] view (retain-forever) and a weak [`NonPurgingTable`] view swept by
+//! [`TableAmortizedPurge`](crate::TableAmortizedPurge).
 
 use crate::reference::*;
+use crate::table::weak_holder::WeakEntryStrong;
 use crate::table::*;
 use crossbeam_skiplist::SkipMap;
 
-pub struct TableSharedSkipMap<D, R>
+pub struct TableSharedSkipMap<D, V>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -25,12 +27,12 @@ where
         + Send
         + Sync
         + 'static,
-    R: Reference<D> + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
-    map: SkipMap<D, R>,
+    map: SkipMap<D, V>,
 }
 
-impl<D, R> Default for TableSharedSkipMap<D, R>
+impl<D, V> Default for TableSharedSkipMap<D, V>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -40,7 +42,7 @@ where
         + Send
         + Sync
         + 'static,
-    R: Reference<D> + Clone + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
 {
     fn default() -> Self {
         Self {
@@ -49,7 +51,47 @@ where
     }
 }
 
-impl<D, R> Table<D, R> for TableSharedSkipMap<D, R>
+impl<D, V> TableSharedSkipMap<D, V>
+where
+    D: std::hash::Hash
+        + std::cmp::Eq
+        + std::cmp::Ord
+        + std::fmt::Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    V: Clone + Send + Sync + 'static,
+{
+    // Private map plumbing, shared by the strong ([`Table`]) and weak
+    // ([`NonPurgingTable`]) views so the raw `SkipMap` calls live in one place.
+    fn map_get(&self, data: &D) -> Option<V> {
+        self.map.get(data).map(|e| e.value().clone())
+    }
+
+    fn map_retain<F>(&self, mut keep: F)
+    where
+        F: FnMut(&V) -> bool,
+    {
+        // SkipMap has no bulk retain; collect the dead keys then remove them.
+        // Iteration and removal are both lock-free and safe to interleave.
+        let mut dead: Vec<D> = Vec::new();
+        for e in self.map.iter() {
+            if !keep(e.value()) {
+                dead.push(e.key().clone());
+            }
+        }
+        for k in dead {
+            self.map.remove(&k);
+        }
+    }
+
+    fn map_len(&self) -> usize {
+        self.map.len()
+    }
+}
+
+impl<D, R, WR> Table<D, R, WR> for TableSharedSkipMap<D, R>
 where
     D: std::hash::Hash
         + std::cmp::Eq
@@ -60,9 +102,10 @@ where
         + Sync
         + 'static,
     R: Reference<D> + Clone + Send + Sync + 'static,
+    WR: ReferenceWeak<D, R>,
 {
     fn get(&self, data: &D) -> Option<R> {
-        self.map.get(data).map(|e| R::strong_clone(e.value()))
+        self.map_get(data)
     }
 
     fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
@@ -89,6 +132,66 @@ where
         // nodes lazily via crossbeam-epoch, so the memory is not necessarily
         // freed synchronously here; a peak-heap memory benchmark of this backend
         // will therefore be noisier than one of a promptly-freeing table.
+        self.map.clear();
+    }
+}
+
+/// Weak-reference (non-purging) view: stores weak handles; the purge adapter
+/// drives eviction.
+impl<D, R, WR> NonPurgingTable<D, R, WR> for TableSharedSkipMap<D, WeakEntryStrong<D, R, WR>>
+where
+    D: std::hash::Hash
+        + std::cmp::Eq
+        + std::cmp::Ord
+        + std::fmt::Debug
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    R: Reference<D>,
+    WR: ReferenceWeak<D, R> + Send + Sync + 'static,
+{
+    fn get(&self, data: &D) -> Option<R> {
+        self.map_get(data).and_then(|entry| entry.upgrade())
+    }
+
+    fn get_or_insert<CF>(&self, mut data: D, creation_meta: CF) -> R
+    where
+        CF: FnOnce(&mut D),
+    {
+        if let Some(existing) = self.map_get(&data).and_then(|entry| entry.upgrade()) {
+            return existing;
+        }
+        creation_meta(&mut data);
+        let obj = R::new(data);
+        let key = R::strong_deref(&obj).clone();
+        loop {
+            // Insert our weak if the slot is absent or dead; keep an existing
+            // live entry. `compare_insert` re-evaluates the predicate under the
+            // final CAS, so a node that became live is never clobbered.
+            let entry =
+                self.map
+                    .compare_insert(key.clone(), WeakEntryStrong::downgrade(&obj), |current| {
+                        !current.is_alive()
+                    });
+            if let Some(existing) = entry.value().upgrade() {
+                return existing;
+            }
+            // The observed entry died between compare and upgrade; retry (the
+            // predicate will now replace it with our node).
+        }
+    }
+
+    fn retain_alive(&self) {
+        self.map_retain(|entry| entry.is_alive());
+    }
+
+    fn len(&self) -> usize {
+        self.map_len()
+    }
+
+    #[cfg(feature = "reset-tables")]
+    fn reset(&self) {
         self.map.clear();
     }
 }

@@ -226,6 +226,7 @@ pub fn for_struct(
         static #hirpdag_table_name: std::sync::LazyLock<HirpdagHashconsTable<
             #hirpdag_struct_name,
             ImplRef<HirpdagStorage<#hirpdag_struct_name>>,
+            ImplRefWeak<HirpdagStorage<#hirpdag_struct_name>>,
             ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>>> =
                 std::sync::LazyLock::new(HirpdagHashconsTable::new);
 

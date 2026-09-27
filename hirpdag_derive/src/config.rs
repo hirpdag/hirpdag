@@ -16,12 +16,19 @@ const PRESETS: &[&str] = &[
     "sepu32_hash_linear",
     "tlc_hash_linear",
     // Tables backed by third-party collection crates (behind the
-    // `third-party-tables` feature).
+    // `third-party-tables` feature). Each concurrent backend has two variants:
+    // `*_strong` stores strong references (retain-forever), while the un-suffixed
+    // name wraps it in `TableAmortizedPurge` for weak-key hash-consing (dead
+    // nodes are evicted). `arc_tovweaktable` is weak-key with GC.
     "arc_tovweaktable",
     "arc_dashmap",
+    "arc_dashmap_strong",
     "arc_flurry",
+    "arc_flurry_strong",
     "arc_skipmap",
+    "arc_skipmap_strong",
     "arc_arcswap",
+    "arc_arcswap_strong",
 ];
 
 /// The type strings that select a hash-consing implementation.
@@ -78,7 +85,7 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
             aliases: vec![("ImplTable".to_string(), inner_table)],
             tableshared_type:
-                "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplTable<D>>"
+                "hirpdag::hirpdag_hashconsing::TableSharedSharded<D, ImplRef<D>, ImplRefWeak<D>, ImplTable<D>>"
                     .to_string(),
         }
     }
@@ -94,6 +101,24 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
             aliases: Vec::new(),
             tableshared_type: format!(
                 "hirpdag::hirpdag_hashconsing::TableShared{shared_base}<D, ImplRef<D>>"
+            ),
+        }
+    }
+    // The purging variant of a concurrent backend: the backend stores weak
+    // references (`WeakEntryStrong`) and is wrapped in `TableAmortizedPurge`,
+    // which adds amortized eviction of dead entries. Unlike the strong variant
+    // this frees unreferenced nodes. The inner backend takes its default hasher
+    // (skipmap has none), so no hasher argument is threaded here.
+    fn concurrent_purging(base: &str, shared_base: &str) -> ConfigTypes {
+        let inner = format!(
+            "hirpdag::hirpdag_hashconsing::TableShared{shared_base}<D, hirpdag::hirpdag_hashconsing::WeakEntryStrong<D, ImplRef<D>, ImplRefWeak<D>>>"
+        );
+        ConfigTypes {
+            reference_type: format!("hirpdag::hirpdag_hashconsing::{base}<D>"),
+            reference_weak_type: format!("hirpdag::hirpdag_hashconsing::{base}Weak<D>"),
+            aliases: Vec::new(),
+            tableshared_type: format!(
+                "hirpdag::hirpdag_hashconsing::TableAmortizedPurge<D, ImplRef<D>, ImplRefWeak<D>, {inner}>"
             ),
         }
     }
@@ -123,10 +148,17 @@ fn preset_types(name: &str) -> Option<ConfigTypes> {
         // reference. See the `table::*_strong` / `table::shared_*` /
         // `table::tov_weak_table_threadunsafe` modules.
         "arc_tovweaktable" => sharded("RefArc", tovweaktable),
-        "arc_dashmap" => concurrent("RefArc", "DashMap"),
-        "arc_flurry" => concurrent("RefArc", "Flurry"),
-        "arc_skipmap" => concurrent("RefArc", "SkipMap"),
-        "arc_arcswap" => concurrent("RefArc", "ArcSwap"),
+        // Strong variants retain every interned node (no weak-reference GC);
+        // the un-suffixed variants wrap the same backend in `TableAmortizedPurge`
+        // so unreferenced nodes are evicted (weak-key hash-consing).
+        "arc_dashmap_strong" => concurrent("RefArc", "DashMap"),
+        "arc_flurry_strong" => concurrent("RefArc", "Flurry"),
+        "arc_skipmap_strong" => concurrent("RefArc", "SkipMap"),
+        "arc_arcswap_strong" => concurrent("RefArc", "ArcSwap"),
+        "arc_dashmap" => concurrent_purging("RefArc", "DashMap"),
+        "arc_flurry" => concurrent_purging("RefArc", "Flurry"),
+        "arc_skipmap" => concurrent_purging("RefArc", "SkipMap"),
+        "arc_arcswap" => concurrent_purging("RefArc", "ArcSwap"),
         _ => return None,
     })
 }
