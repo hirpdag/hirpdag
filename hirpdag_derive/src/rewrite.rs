@@ -159,7 +159,7 @@ fn get_direct_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let direct_rewrite = quote! {
     //    #[allow(non_snake_case)]
     //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        self.rewriter.rewrite_MessageA(x, self)
+    //        hirpdag::base::hirpdag_ensure_stack(|| self.rewriter.rewrite_MessageA(x, self))
     //    }
     //};
     let DataTypeNames {
@@ -172,7 +172,11 @@ fn get_direct_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
 
         #[allow(non_snake_case)]
         fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
-            self.rewriter.#hirpdag_rewrite_method_name(x, self)
+            // Rules recurse through the driver, so the stack grows with the
+            // graph's depth; this keeps it from running out.
+            hirpdag::base::hirpdag_ensure_stack(|| {
+                self.rewriter.#hirpdag_rewrite_method_name(x, self)
+            })
         }
 
     }
@@ -252,8 +256,10 @@ fn get_cache_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
     //let cache_rewrite = quote! {
     //    #[allow(non_snake_case)]
     //    fn rewrite_MessageA(&self, x: &MessageA) -> MessageA {
-    //        self.memoize_cache.get_or_else(x, || {
-    //            self.rewriter.rewrite_MessageA(x, self)
+    //        hirpdag::base::hirpdag_ensure_stack(|| {
+    //            self.memoize_cache.get_or_else(x, || {
+    //                self.rewriter.rewrite_MessageA(x, self)
+    //            })
     //        })
     //    }
     //};
@@ -267,8 +273,11 @@ fn get_cache_rewrite(names: &DataTypeNames) -> proc_macro2::TokenStream {
 
         #[allow(non_snake_case)]
         fn #hirpdag_rewrite_method_name(&self, x: &#hirpdag_ref_name) -> #hirpdag_ref_name {
-            self.memoize_cache.get_or_else(x, || {
-                self.rewriter.#hirpdag_rewrite_method_name(x, self)
+            // See the direct driver: keeps the stack from running out.
+            hirpdag::base::hirpdag_ensure_stack(|| {
+                self.memoize_cache.get_or_else(x, || {
+                    self.rewriter.#hirpdag_rewrite_method_name(x, self)
+                })
             })
         }
 
