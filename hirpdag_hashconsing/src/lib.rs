@@ -6,6 +6,8 @@
 // Hashconsing Interface
 
 mod reference;
+pub use crate::reference::drop_queue;
+pub use crate::reference::drop_queue::IterativeDrop;
 pub use crate::reference::Reference;
 pub use crate::reference::ReferenceWeak;
 mod table;
@@ -327,6 +329,213 @@ mod tests {
                 assert_eq!(drops.load(Ordering::SeqCst), 1, "not freed exactly once");
                 assert!(RefTlcWeak::weak_upgrade(&weak).is_none());
             })
+            .unwrap();
+        }
+    }
+
+    /// Dropping a deep graph through [`IterativeDrop`] handles, for every
+    /// reference type: nothing overflows a small stack, and every node is
+    /// freed exactly once (none leaked, none twice).
+    mod test_deep_drop {
+        use crate::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        const DEPTH: usize = 100_000;
+        // Recursive drop managed about 2,000 levels on this in release.
+        const SMALL_STACK: usize = 64 * 1024;
+
+        /// Names the reference type a chain is built from. A marker type
+        /// ties the knot: `R = Arc<Link<R>>` would be an infinite type.
+        trait Family: Sized + 'static {
+            type R: Reference<Link<Self>>;
+        }
+
+        /// A node of a chain: its child reached through `next`, and, when
+        /// `twice`, through `again` as well, so the child's last handle is
+        /// the second of two in one node.
+        struct Link<F: Family> {
+            id: usize,
+            // Held only to be dropped with the link.
+            #[allow(dead_code)]
+            next: Option<IterativeDrop<Link<F>, F::R>>,
+            #[allow(dead_code)]
+            again: Option<IterativeDrop<Link<F>, F::R>>,
+            drops: Arc<AtomicUsize>,
+        }
+
+        macro_rules! family {
+            ($name:ident, $reference:ident) => {
+                struct $name;
+                impl Family for $name {
+                    type R = $reference<Link<$name>>;
+                }
+            };
+        }
+
+        family!(ArcF, RefArc);
+        family!(RcF, RefRc);
+        family!(SepF, RefSep);
+        family!(SepPadF, RefSepPad);
+        family!(SepU32F, RefSepU32);
+        family!(TlcF, RefTlc);
+        family!(LeakF, RefLeak);
+
+        impl<F: Family> Drop for Link<F> {
+            fn drop(&mut self) {
+                self.drops.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        impl<F: Family> std::fmt::Debug for Link<F> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "Link({})", self.id)
+            }
+        }
+
+        impl<F: Family> std::hash::Hash for Link<F> {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.id.hash(state);
+            }
+        }
+
+        impl<F: Family> PartialEq for Link<F> {
+            fn eq(&self, other: &Self) -> bool {
+                self.id == other.id
+            }
+        }
+
+        impl<F: Family> Eq for Link<F> {}
+
+        /// A chain of `DEPTH` links, returned as its head.
+        fn chain<F: Family>(twice: bool, drops: &Arc<AtomicUsize>) -> F::R {
+            let mut head: Option<F::R> = None;
+            for id in 0..DEPTH {
+                let next = head.take();
+                let again = if twice {
+                    next.as_ref()
+                        .map(|n| IterativeDrop::new(F::R::strong_clone(n)))
+                } else {
+                    None
+                };
+                head = Some(F::R::new(Link {
+                    id,
+                    next: next.map(IterativeDrop::new),
+                    again,
+                    drops: drops.clone(),
+                }));
+            }
+            head.unwrap()
+        }
+
+        /// Build and drop a chain on a small stack, and count the frees once
+        /// the thread has exited (`RefTlc` frees at its flush or at exit).
+        fn freed_on_small_stack<F: Family>(twice: bool) -> usize {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let counted = drops.clone();
+            std::thread::Builder::new()
+                .stack_size(SMALL_STACK)
+                .spawn(move || drop(IterativeDrop::new(chain::<F>(twice, &counted))))
+                .unwrap()
+                .join()
+                .unwrap();
+            drops.load(Ordering::Relaxed)
+        }
+
+        fn every_link_freed_once<F: Family>() {
+            assert_eq!(freed_on_small_stack::<F>(false), DEPTH);
+            assert_eq!(freed_on_small_stack::<F>(true), DEPTH);
+        }
+
+        #[test]
+        fn arc() {
+            every_link_freed_once::<ArcF>();
+        }
+
+        #[test]
+        fn rc() {
+            every_link_freed_once::<RcF>();
+        }
+
+        #[test]
+        fn sep() {
+            every_link_freed_once::<SepF>();
+            every_link_freed_once::<SepPadF>();
+            every_link_freed_once::<SepU32F>();
+        }
+
+        #[test]
+        fn tlc() {
+            every_link_freed_once::<TlcF>();
+        }
+
+        #[test]
+        fn leak_never_frees() {
+            assert_eq!(freed_on_small_stack::<LeakF>(false), 0);
+        }
+
+        /// Several threads hold the same chain and drop their handles at
+        /// once. Each drop's "last handle?" check races with the others; the
+        /// chain must still be freed exactly once, on small stacks.
+        ///
+        /// Every handle is dropped on a worker thread that then exits: a
+        /// `RefTlc` drop on the test's own thread would sit in its buffer
+        /// until that thread flushed.
+        fn concurrent<F: Family>()
+        where
+            F::R: Send,
+        {
+            let drops = Arc::new(AtomicUsize::new(0));
+            let head = chain::<F>(true, &drops);
+            let mut handles: Vec<_> = (0..7)
+                .map(|_| IterativeDrop::new(F::R::strong_clone(&head)))
+                .collect();
+            handles.push(IterativeDrop::new(head));
+            let barrier = Arc::new(std::sync::Barrier::new(handles.len()));
+            let threads: Vec<_> = handles
+                .into_iter()
+                .map(|handle| {
+                    let barrier = barrier.clone();
+                    std::thread::Builder::new()
+                        .stack_size(SMALL_STACK)
+                        .spawn(move || {
+                            barrier.wait();
+                            drop(handle);
+                        })
+                        .unwrap()
+                })
+                .collect();
+            for thread in threads {
+                thread.join().unwrap();
+            }
+            assert_eq!(drops.load(Ordering::Relaxed), DEPTH);
+        }
+
+        #[test]
+        fn concurrent_drops() {
+            concurrent::<ArcF>();
+            concurrent::<SepF>();
+            concurrent::<TlcF>();
+        }
+
+        /// `RefTlc` used to free a chain one level per flush (every 4096
+        /// buffered drops), so on a thread that kept running a deep chain
+        /// stayed allocated. One flush now frees all of it.
+        #[test]
+        fn tlc_flush_frees_a_whole_chain() {
+            #[derive(Hash, PartialEq, Eq, Debug)]
+            struct Other;
+            std::thread::spawn(|| {
+                let drops = Arc::new(AtomicUsize::new(0));
+                drop(IterativeDrop::new(chain::<TlcF>(false, &drops)));
+                assert_eq!(drops.load(Ordering::Relaxed), 0, "freed before a flush");
+                let other = <RefTlc<Other> as Reference<Other>>::new(Other);
+                for _ in 0..4096 {
+                    drop(RefTlc::strong_clone(&other));
+                }
+                assert_eq!(drops.load(Ordering::Relaxed), DEPTH, "one flush");
+            })
+            .join()
             .unwrap();
         }
     }

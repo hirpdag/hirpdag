@@ -14,7 +14,10 @@ use hirpdag_hashconsing::Table;
 ///
 /// `Deref` gives direct access to the underlying `D` fields.
 pub struct HirpdagRef<D: HirpdagStruct, R: Reference<HirpdagStorage<D>>>(
-    R,
+    // Every parent-to-child edge is one of these, so wrapping the handle here
+    // is what keeps freeing a deep graph from recursing once per level (see
+    // `hirpdag_hashconsing::drop_queue`).
+    hirpdag_hashconsing::IterativeDrop<HirpdagStorage<D>, R>,
     std::marker::PhantomData<D>,
 );
 
@@ -30,7 +33,9 @@ where
         // Deep structural hashing would recurse into child HirpdagRefs, which
         // themselves recurse into their children, producing O(φ^N) work for DAGs
         // with two-parent sharing (e.g. Fibonacci) instead of O(1).
-        R::strong_deref(&self.0).hirpdag_creation_id.hash(state)
+        R::strong_deref(self.0.get())
+            .hirpdag_creation_id
+            .hash(state)
     }
 }
 
@@ -40,7 +45,10 @@ where
     R: Reference<HirpdagStorage<D>>,
 {
     fn clone(&self) -> Self {
-        HirpdagRef(R::strong_clone(&self.0), std::marker::PhantomData)
+        HirpdagRef(
+            hirpdag_hashconsing::IterativeDrop::new(R::strong_clone(self.0.get())),
+            std::marker::PhantomData,
+        )
     }
 }
 
@@ -51,7 +59,7 @@ where
 {
     type Target = D;
     fn deref(&self) -> &D {
-        &R::strong_deref(&self.0).hirpdag_data
+        &R::strong_deref(self.0.get()).hirpdag_data
     }
 }
 
@@ -61,7 +69,7 @@ where
     R: Reference<HirpdagStorage<D>>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        R::strong_deref(&self.0).hirpdag_data.fmt(f)
+        R::strong_deref(self.0.get()).hirpdag_data.fmt(f)
     }
 }
 
@@ -71,7 +79,7 @@ where
     R: Reference<HirpdagStorage<D>>,
 {
     fn eq(&self, other: &Self) -> bool {
-        R::strong_ptr_eq(&self.0, &other.0)
+        R::strong_ptr_eq(self.0.get(), other.0.get())
     }
 }
 impl<D, R> std::cmp::Eq for HirpdagRef<D, R>
@@ -88,7 +96,7 @@ where
 {
     /// Returns the cached metadata for this node without traversing the DAG.
     pub fn hirpdag_get_meta(&self) -> &HirpdagMeta {
-        &R::strong_deref(&self.0).hirpdag_meta
+        &R::strong_deref(self.0.get()).hirpdag_meta
     }
 
     /// Returns the creation ID of this node.
@@ -96,7 +104,7 @@ where
     /// Creation IDs are assigned monotonically: if node B is a dependency of node A
     /// (A was created after B), then B's creation ID is strictly less than A's.
     pub fn hirpdag_get_creation_id(&self) -> u64 {
-        R::strong_deref(&self.0).hirpdag_creation_id
+        R::strong_deref(self.0.get()).hirpdag_creation_id
     }
 
     /// Deep structural comparison of the underlying data, independent of creation order.
@@ -104,9 +112,9 @@ where
     /// This is O(n) in the size of the DAG. Prefer `cmp` (creation-ID based) for
     /// ordering purposes; use this only when structural order is specifically needed.
     pub fn hirpdag_cmp_deep(&self, other: &Self) -> std::cmp::Ordering {
-        R::strong_deref(&self.0)
+        R::strong_deref(self.0.get())
             .hirpdag_data
-            .cmp(&R::strong_deref(&other.0).hirpdag_data)
+            .cmp(&R::strong_deref(other.0.get()).hirpdag_data)
     }
 }
 
@@ -262,7 +270,9 @@ where
         };
 
         HirpdagRef(
-            self.table.get_or_insert(storage, compute_hirpdag_meta),
+            hirpdag_hashconsing::IterativeDrop::new(
+                self.table.get_or_insert(storage, compute_hirpdag_meta),
+            ),
             std::marker::PhantomData,
         )
     }

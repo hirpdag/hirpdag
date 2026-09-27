@@ -2,24 +2,22 @@
 //
 // Freeing a node drops its data, which drops the child references in its
 // fields, which frees each child whose last reference that was, and so on
-// down the graph: one level of recursion (several stack frames) per node.
-// Dropping a chain about 8,000 nodes deep (debug) or 64,000 (release)
-// overflows a 2 MiB stack and aborts the process.
+// down the graph. Done by plain recursion, that is one level (several stack
+// frames) per node: a chain about 8,000 nodes deep (debug) or 64,000 (release)
+// overflowed a 2 MiB stack and aborted the process. Every child reference is
+// now an `IterativeDrop`, which queues the frees below the first one and runs
+// them in a loop (see `hirpdag_hashconsing::drop_queue`).
 //
 // Each preset gets the test, because the reference type decides how a free
 // happens: `RefLeak` never frees, the strong concurrent tables keep every node
-// alive themselves, and `RefTlc` frees a chain one level per flush of its
-// deferred decrements, then all at once, recursively, when the thread exits.
+// alive themselves, and `RefTlc` defers the free to its next flush or to thread
+// exit, where the drop test's thread ends.
 //
-// The chain is built on a thread with a large stack (building does not
-// recurse), then its only reference is moved to a thread with a small stack
-// and dropped there. 64 KiB holds about 2,000 levels in release, so 10,000
-// overflows it in both profiles. (The `arc_arcswap` table copies itself on
-// every insert, which is why the chain is not deeper.)
-//
-// Known failures, ignored until fixed. A stack overflow aborts the whole test
-// binary, so run each test on its own:
-//   cargo test -p hirpdag_test_suite --all-features --test deep_drop -- --ignored --exact <name>
+// The chain is built on a thread with a large stack, then its only reference
+// is moved to a thread with a small stack and dropped there. 64 KiB held about
+// 2,000 levels of recursive drop in release, so 10,000 would overflow it in
+// both profiles. (The `arc_arcswap` table copies itself on every insert, which
+// is why the chain is not deeper.)
 
 #[macro_use]
 mod support;
@@ -50,7 +48,6 @@ hirpdag_test_configs! {
     }
 
     #[test]
-    #[ignore = "dropping a deep graph overflows the stack; run with --ignored"]
     fn dropping_a_deep_chain_on_a_small_stack() {
         let chain = super::on_stack("build", super::LARGE_STACK, || {
             let mut chain = Chain::new(0, None);

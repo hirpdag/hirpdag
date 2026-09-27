@@ -221,8 +221,9 @@ Consequences:
 
 - **Deep graphs outside serialization.** Collect and decode are both iterative, so
   serialization handles any depth (`test_suite/tests/deep_serialization.rs` round
-  trips a 100,000-node chain on a 256 KiB stack). Dropping a deep graph, rewriting it
-  and `Debug`-formatting it still recurse once per level.
+  trips a 100,000-node chain on a 256 KiB stack), and so does dropping one
+  (ADR-0012). Rewriting a deep graph and `Debug`-formatting it still recurse once per
+  level.
 - **Schema evolution.** v1 requires matching type definitions. Binary enum tags are
   ordinal, so reordering `#[hirpdag]` type declarations or enum variants changes the
   wire format. The schema fingerprint in the binary header catches this with an

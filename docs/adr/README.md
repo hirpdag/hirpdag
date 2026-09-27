@@ -21,6 +21,7 @@ subsystem works *now*, read the design doc for it.
 | [0007](0007-field-types-from-one-leaf-trait.md) | Define leaf field types through one marker trait, with the containers beside it | accepted |
 | [0010](0010-one-argument-grammar-per-attribute.md) | Give each attribute its own argument grammar, and reject what it does not use | accepted, amended by 0011 |
 | [0011](0011-settable-metadata-flags.md) | Set metadata flags per type with `#[hirpdag(flags = path)]`, and read metadata through `hirpdag_get_meta()` | accepted |
+| [0012](0012-iterative-drop.md) | Free deep graphs through a per-thread queue past a fixed nesting depth | accepted |
 
 Design docs, which do describe the current code:
 

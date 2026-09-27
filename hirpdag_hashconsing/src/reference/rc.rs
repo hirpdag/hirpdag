@@ -25,6 +25,22 @@ where
     fn strong_ptr_eq(a: &Self, b: &Self) -> bool {
         std::rc::Rc::<D>::ptr_eq(a, b)
     }
+
+    #[inline]
+    fn strong_is_unique(ptr: &Self) -> bool {
+        std::rc::Rc::strong_count(ptr) == 1
+    }
+
+    fn strong_into_deferred_drop(ptr: Self) -> drop_queue::DeferredDrop {
+        unsafe fn drop_rc<D>(words: [usize; 2]) {
+            drop(std::rc::Rc::from_raw(words[0] as *const D));
+        }
+        let raw = std::rc::Rc::into_raw(ptr) as usize;
+        // Safety: `drop_rc` turns the raw pointer back into the handle
+        // `into_raw` consumed, once, on this thread (`DeferredDrop` is not
+        // `Send`).
+        unsafe { drop_queue::DeferredDrop::new([raw, 0], drop_rc::<D>) }
+    }
 }
 
 pub type RefRcWeak<D> = std::rc::Weak<D>;
