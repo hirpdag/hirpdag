@@ -26,32 +26,32 @@ fn get_add_flags(config: &TypeConfig) -> proc_macro2::TokenStream {
 
 fn get_fields_compute_meta(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
     //let fields_compute_meta = quote! {
-    //    hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.a),
-    //    hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.b),
-    //    hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.c),
+    //    hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(&self.a),
+    //    hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(&self.b),
+    //    hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(&self.c),
     //};
     fields_named
         .named
         .iter()
         .map(|t| t.ident.as_ref().unwrap())
         .map(|field_name| {
-            quote! { hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(&self.#field_name), }
+            quote! { hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(&self.#field_name), }
         })
         .collect()
 }
 
 fn get_variants_compute_meta(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
     //let variants_compute_meta = quote! {
-    //    Foo(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x),
-    //    Bar(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x),
-    //    Baz(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x),
+    //    Foo(x) => hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(x),
+    //    Bar(x) => hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(x),
+    //    Baz(x) => hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(x),
     //};
     input_enum
         .variants
         .iter()
         .map(|t| {
             let variant = &t.ident;
-            quote! { #variant(x) => hirpdag::base::HirpdagComputeMeta::hirpdag_compute_meta(x), }
+            quote! { #variant(x) => hirpdag::base::__private::HirpdagComputeMeta::hirpdag_compute_meta(x), }
         })
         .collect()
 }
@@ -70,7 +70,7 @@ pub fn for_struct(
     let add_flags = get_add_flags(config);
 
     quote! {
-        impl HirpdagComputeMeta for #hirpdag_struct_name {
+        impl hirpdag::base::__private::HirpdagComputeMeta for #hirpdag_struct_name {
             fn hirpdag_compute_meta(&self) -> HirpdagMeta {
                 [
                     #fields_compute_meta
@@ -82,7 +82,7 @@ pub fn for_struct(
             }
         }
 
-        impl HirpdagComputeMeta for #hirpdag_ref_name {
+        impl hirpdag::base::__private::HirpdagComputeMeta for #hirpdag_ref_name {
             fn hirpdag_compute_meta(&self) -> HirpdagMeta {
                 self.hirpdag_get_meta().clone()
             }
@@ -123,7 +123,7 @@ pub fn for_enum(
     };
 
     quote! {
-        impl HirpdagComputeMeta for #name {
+        impl hirpdag::base::__private::HirpdagComputeMeta for #name {
             fn hirpdag_compute_meta(&self) -> HirpdagMeta {
                 use #name::*;
                 #variants_meta

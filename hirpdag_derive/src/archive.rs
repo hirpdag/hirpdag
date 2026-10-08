@@ -120,9 +120,9 @@ fn get_fields_from_archive(fields_named: &syn::FieldsNamed) -> proc_macro2::Toke
 
 fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStream {
     //let fields_collect = quote! {
-    //    hirpdag::base::HirpdagCollect::hirpdag_collect(&self.a, ctx);
-    //    hirpdag::base::HirpdagCollect::hirpdag_collect(&self.b, ctx);
-    //    hirpdag::base::HirpdagCollect::hirpdag_collect(&self.c, ctx);
+    //    hirpdag::base::__private::HirpdagCollect::hirpdag_collect(&self.a, ctx);
+    //    hirpdag::base::__private::HirpdagCollect::hirpdag_collect(&self.b, ctx);
+    //    hirpdag::base::__private::HirpdagCollect::hirpdag_collect(&self.c, ctx);
     //};
     fields_named
         .named
@@ -130,7 +130,7 @@ fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
         .map(|t| t.ident.as_ref().unwrap())
         .map(|field_name| {
             quote! {
-                hirpdag::base::HirpdagCollect::hirpdag_collect(&self.#field_name, ctx);
+                hirpdag::base::__private::HirpdagCollect::hirpdag_collect(&self.#field_name, ctx);
             }
         })
         .collect()
@@ -138,9 +138,9 @@ fn get_fields_collect(fields_named: &syn::FieldsNamed) -> proc_macro2::TokenStre
 
 fn get_variants_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream {
     //let variants_collect = quote! {
-    //    Foo(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
-    //    Bar(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
-    //    Baz(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
+    //    Foo(x) => hirpdag::base::__private::HirpdagCollect::hirpdag_collect(x, ctx),
+    //    Bar(x) => hirpdag::base::__private::HirpdagCollect::hirpdag_collect(x, ctx),
+    //    Baz(x) => hirpdag::base::__private::HirpdagCollect::hirpdag_collect(x, ctx),
     //};
     input_enum
         .variants
@@ -148,7 +148,7 @@ fn get_variants_collect(input_enum: &syn::DataEnum) -> proc_macro2::TokenStream 
         .map(|t| {
             let variant = &t.ident;
             quote! {
-                #variant(x) => hirpdag::base::HirpdagCollect::hirpdag_collect(x, ctx),
+                #variant(x) => hirpdag::base::__private::HirpdagCollect::hirpdag_collect(x, ctx),
             }
         })
         .collect()
@@ -256,12 +256,12 @@ pub fn for_struct(
             #archive_fields_declarations
         }
 
-        impl hirpdag::base::HirpdagArchived<[HirpdagNodeRef]> for #hirpdag_struct_name {
+        impl hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]> for #hirpdag_struct_name {
             type Archive = #hirpdag_archive_struct_name;
 
             fn hirpdag_to_archive(
                 &self,
-                index: &hirpdag::base::HirpdagNodeIndex,
+                index: &hirpdag::base::__private::HirpdagNodeIndex,
             ) -> Result<Self::Archive, hirpdag::base::HirpdagSerializeError> {
                 Ok(#hirpdag_archive_struct_name {
                     #fields_to_archive
@@ -278,12 +278,12 @@ pub fn for_struct(
             }
         }
 
-        impl hirpdag::base::HirpdagArchived<[HirpdagNodeRef]> for #hirpdag_ref_name {
+        impl hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]> for #hirpdag_ref_name {
             type Archive = u64;
 
             fn hirpdag_to_archive(
                 &self,
-                index: &hirpdag::base::HirpdagNodeIndex,
+                index: &hirpdag::base::__private::HirpdagNodeIndex,
             ) -> Result<u64, hirpdag::base::HirpdagSerializeError> {
                 index.index_of(self.0.hirpdag_get_creation_id(), #name_str)
             }
@@ -292,11 +292,11 @@ pub fn for_struct(
                 archived: u64,
                 nodes: &[HirpdagNodeRef],
             ) -> Result<Self, hirpdag::base::HirpdagDeserializeError> {
-                hirpdag::base::archive_resolve_ref::<HirpdagArchiveSchema, Self>(archived, nodes)
+                hirpdag::base::__private::archive_resolve_ref::<HirpdagArchiveSchema, Self>(archived, nodes)
             }
         }
 
-        impl hirpdag::base::HirpdagArchiveMember<HirpdagArchiveSchema> for #hirpdag_ref_name {
+        impl hirpdag::base::__private::HirpdagArchiveMember<HirpdagArchiveSchema> for #hirpdag_ref_name {
             const TYPE_NAME: &'static str = #name_str;
 
             fn hirpdag_archive_member(node: &HirpdagNodeRef) -> Option<&Self> {
@@ -310,7 +310,7 @@ pub fn for_struct(
 
         // A ref hands its node to the collect walk, which expands it later
         // (see HirpdagCollectNode below) rather than recursing into it here.
-        impl hirpdag::base::HirpdagCollect<HirpdagCollectCtx> for #hirpdag_ref_name {
+        impl hirpdag::base::__private::HirpdagCollect<HirpdagCollectCtx> for #hirpdag_ref_name {
             fn hirpdag_collect(&self, ctx: &mut HirpdagCollectCtx) {
                 ctx.visit(
                     self.0.hirpdag_get_creation_id(),
@@ -319,7 +319,7 @@ pub fn for_struct(
             }
         }
 
-        impl hirpdag::base::HirpdagCollect<HirpdagCollectCtx> for #hirpdag_struct_name {
+        impl hirpdag::base::__private::HirpdagCollect<HirpdagCollectCtx> for #hirpdag_struct_name {
             fn hirpdag_collect(&self, ctx: &mut HirpdagCollectCtx) {
                 #fields_collect
             }
@@ -347,7 +347,7 @@ pub fn for_enum(names: &DataTypeNames, input_enum: &syn::DataEnum) -> proc_macro
         // their parent node. Collect recurses into the active variant, and
         // the archived form is the same variant carrying an archived payload.
 
-        impl hirpdag::base::HirpdagCollect<HirpdagCollectCtx> for #name {
+        impl hirpdag::base::__private::HirpdagCollect<HirpdagCollectCtx> for #name {
             fn hirpdag_collect(&self, ctx: &mut HirpdagCollectCtx) {
                 use #name::*;
                 match self {
@@ -366,12 +366,12 @@ pub fn for_enum(names: &DataTypeNames, input_enum: &syn::DataEnum) -> proc_macro
             #variants_archive_declarations
         }
 
-        impl hirpdag::base::HirpdagArchived<[HirpdagNodeRef]> for #name {
+        impl hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]> for #name {
             type Archive = #hirpdag_archive_enum_name;
 
             fn hirpdag_to_archive(
                 &self,
-                index: &hirpdag::base::HirpdagNodeIndex,
+                index: &hirpdag::base::__private::HirpdagNodeIndex,
             ) -> Result<Self::Archive, hirpdag::base::HirpdagSerializeError> {
                 Ok(match self {
                     #variants_to_archive
@@ -498,7 +498,7 @@ fn get_serialization_items(
         });
         collect_children_arms.extend(quote! {
             HirpdagNodeRef::#ref_name(node) => {
-                hirpdag::base::HirpdagCollect::hirpdag_collect(&(**node), ctx)
+                hirpdag::base::__private::HirpdagCollect::hirpdag_collect(&(**node), ctx)
             }
         });
         // Nodes are re-interned through the normal hashcons path (not the
@@ -507,7 +507,7 @@ fn get_serialization_items(
         // in the process and restores sharing exactly.
         from_archive_arms.extend(quote! {
             HirpdagArchiveNode::#ref_name(data) => HirpdagNodeRef::#ref_name(#ref_name(
-                hirpdag::base::HirpdagStruct::hirpdag_hashcons(
+                hirpdag::base::__private::HirpdagStruct::hirpdag_hashcons(
                     hirpdag_archive_decode::<#struct_name>(data, nodes)?
                 ),
             )),
@@ -519,7 +519,7 @@ fn get_serialization_items(
             });
             roots_fields_collect.extend(quote! {
                 for root in &self.#field_name {
-                    hirpdag::base::HirpdagCollect::hirpdag_collect(root, ctx);
+                    hirpdag::base::__private::HirpdagCollect::hirpdag_collect(root, ctx);
                 }
             });
             roots_archive_field_declarations.extend(quote! {
@@ -539,7 +539,7 @@ fn get_serialization_items(
     let roots_type = if has_roots {
         quote! { HirpdagArchiveRoots }
     } else {
-        quote! { hirpdag::base::HirpdagNoRoots }
+        quote! { hirpdag::base::__private::HirpdagNoRoots }
     };
 
     let roots_items = get_serialization_roots_items(
@@ -584,9 +584,9 @@ fn get_serialization_items(
 
         /// Collect phase state for this module's node table.
         #[doc(hidden)]
-        pub type HirpdagCollectCtx = hirpdag::base::HirpdagCollectCtx<HirpdagNodeRef>;
+        pub type HirpdagCollectCtx = hirpdag::base::__private::HirpdagCollectCtx<HirpdagNodeRef>;
 
-        impl hirpdag::base::HirpdagCollectNode for HirpdagNodeRef {
+        impl hirpdag::base::__private::HirpdagCollectNode for HirpdagNodeRef {
             fn hirpdag_collect_children(&self, ctx: &mut HirpdagCollectCtx) {
                 match self {
                     #collect_children_arms
@@ -598,7 +598,7 @@ fn get_serialization_items(
         /// every reference replaced by a node table index.
         #[doc(hidden)]
         pub type HirpdagArchiveOf<T> =
-            <T as hirpdag::base::HirpdagArchived<[HirpdagNodeRef]>>::Archive;
+            <T as hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]>>::Archive;
 
         // `String`, `Vec` and the other leaf and container types are archived
         // the same way whatever the module, so a call has to say which
@@ -608,9 +608,9 @@ fn get_serialization_items(
         /// Encode a value into its archived form.
         #[doc(hidden)]
         #[allow(dead_code)]
-        fn hirpdag_archive_encode<T: hirpdag::base::HirpdagArchived<[HirpdagNodeRef]>>(
+        fn hirpdag_archive_encode<T: hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]>>(
             value: &T,
-            index: &hirpdag::base::HirpdagNodeIndex,
+            index: &hirpdag::base::__private::HirpdagNodeIndex,
         ) -> Result<HirpdagArchiveOf<T>, hirpdag::base::HirpdagSerializeError> {
             value.hirpdag_to_archive(index)
         }
@@ -619,19 +619,19 @@ fn get_serialization_items(
         /// against the nodes reconstructed so far.
         #[doc(hidden)]
         #[allow(dead_code)]
-        fn hirpdag_archive_decode<T: hirpdag::base::HirpdagArchived<[HirpdagNodeRef]>>(
+        fn hirpdag_archive_decode<T: hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]>>(
             archived: HirpdagArchiveOf<T>,
             nodes: &[HirpdagNodeRef],
         ) -> Result<T, hirpdag::base::HirpdagDeserializeError> {
             T::hirpdag_from_archive(archived, nodes)
         }
 
-        impl hirpdag::base::HirpdagArchived<[HirpdagNodeRef]> for HirpdagNodeRef {
+        impl hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]> for HirpdagNodeRef {
             type Archive = HirpdagArchiveNode;
 
             fn hirpdag_to_archive(
                 &self,
-                index: &hirpdag::base::HirpdagNodeIndex,
+                index: &hirpdag::base::__private::HirpdagNodeIndex,
             ) -> Result<Self::Archive, hirpdag::base::HirpdagSerializeError> {
                 Ok(match self {
                     #to_archive_arms
@@ -653,14 +653,14 @@ fn get_serialization_items(
         #[doc(hidden)]
         pub struct HirpdagArchiveSchema;
 
-        impl hirpdag::base::HirpdagArchive for HirpdagArchiveSchema {
+        impl hirpdag::base::__private::HirpdagArchive for HirpdagArchiveSchema {
             type Node = HirpdagNodeRef;
             type Roots = #roots_type;
 
             /// The fingerprint of this module's type definitions, embedded in
             /// (and verified against) the header of binary archives.
-            fn schema_fingerprint() -> hirpdag::base::HirpdagSchemaFingerprint {
-                hirpdag::base::HirpdagSchemaFingerprint {
+            fn schema_fingerprint() -> hirpdag::base::__private::HirpdagSchemaFingerprint {
+                hirpdag::base::__private::HirpdagSchemaFingerprint {
                     hash: #schema_hash,
                     name: #schema_name.to_string(),
                 }
@@ -718,7 +718,7 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
             #roots_field_declarations
         }
 
-        impl hirpdag::base::HirpdagCollect<HirpdagCollectCtx> for HirpdagArchiveRoots {
+        impl hirpdag::base::__private::HirpdagCollect<HirpdagCollectCtx> for HirpdagArchiveRoots {
             fn hirpdag_collect(&self, ctx: &mut HirpdagCollectCtx) {
                 #roots_fields_collect
             }
@@ -741,12 +741,12 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
             #roots_archive_field_declarations
         }
 
-        impl hirpdag::base::HirpdagArchived<[HirpdagNodeRef]> for HirpdagArchiveRoots {
+        impl hirpdag::base::__private::HirpdagArchived<[HirpdagNodeRef]> for HirpdagArchiveRoots {
             type Archive = HirpdagArchiveRootIndices;
 
             fn hirpdag_to_archive(
                 &self,
-                index: &hirpdag::base::HirpdagNodeIndex,
+                index: &hirpdag::base::__private::HirpdagNodeIndex,
             ) -> Result<Self::Archive, hirpdag::base::HirpdagSerializeError> {
                 Ok(HirpdagArchiveRootIndices {
                     #roots_fields_to_archive
@@ -771,7 +771,7 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
         pub fn hirpdag_serialize(
             roots: &HirpdagArchiveRoots,
         ) -> Result<Vec<u8>, hirpdag::base::HirpdagSerializeError> {
-            hirpdag::base::archive_serialize::<HirpdagArchiveSchema>(roots)
+            hirpdag::base::__private::archive_serialize::<HirpdagArchiveSchema>(roots)
         }
 
         /// Deserializes a hirpdag binary archive, re-interning every node
@@ -782,7 +782,7 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
         pub fn hirpdag_deserialize(
             bytes: &[u8],
         ) -> Result<HirpdagArchiveRoots, hirpdag::base::HirpdagDeserializeError> {
-            hirpdag::base::archive_deserialize::<HirpdagArchiveSchema>(bytes)
+            hirpdag::base::__private::archive_deserialize::<HirpdagArchiveSchema>(bytes)
         }
 
         /// JSON (text format) variant of [`hirpdag_serialize`].
@@ -790,7 +790,7 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
         pub fn hirpdag_serialize_json(
             roots: &HirpdagArchiveRoots,
         ) -> Result<String, hirpdag::base::HirpdagSerializeError> {
-            hirpdag::base::archive_serialize_json::<HirpdagArchiveSchema>(roots)
+            hirpdag::base::__private::archive_serialize_json::<HirpdagArchiveSchema>(roots)
         }
 
         /// JSON (text format) variant of [`hirpdag_deserialize`].
@@ -798,7 +798,7 @@ fn get_serialization_roots_items(has_roots: bool, roots: RootsItems) -> proc_mac
         pub fn hirpdag_deserialize_json(
             text: &str,
         ) -> Result<HirpdagArchiveRoots, hirpdag::base::HirpdagDeserializeError> {
-            hirpdag::base::archive_deserialize_json::<HirpdagArchiveSchema>(text)
+            hirpdag::base::__private::archive_deserialize_json::<HirpdagArchiveSchema>(text)
         }
     }
 }
