@@ -7,7 +7,6 @@
 // nested in containers (a tuple in a `Vec`, an `Option` in a tuple) are still
 // counted, rewritten and archived. See `hirpdag::base::field` for the rules.
 
-use hirpdag::base::HirpdagComputeMeta;
 use hirpdag::*;
 
 #[hirpdag_module]
@@ -105,14 +104,14 @@ fn leaves_intern() {
 
 #[test]
 fn leaves_contribute_no_metadata() {
-    let meta = leaves().hirpdag_compute_meta();
+    let meta = leaves().hirpdag_get_meta().clone();
     assert_eq!((meta.get_count(), meta.get_height()), (1, 1));
 }
 
 #[test]
 fn nodes_in_containers_count_towards_metadata() {
     // root + shared, b, c, shared (again), d: counted once per reference.
-    let meta = tree().hirpdag_compute_meta();
+    let meta = tree().hirpdag_get_meta().clone();
     assert_eq!((meta.get_count(), meta.get_height()), (6, 2));
 }
 

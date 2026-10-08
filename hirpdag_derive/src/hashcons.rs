@@ -130,7 +130,7 @@ fn get_field_type_checks<'a>(
     quote! {
         #[allow(dead_code)]
         const _: () = {
-            fn hirpdag_field<T: hirpdag::base::HirpdagComputeMeta>() {}
+            fn hirpdag_field<T: hirpdag::base::__private::HirpdagComputeMeta>() {}
             fn hirpdag_check_fields() {
                 #(#checks)*
             }
@@ -211,10 +211,10 @@ pub fn for_struct(
 
         #field_type_checks
 
-        impl HirpdagStruct for #hirpdag_struct_name {
-            type ReferenceStorageStruct = ImplRef<HirpdagStorage<#hirpdag_struct_name>>;
+        impl hirpdag::base::__private::HirpdagStruct for #hirpdag_struct_name {
+            type ReferenceStorageStruct = ImplRef<hirpdag::base::__private::HirpdagStorage<#hirpdag_struct_name>>;
             fn hirpdag_hashcons(self) ->
-            HirpdagRef<#hirpdag_struct_name, ImplRef<HirpdagStorage<#hirpdag_struct_name>>> {
+            hirpdag::base::__private::HirpdagRef<#hirpdag_struct_name, ImplRef<hirpdag::base::__private::HirpdagStorage<#hirpdag_struct_name>>> {
                 #hirpdag_table_name.hirpdag_hashcons(self)
             }
         }
@@ -223,14 +223,14 @@ pub fn for_struct(
         // than uppercased, so two types differing only in case cannot name the
         // same table. See hirpdag_derive::names.
         #[allow(non_upper_case_globals)]
-        static #hirpdag_table_name: std::sync::LazyLock<HirpdagHashconsTable<
+        static #hirpdag_table_name: std::sync::LazyLock<hirpdag::base::__private::HirpdagHashconsTable<
             #hirpdag_struct_name,
-            ImplRef<HirpdagStorage<#hirpdag_struct_name>>,
-            ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>>> =
-                std::sync::LazyLock::new(HirpdagHashconsTable::new);
+            ImplRef<hirpdag::base::__private::HirpdagStorage<#hirpdag_struct_name>>,
+            ImplTableShared<hirpdag::base::__private::HirpdagStorage<#hirpdag_struct_name>>>> =
+                std::sync::LazyLock::new(hirpdag::base::__private::HirpdagHashconsTable::new);
 
         #[derive(Hash, Clone, Debug, PartialEq, Eq)]
-        pub struct #hirpdag_ref_name(HirpdagRef<#hirpdag_struct_name, ImplRef<HirpdagStorage<#hirpdag_struct_name>>>);
+        pub struct #hirpdag_ref_name(hirpdag::base::__private::HirpdagRef<#hirpdag_struct_name, ImplRef<hirpdag::base::__private::HirpdagStorage<#hirpdag_struct_name>>>);
 
         impl std::ops::Deref for #hirpdag_ref_name {
             type Target = #hirpdag_struct_name;
@@ -261,7 +261,7 @@ pub fn for_struct(
         impl #hirpdag_ref_name {
             fn spawn(#fields_parameters) -> Self {
                 let data = #hirpdag_struct_name { #fields_list };
-                Self(data.hirpdag_hashcons())
+                Self(hirpdag::base::__private::HirpdagStruct::hirpdag_hashcons(data))
             }
 
             /// Deep structural comparison of the underlying data, independent of creation order.

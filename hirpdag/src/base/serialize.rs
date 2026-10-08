@@ -23,10 +23,10 @@
 /// - `\x1a` (Ctrl+Z) stops accidental terminal/DOS `type` output;
 /// - the trailing `\n` catches LF-to-CRLF translation, and means the magic
 ///   reads as a tidy single "HPDG" line when opened in a text viewer.
-pub const HIRPDAG_MAGIC: &[u8; 8] = b"\x89HPDG\r\x1a\n";
+pub(crate) const HIRPDAG_MAGIC: &[u8; 8] = b"\x89HPDG\r\x1a\n";
 
 /// Version of the hirpdag archive format written by this library.
-pub const HIRPDAG_FORMAT_VERSION: u32 = 1;
+pub(crate) const HIRPDAG_FORMAT_VERSION: u32 = 1;
 
 /// Error type for hirpdag serialization.
 ///
@@ -139,7 +139,7 @@ pub struct HirpdagSchemaFingerprint {
 
 /// Writes the binary archive header: magic prefix, then the schema
 /// fingerprint. The archive payload is appended after this.
-pub fn hirpdag_write_binary_header(
+pub(crate) fn hirpdag_write_binary_header(
     fingerprint: &HirpdagSchemaFingerprint,
 ) -> Result<Vec<u8>, HirpdagSerializeError> {
     let mut bytes = Vec::new();
@@ -152,7 +152,7 @@ pub fn hirpdag_write_binary_header(
 
 /// Validates the binary archive header (magic prefix and schema fingerprint)
 /// and returns the remaining archive payload.
-pub fn hirpdag_read_binary_header<'a>(
+pub(crate) fn hirpdag_read_binary_header<'a>(
     bytes: &'a [u8],
     expected: &HirpdagSchemaFingerprint,
 ) -> Result<&'a [u8], HirpdagDeserializeError> {
@@ -171,7 +171,7 @@ pub fn hirpdag_read_binary_header<'a>(
 }
 
 /// Strips and validates the binary archive magic prefix.
-pub fn hirpdag_strip_magic(bytes: &[u8]) -> Result<&[u8], HirpdagDeserializeError> {
+pub(crate) fn hirpdag_strip_magic(bytes: &[u8]) -> Result<&[u8], HirpdagDeserializeError> {
     bytes
         .strip_prefix(&HIRPDAG_MAGIC[..])
         .ok_or(HirpdagDeserializeError::BadMagic)
