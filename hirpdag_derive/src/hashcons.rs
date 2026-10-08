@@ -211,13 +211,7 @@ pub fn for_struct(
 
         #field_type_checks
 
-        impl HirpdagStruct for #hirpdag_struct_name {
-            type ReferenceStorageStruct = ImplRef<HirpdagStorage<#hirpdag_struct_name>>;
-            fn hirpdag_hashcons(self) ->
-            HirpdagRef<#hirpdag_struct_name, ImplRef<HirpdagStorage<#hirpdag_struct_name>>> {
-                #hirpdag_table_name.hirpdag_hashcons(self)
-            }
-        }
+        impl HirpdagStruct for #hirpdag_struct_name {}
 
         // Named after the declaration verbatim (`HIRPDAG_TABLE_Foo`) rather
         // than uppercased, so two types differing only in case cannot name the
@@ -229,7 +223,9 @@ pub fn for_struct(
             ImplTableShared<HirpdagStorage<#hirpdag_struct_name>>>> =
                 std::sync::LazyLock::new(HirpdagHashconsTable::new);
 
-        #[derive(Hash, Clone, Debug, PartialEq, Eq)]
+        // Ordered by creation (see `HirpdagRef`'s `Ord`), which respects
+        // dependency order: if node B is a dependency of node A, then B < A.
+        #[derive(Hash, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
         pub struct #hirpdag_ref_name(HirpdagRef<#hirpdag_struct_name, ImplRef<HirpdagStorage<#hirpdag_struct_name>>>);
 
         impl std::ops::Deref for #hirpdag_ref_name {
@@ -239,29 +235,10 @@ pub fn for_struct(
             }
         }
 
-        impl std::cmp::PartialOrd for #hirpdag_ref_name {
-            fn partial_cmp(&self, other: &#hirpdag_ref_name) -> Option<std::cmp::Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-        impl std::cmp::Ord for #hirpdag_ref_name {
-            /// Semantically-aware ordering based on creation order.
-            ///
-            /// If node B is a dependency of node A (B must be created before A),
-            /// then B < A. Equal if both references point to the same interned node.
-            fn cmp(&self, other: &#hirpdag_ref_name) -> std::cmp::Ordering {
-                if self == other {
-                    std::cmp::Ordering::Equal
-                } else {
-                    self.0.hirpdag_get_creation_id().cmp(&other.0.hirpdag_get_creation_id())
-                }
-            }
-        }
-
         impl #hirpdag_ref_name {
             fn spawn(#fields_parameters) -> Self {
                 let data = #hirpdag_struct_name { #fields_list };
-                Self(data.hirpdag_hashcons())
+                Self(#hirpdag_table_name.hirpdag_hashcons(data))
             }
 
             /// Deep structural comparison of the underlying data, independent of creation order.

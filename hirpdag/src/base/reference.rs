@@ -110,23 +110,31 @@ where
     }
 }
 
-impl<D, R> HirpdagComputeMeta for HirpdagRef<D, R>
+impl<D, R> std::cmp::Ord for HirpdagRef<D, R>
 where
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
 {
-    fn hirpdag_compute_meta(&self) -> HirpdagMeta {
-        self.hirpdag_get_meta().clone()
+    /// Creation order, which respects dependency order: if node B is a
+    /// dependency of node A (B was created before A), then B < A. Equal exactly
+    /// when both refer to the same interned node.
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self == other {
+            std::cmp::Ordering::Equal
+        } else {
+            self.hirpdag_get_creation_id()
+                .cmp(&other.hirpdag_get_creation_id())
+        }
     }
 }
 
-impl<D, R> HirpdagComputeMeta for &HirpdagRef<D, R>
+impl<D, R> std::cmp::PartialOrd for HirpdagRef<D, R>
 where
     D: HirpdagStruct,
     R: Reference<HirpdagStorage<D>>,
 {
-    fn hirpdag_compute_meta(&self) -> HirpdagMeta {
-        self.hirpdag_get_meta().clone()
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -291,8 +299,11 @@ where
     }
 }
 
-/// This trait is implemented by generated structures containing the
-/// fields of a Hirpdag generated structure.
+/// The data struct of a `#[hirpdag]` type: the generated struct holding its
+/// fields, which a [`HirpdagRef`] points to.
+///
+/// A marker for the bounds that struct satisfies. Interning goes through the
+/// type's [`HirpdagHashconsTable`].
 pub trait HirpdagStruct:
     std::hash::Hash
     + std::fmt::Debug
@@ -304,7 +315,4 @@ pub trait HirpdagStruct:
     + std::cmp::PartialOrd
     + std::cmp::Ord
 {
-    type ReferenceStorageStruct: Reference<HirpdagStorage<Self>>;
-
-    fn hirpdag_hashcons(self) -> HirpdagRef<Self, Self::ReferenceStorageStruct>;
 }
