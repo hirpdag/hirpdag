@@ -482,6 +482,7 @@ fn get_serialization_items(
             struct_data: struct_name,
             archive_form: archive_struct_name,
             roots_field: field_name,
+            table,
             ..
         } = &entry.names;
 
@@ -507,7 +508,7 @@ fn get_serialization_items(
         // in the process and restores sharing exactly.
         from_archive_arms.extend(quote! {
             HirpdagArchiveNode::#ref_name(data) => HirpdagNodeRef::#ref_name(#ref_name(
-                hirpdag::base::HirpdagStruct::hirpdag_hashcons(
+                #table.hirpdag_hashcons(
                     hirpdag_archive_decode::<#struct_name>(data, nodes)?
                 ),
             )),
